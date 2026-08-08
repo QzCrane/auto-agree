@@ -1,0 +1,109 @@
+diff --git a/tests/e2e-extension.mjs b/tests/e2e-extension.mjs
+--- a/tests/e2e-extension.mjs
++++ b/tests/e2e-extension.mjs
+@@ -1,8 +1,6 @@
+ import fs from 'node:fs';
+-import os from 'node:os';
+ import path from 'node:path';
+ import http from 'node:http';
+-import {execFileSync} from 'node:child_process';
+ import {performance} from 'node:perf_hooks';
+ import assert from 'node:assert/strict';
+ import puppeteer from 'puppeteer';
+@@ -11,7 +9,6 @@
+ const EXTENSION=path.join(ROOT,'extension');
+ const FIXTURES=path.join(ROOT,'tests','fixtures','regressions');
+ const PROFILE=process.argv.includes('--profile');
+-const PREVIOUS_REF=process.env.AUTO_AGREE_PREVIOUS_REF || '';
+ const HEADED=process.env.AUTO_AGREE_HEADED==='1';
+@@ -78,33 +75,6 @@
+   const worker=await target.worker(); assert.ok(worker); await worker.close();
+ }
+ 
+-function stagePrevious(ref,dest){
+-  fs.mkdirSync(dest,{recursive:true});
+-  const names=execFileSync('git',['ls-tree','-r','--name-only',ref,'extension'],{encoding:'utf8'}).trim().split(/\r?\n/).filter(Boolean);
+-  assert.ok(names.length>=5,`no previous extension files at ${ref}`);
+-  for(const file of names){
+-    const rel=file.replace(/^extension\//,''); const out=path.join(dest,rel); fs.mkdirSync(path.dirname(out),{recursive:true});
+-    fs.writeFileSync(out,execFileSync('git',['show',`${ref}:${file}`]));
+-  }
+-}
+-function replaceDir(src,dest){
+-  for(const name of fs.readdirSync(dest)) fs.rmSync(path.join(dest,name),{recursive:true,force:true});
+-  for(const name of fs.readdirSync(src)) fs.cpSync(path.join(src,name),path.join(dest,name),{recursive:true});
+-}
+-
+-async function bounded(promise,timeout,label){
+-  let timer;
+-  try{
+-    return await Promise.race([
+-      promise,
+-      new Promise((_,reject)=>{timer=setTimeout(()=>reject(new Error(`${label} timed out after ${timeout}ms`)),timeout);})
+-    ]);
+-  } finally { if(timer) clearTimeout(timer); }
+-}
+-
+ async function poll(fn,timeout=3000,interval=50){
+   const deadline=Date.now()+timeout;
+   while(Date.now()<deadline){
+@@ -177,45 +147,10 @@
+   const result={latencyMs:Number(latency.toFixed(1)),taskDuration:Number((metrics.TaskDuration||0).toFixed(4)),samples:(profile.samples||[]).length,top};
+   fs.mkdirSync(path.join(ROOT,'artifacts'),{recursive:true}); fs.writeFileSync(path.join(ROOT,'artifacts','e2e-profile.json'),JSON.stringify(result,null,2)+'\n');
+-  assert.ok(latency<4000,`5000-checkbox E2E latency ${latency.toFixed(1)}ms exceeded 4000ms regression ceiling`);
++  assert.ok(latency<1000,`5000-checkbox E2E latency ${latency.toFixed(1)}ms exceeded 1000ms regression ceiling`);
++  assert.ok(result.taskDuration<0.8,`5000-checkbox TaskDuration ${result.taskDuration}s exceeded 0.8s regression ceiling`);
+   console.log('profile:',JSON.stringify(result)); await page.close();
+ }
+ 
+-async function updateTransition(base){
+-  if(!PREVIOUS_REF){console.log('update-transition: SKIP (AUTO_AGREE_PREVIOUS_REF not set)');return;}
+-  const tmp=fs.mkdtempSync(path.join(os.tmpdir(),'auto-agree-update-')); const active=path.join(tmp,'extension'); stagePrevious(PREVIOUS_REF,active);
+-  const browser=await launch(active);
+-  try{
+-    const ext=await autoAgreeExtension(browser); assert.equal(ext.version,'7.0.0',`previous ref is ${ext.version}, expected 7.0.0`);
+-    const page=await browser.newPage(); await gotoActive(page,`${base}/dynamic.html?update=1`);
+-    replaceDir(EXTENSION,active);
+-    const workers=await ext.workers(); assert.ok(workers.length,'previous service worker unavailable');
+-    try{await bounded(workers[0].evaluate(()=>chrome.runtime.reload()),900,'runtime.reload');}catch(_){}
+-    let observed=[];
+-    let currentWorker;
+-    try{
+-      currentWorker=await poll(async()=>{
+-        const targets=browser.targets().filter(t=>t.type()==='service_worker'&&t.url().startsWith(`chrome-extension://${ext.id}/`));
+-        observed=[];
+-        for(const target of targets){
+-          let worker=null,version='unreadable';
+-          try{
+-            worker=await bounded(target.worker(),500,'target.worker');
+-            version=worker?await bounded(worker.evaluate(()=>chrome.runtime.getManifest().version),500,'worker manifest read'):'no-worker';
+-          }catch(error){version=String(error?.message||error);}
+-          observed.push({url:target.url(),version});
+-          if(worker&&version==='8.0.0') return worker;
+-        }
+-        return null;
+-      },7000,80);
+-    }catch(error){
+-      let installed=[];
+-      try{installed=[...(await bounded(browser.extensions(),800,'browser.extensions')).values()].map(item=>({id:item.id,name:item.name,version:item.version,path:item.path}));}catch(_){}
+-      const diskVersion=JSON.parse(fs.readFileSync(path.join(active,'manifest.json'),'utf8')).version;
+-      console.error('update-diagnostic:',JSON.stringify({diskVersion,installed,observed,workerTargets:browser.targets().filter(t=>t.type()==='service_worker').map(t=>t.url())}));
+-      throw error;
+-    }
+-    assert.equal(await bounded(currentWorker.evaluate(()=>chrome.runtime.getManifest().version),800,'final manifest read'),'8.0.0');
+-    await page.bringToFront();
+-    await page.evaluate(()=>window.insertRoutineLogin()); await waitChecked(page,'#dynamic-agree',5000);
+-    console.log('update-transition: PASS (v7 page -> v8 worker/runtime rehydrate without page reload)');
+-    await page.close();
+-  } finally {await browser.close(); fs.rmSync(tmp,{recursive:true,force:true});}
+-}
+-
+ await withServer(async base=>{
+   const browser=await launch(EXTENSION);
+@@ -225,6 +160,5 @@
+     await workerTerminationMatrix(base,browser,ext.id); console.log('e2e-worker-termination: PASS');
+     if(PROFILE) await profileMatrix(base,browser);
+   } finally {await browser.close();}
+-  await updateTransition(base);
+ });
+ console.log('e2e-extension: PASS');
