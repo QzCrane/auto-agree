@@ -1,0 +1,1 @@
+Research-only branch. Do not merge. Real Chrome exposed silent RootBatch overflow loss in Engine; production repair and permanent structural fuzz gate require a clean follow-up branch.
