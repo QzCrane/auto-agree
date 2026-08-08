@@ -57,9 +57,12 @@ assert.equal(/String\(value\)\.replace/.test(guard),false,'guard must not scan a
 assert.match(guard,/runtimeCurrent/);assert.match(guard,/runtimeRevoked/,'stale guards must become passive toward future generations');
 assert.match(guard,/rejected/,'a stale same-world Engine authorization attempt must create an exact short-lived rejection lease');
 assert.match(guard,/event\.isTrusted/,'handover firewall must never require authorization for trusted user clicks');
-assert.match(guard,/causalLocal/,'local delegated clicks must use a separate causal lease');
-assert.match(guard,/localLeaseByEvent/,'cross-world delegation must be scoped to one DOM event propagation');
-assert.match(guard,/finishLocalLease/,'local causal leases must be revoked in bubble phase');
+assert.match(guard,/const causalLocal = new WeakMap\(\)/,'causal authority must retain the exact source Event, not a timeless control token');
+assert.match(guard,/source\.eventPhase === Event\.NONE/,'a stopped source event must lose authority when browser dispatch completes');
+assert.match(guard,/consumeLiveCausal/,'nested synthetic delegation must verify live source-event dispatch');
+assert.match(guard,/causalLocal\.set\(delegated, event\)/,'delegated control must be bound to the exact authorizing Event');
+assert.match(guard,/localLeaseByEvent/,'cross-world delegation must remain explicitly associated with its source event');
+assert.match(guard,/finishLocalLease/,'bubble cleanup remains an eager release path but is not sole correctness authority');
 assert.match(guard,/WIDE_CONTAINER/,'causal discovery must exclude broad page/form containers');
 assert.match(guard,/isProceedAction/,'proceed/action targets must be explicitly excluded from causal authority');
 assert.match(guard,/boundedUniqueDelegatedControl/,'generic classless wrappers must resolve one exact delegated control through bounded traversal');
@@ -74,7 +77,7 @@ assert.match(guard,/if \(found && found !== node\) return null/,'ambiguous wrapp
 assert.match(guard,/pointerdown/);assert.match(guard,/keydown/);
 assert.match(guard,/queueMicrotask\s*\(/,'direct Engine authorization and stale rejection leases must expire at a microtask checkpoint');
 assert.match(guard,/authorized\.delete/,'direct Engine authorization must be consumable and revocable');
-assert.equal(/setTimeout\s*\(/.test(guard),false,'handover causal authorization must not leak into a later task');
+assert.equal(/setTimeout\s*\(/.test(guard),false,'handover causal authorization must not depend on a timer window');
 
 const semantic=fs.readFileSync(path.join(root,'semantic-core.js'),'utf8');
 assert.match(semantic,/__AUTO_AGREE_SEMANTIC__\?\.version === VERSION/);
@@ -95,8 +98,15 @@ assert.equal(/\bconsequentialRisk\b/.test(engine),false,'stale pre-risk-core con
 assert.match(fs.readFileSync(path.join(root,'bootstrap.js'),'utf8'),/HANDOFF_RETRY_DELAYS/);
 assert.match(fs.readFileSync(path.join(root,'gate.js'),'utf8'),/HANDOFF_RETRY_DELAYS/);
 
+const update=fs.readFileSync(path.resolve('tests/e2e-update.mjs'),'utf8');
+assert.match(update,/CURRENT_VERSION=JSON\.parse\(fs\.readFileSync\(path\.join\(CURRENT,'manifest\.json'\)/,'release transition must derive current version from the candidate manifest');
+assert.match(update,/PREVIOUS_VERSION=JSON\.parse\(fs\.readFileSync\(path\.join\(active,'manifest\.json'\)/,'release transition must derive previous version from the staged PR-base manifest');
+assert.match(update,/const oldWorldId=oldWorldBefore\.id/,'release transition must retain old-world identity by execution-context ID');
+assert.match(update,/!beforeIds\.has\(world\.id\)/,'current world must be distinguished by context identity, not only a version string');
+assert.equal(/assert\.equal\([^\n]*version[^\n]*['"](?:9|10)\.0\.0['"]/.test(update),false,'release transition must not hardcode one historical version pair');
+
 const ci=fs.readFileSync(path.resolve('.github/workflows/ci.yml'),'utf8');
 assert.match(ci,/if:\s*github\.event_name == 'pull_request'/,'release transition must be PR-scoped, not replayed on every main push');
 assert.match(ci,/AUTO_AGREE_PREVIOUS_REF:\s*\$\{\{\s*github\.event\.pull_request\.base\.sha\s*\}\}/,'release transition must stage the PR base as its previous version');
-assert.equal(/github\.event\.before/.test(ci),false,'version-specific transition gate must not derive previous version from arbitrary main push history');
+assert.equal(/github\.event\.before/.test(ci),false,'release transition must not derive previous state from arbitrary main push history');
 console.log('static-contract: PASS');
