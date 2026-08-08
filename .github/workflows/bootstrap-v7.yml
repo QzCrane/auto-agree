@@ -27,7 +27,7 @@ jobs:
           set -euo pipefail
           test -f .bootstrap3/v7.patch.06
           cat .bootstrap3/v7.patch.* | base64 --decode > /tmp/v7.patch.xz
-          echo '19a290243d5e0ab981c22f49740f8cc990c94490059ec2143a06aa09b5ca8e56  /tmp/v7.patch.xz' | sha256sum --check --strict
+          echo '19a29024926fd1d2f15512b9d936b2d4908426dc28dca42f67ab722b45538e56  /tmp/v7.patch.xz' | sha256sum --check --strict
           xz --decompress --stdout /tmp/v7.patch.xz > /tmp/v7.patch
 
       - name: Normalize v6 repository layout
