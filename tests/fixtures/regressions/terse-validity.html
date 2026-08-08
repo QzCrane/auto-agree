@@ -1,0 +1,11 @@
+<!doctype html><meta charset="utf-8"><title>Terse Terms Native Validity</title>
+<form id="login">
+  <input id="email" type="email" required value="not-an-email" autocomplete="email">
+  <label><input id="agree" type="checkbox"> Terms of Service</label>
+  <button id="continue" type="button" disabled>Login</button>
+</form>
+<script>
+const email=document.querySelector('#email'), agree=document.querySelector('#agree'), button=document.querySelector('#continue');
+const sync=()=>button.disabled=!(email.validity.valid&&agree.checked);
+email.addEventListener('input',sync); agree.addEventListener('change',sync); sync();
+</script>

@@ -2,7 +2,7 @@
   'use strict';
   if (globalThis.__AUTO_AGREE_RISK__) return;
   const BASE = globalThis.__AUTO_AGREE_SEMANTIC__;
-  if (!BASE || BASE.version !== '7.0.0') return;
+  if (!BASE || BASE.version !== '8.0.0') return;
   const SEVERITY = Object.freeze({ ROUTINE: 0, PRIVACY: 1, OPTIONAL: 2, CONSEQUENTIAL: 3, ATTESTATION: 4 });
   const NEGATIVE = /(?:不同意|不接受|拒绝|拒絕|decline|disagree|do\s+not\s+agree|don['’]t\s+agree|captcha|recaptcha|hcaptcha|turnstile|人机|人機|机器人|機器人|营销|營銷|推广|推廣|促销|促銷|广告|廣告|newsletter|marketing|promotion|优惠|優惠|活动通知|活動通知|商业信息|商業信息|自动续费|自動續費|连续包月|連續包月|连续包年|連續包年|auto.?renew|subscription|记住我|記住我|保持登录|保持登入|自动登录|自動登入|remember\s+me|keep\s+me\s+signed\s+in|捐赠|捐贈|小费|小費|warranty|donation|通讯录|通訊錄|精准定位|精準定位|个性化广告|個性化廣告|第三方共享|share.{0,16}third.?part|cookie|cookies|优惠券|優惠券)/iu;
   const ATTESTATION = /(?:已满\s*18|已滿\s*18|年满\s*18|年滿\s*18|成年人|成年人士|over\s+18|18\s+years?\s+old|legal\s+age|本人确认|本人確認|i\s+certify|i\s+confirm\s+that|i\s+declare|实名认证|實名認證|information\s+(?:is|are)\s+(?:true|accurate)|信息真实|資料真實)/iu;
@@ -22,5 +22,5 @@
     if(/privacy|隐私|隱私|プライバシー|개인정보|конфиденц|الخصوصية|gizlilik|privasi|गोपनीयता|απορρήτου|פרטיות/i.test(local)) return {level:SEVERITY.PRIVACY,kind:'routine-privacy'};
     return {level:SEVERITY.ROUTINE,kind:'routine'};
   }
-  globalThis.__AUTO_AGREE_RISK__=Object.freeze({version:'7.0.0',SEVERITY,patterns:Object.freeze({NEGATIVE,ATTESTATION,CONSEQUENTIAL_LOCAL,TRANSACTION_ACTION,COMPACT_RISK,COMPACT_NEGATIVE,COMPACT_ATTESTATION}),containsNegative,containsAttestation,severityFor});
+  globalThis.__AUTO_AGREE_RISK__=Object.freeze({version:'8.0.0',SEVERITY,patterns:Object.freeze({NEGATIVE,ATTESTATION,CONSEQUENTIAL_LOCAL,TRANSACTION_ACTION,COMPACT_RISK,COMPACT_NEGATIVE,COMPACT_ATTESTATION}),containsNegative,containsAttestation,severityFor});
 })();

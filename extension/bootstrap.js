@@ -1,7 +1,7 @@
 (() => {
   'use strict';
   if (globalThis.__AUTO_AGREE_PROBE__) return;
-  globalThis.__AUTO_AGREE_PROBE__ = '7.0.0';
+  globalThis.__AUTO_AGREE_PROBE__ = '8.0.0';
 
   // This file is intentionally tiny and cheap: it only decides whether a frame deserves the
   // richer semantic gate. It never clicks, never interprets consent, and never scans unbounded DOM.
@@ -14,6 +14,8 @@
   const queued = new WeakSet();
   let observer = null;
   let gateRequested = false;
+  let handoffRetry = 0;
+  const HANDOFF_RETRY_DELAYS = [40, 160, 640];
   let drainScheduled = false;
   let eventsAttached = false;
   let lifecycleAttached = false;
@@ -153,6 +155,37 @@
     return joinNorm([el.getAttribute('aria-label'), el.getAttribute('title'), el.getAttribute('name'), el.getAttribute('placeholder'), el.getAttribute('autocomplete'), el.getAttribute('data-testid'), el.id], 520);
   }
 
+  function referencedSemantic(el) {
+    if (!(el instanceof Element)) return '';
+    const ids = joinNorm([el.getAttribute('aria-labelledby'), el.getAttribute('aria-describedby')], 300).split(/\s+/).filter(Boolean).slice(0, 6);
+    if (!ids.length) return '';
+    const root = el.getRootNode?.() || document;
+    const parts = [];
+    for (const id of ids) {
+      let ref = null;
+      try { ref = root.getElementById?.(id) || root.querySelector?.(`#${CSS.escape(id)}`); } catch (_) {}
+      if (ref instanceof Element) parts.push(directText(ref, 18, 240));
+    }
+    return joinNorm(parts, 420);
+  }
+
+  function textControlScope(el) {
+    if (!(el instanceof Element)) return null;
+    let p = el;
+    for (let depth = 0; depth < 3 && p instanceof Element; depth++, p = p.parentElement) {
+      try { if (p.querySelector?.(CONTROL)) return p; } catch (_) {}
+      if (p.matches?.('label[for]')) {
+        const id = p.getAttribute('for');
+        const root = p.getRootNode?.() || document;
+        let target = null;
+        try { target = root.getElementById?.(id) || root.querySelector?.(`#${CSS.escape(id)}`); } catch (_) {}
+        if (target instanceof Element && checkboxLike(target)) return p;
+      }
+      if (p.matches?.('form,dialog,[role="dialog"],[aria-modal="true"]')) break;
+    }
+    return null;
+  }
+
   function suspicious(el) {
     if (!(el instanceof Element)) return false;
     if (strongInput(el)) return true;
@@ -167,9 +200,8 @@
       if (TEXT.test(own)) return true;
     }
     if (checkboxLike(el)) {
-      const scope = localScope(el);
-      const text = directText(scope, 48, 620);
-      return TEXT.test(text);
+      const referenced = referencedSemantic(el);
+      return !!referenced && TEXT.test(referenced);
     }
     return false;
   }
@@ -191,7 +223,7 @@
   function requestGate(reason, seed) {
     if (gateRequested || paused) return;
     gateRequested = true;
-    globalThis.__AUTO_AGREE_PROBE_CONTEXT__ = { reason, seed };
+    globalThis.__AUTO_AGREE_PROBE_CONTEXT__ = { reason, seedRef: seed instanceof Element && typeof WeakRef === 'function' ? new WeakRef(seed) : null };
     observer?.disconnect();
     detachEvents();
     detachLifecycle();
@@ -200,12 +232,17 @@
     for (const job of deep) releaseDeep(job);
     deep.length = 0;
     chrome.runtime.sendMessage({ type: 'AUTO_AGREE_GATE', reason }, response => {
-      if (chrome.runtime.lastError || !response?.ok) {
-        gateRequested = false;
-        attachLifecycle();
-        if (document.visibilityState === 'hidden' || document.prerendering) paused = true;
-        else { paused = false; attachEvents(); startObserver(); }
-      }
+      if (!chrome.runtime.lastError && response?.ok) { handoffRetry = 0; return; }
+      gateRequested = false;
+      attachLifecycle();
+      if (document.visibilityState === 'hidden' || document.prerendering) paused = true;
+      else { paused = false; attachEvents(); startObserver(); }
+      const delay = HANDOFF_RETRY_DELAYS[handoffRetry++];
+      if (delay == null) return;
+      const retrySeed = seed instanceof Element && seed.isConnected ? seed : null;
+      setTimeout(() => {
+        if (!paused && !gateRequested) requestGate('worker-restart-retry', retrySeed);
+      }, delay);
     });
   }
 
@@ -220,8 +257,8 @@
         const data = n.data || '';
         if (data.length <= 900 && TEXT.test(data)) {
           const p = n.parentElement;
-          const scope = p && localScope(p);
-          if (scope?.querySelector?.(CONTROL)) { requestGate('legal-control-text', p); return true; }
+          const scope = p && textControlScope(p);
+          if (scope) { requestGate('legal-control-text', p); return true; }
         }
       } else if (n instanceof Element && suspicious(n)) { requestGate('element', n); return true; }
     }
@@ -266,8 +303,8 @@
           if (n.nodeType === Node.TEXT_NODE) {
             const data = n.data || '';
             if (data.length <= 900 && TEXT.test(data)) {
-              const p = n.parentElement, scope = p && localScope(p);
-              if (scope?.querySelector?.(CONTROL)) { requestGate('deep-legal-control', p); return; }
+              const p = n.parentElement, scope = p && textControlScope(p);
+              if (scope) { requestGate('deep-legal-control', p); return; }
             }
           } else if (n instanceof Element && suspicious(n)) { requestGate('deep-element', n); return; }
           n = next;

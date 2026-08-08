@@ -58,7 +58,7 @@ extension/              load-unpacked production extension
   risk-core.js          engine-only consent severity/risk semantics
   gate.js               semantic activation gate
   engine.js             decision, verification, Shadow DOM, learning
-  worker.js             injection scheduler + profile persistence
+  worker.js             fair injection scheduler + restart/update persistence
 
 tests/                  dependency-free contract/property tests
 tools/                  deterministic packaging utility
@@ -84,17 +84,19 @@ npm test
 python tools/package_extension.py
 ```
 
-v7 verification includes:
+v8 verification includes:
 
-- Node syntax and permission/static invariants;
+- dependency-free syntax, permission, semantic-property and Worker scheduler/restart contracts;
 - 10,020 semantic severity/property assertions;
-- worker injection and bounded concurrency contracts;
-- Chromium Engine positive/negative smoke: 9/9;
-- Chromium Probe → Gate → Engine integration: 6/6;
-- v6/v7 5,000-checkbox tail-login comparison;
+- real unpacked-extension Puppeteer E2E in Chrome;
+- forced MV3 service-worker termination/restart;
+- v7→v8 update/reload transition on an already-open test page;
+- real iframe and closed-Shadow regression fixtures;
+- native form-validity gating regression;
+- 5,000-checkbox E2E DevTools CPU profile capture;
 - deterministic ZIP integrity verification.
 
-Detailed evidence: [v7 verification report](docs/verification/v7.md).
+Detailed evidence: [v8 verification report](docs/verification/v8.md).
 
 ## Permissions
 

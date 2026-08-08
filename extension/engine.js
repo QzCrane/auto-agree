@@ -1,9 +1,9 @@
 (() => {
   'use strict';
   if (globalThis.__AUTO_AGREE_ENGINE__) return;
-  globalThis.__AUTO_AGREE_ENGINE__ = '7.0.0';
+  globalThis.__AUTO_AGREE_ENGINE__ = '8.0.0';
 
-  const VERSION = '7.0.0';
+  const VERSION = '8.0.0';
   const MAX_ROW_TEXT = 1400;
   const MAX_CONTEXT_TEXT = 2200;
   const MAX_PENDING_VISIBILITY = 192;
@@ -57,6 +57,7 @@
   const indexedRefs = new WeakMap();
   const relevantControls = new WeakSet();
   const fragmentRowsSeen = new WeakSet();
+  const parserDeferredAnchors = new WeakSet();
   const contextCache = new WeakMap();
   const contextEpoch = new WeakMap();
   const contextTxnRefs = new Set();
@@ -367,14 +368,19 @@
     const auth = AUTH.test(text);
     const transaction = TRANSACTION_ACTION.test(root ? rootText : text);
     let proceedDisabled = false;
-    let credentialIncomplete = false;
+    let credentialInvalid = false;
 
     if (root) {
       boundedElementWalk(root, 260, node => {
         if (node instanceof HTMLInputElement) {
           const hint = normalize(`${node.type || ''} ${node.name || ''} ${node.placeholder || ''} ${node.autocomplete || ''}`, 260);
           if (CREDENTIAL.test(hint) && !/^(checkbox|radio|submit|button|hidden)$/i.test(node.type || '')) {
-            if ((node.required || /password|tel|email|otp|code|验证码|驗證碼/i.test(hint)) && !String(node.value || '').trim()) credentialIncomplete = true;
+            const credentialCritical = node.required || /password|tel|email|otp|code|验证码|驗證碼/i.test(hint);
+            if (credentialCritical) {
+              const empty = !String(node.value || '').trim();
+              const nativeInvalid = !!(node.willValidate && node.validity && !node.validity.valid);
+              if (empty || nativeInvalid) credentialInvalid = true;
+            }
           }
         }
         if (node.matches?.('button,input[type="submit"],[role="button"]')) {
@@ -384,8 +390,8 @@
       });
     }
 
-    const gatingScore = proceedDisabled && !credentialIncomplete ? 2 : 0;
-    const value = { root, text, auth, transaction, proceedDisabled, credentialIncomplete, gatingScore };
+    const gatingScore = proceedDisabled && !credentialInvalid ? 2 : 0;
+    const value = { root, text, auth, transaction, proceedDisabled, credentialInvalid, gatingScore };
     contextCache.set(key, { epoch, value });
     return value;
   }
@@ -721,14 +727,19 @@
     return true;
   }
 
-  function profileMessage(type, profile = null) {
+  function profileMessage(type, profile = null, attempt = 0) {
     return new Promise(resolve => {
       try {
         chrome.runtime.sendMessage({ type, origin: location.origin, profile }, response => {
-          if (chrome.runtime.lastError) return resolve(null);
-          resolve(response?.ok ? (response.profile ?? true) : null);
+          const failed = !!chrome.runtime.lastError || !response?.ok;
+          if (!failed) return resolve(response.profile ?? true);
+          if (attempt >= 2 || lifecyclePaused) return resolve(null);
+          setTimeout(() => resolve(profileMessage(type, profile, attempt + 1)), 60 * (2 ** attempt));
         });
-      } catch (_) { resolve(null); }
+      } catch (_) {
+        if (attempt >= 2 || lifecyclePaused) return resolve(null);
+        setTimeout(() => resolve(profileMessage(type, profile, attempt + 1)), 60 * (2 ** attempt));
+      }
     });
   }
 
@@ -932,7 +943,7 @@
       const text = accessibleText(p, MAX_ROW_TEXT);
       if (!fastSemantic(text)) { depth++; continue; }
       const a = assessText(text);
-      const risk = CONSEQUENTIAL_LOCAL.test(text);
+      const risk = severityFor(text).level >= SEVERITY.CONSEQUENTIAL;
       const rank = a.score - depth * 0.4;
       if (!risk && (!best || rank > best.rank)) best = { row: p, text, assessment: a, rank };
       if (!risk && a.eligible) return { row: p, text, assessment: a };
@@ -949,7 +960,7 @@
       if (p.matches?.('form,dialog,[role="dialog"],[aria-modal="true"],body,html')) break;
       const text = accessibleText(p, MAX_ROW_TEXT);
       const assessment = assessText(text);
-      if (assessment.blocked || CONSEQUENTIAL_LOCAL.test(text)) break;
+      if (assessment.blocked || severityFor(text).level >= SEVERITY.CONSEQUENTIAL) break;
       if (assessment.legal || assessment.assent || assessment.required || assessment.validation) best = p;
       if (knownControlIn(p)) return p;
     }
@@ -1015,7 +1026,7 @@
     const info = findAgreementRow(anchor);
     if (!info?.row) return;
     const context = contextSnapshot(info.row);
-    if (consequentialRisk(info.text, context) || containsNegative(info.text) || containsAttestation(info.text)) return;
+    if (severityFor(info.text, context.text, context.transaction).level >= SEVERITY.CONSEQUENTIAL || containsNegative(info.text) || containsAttestation(info.text)) return;
     if (info.assessment.legal || context.auth) {
       broadShadowEnabled = broadShadowEnabled || context.auth;
       if (broadShadowEnabled) queueShadowSweep(info.row);
@@ -1040,6 +1051,23 @@
     if (!enough || !cheapActive(activeRow) || !vs.visible) { if (enough) pend(activeRow, vs.blocker || activeRow); return; }
     const visual = preciseGeometryTarget(activeRow, anchor);
     if (!visual) return;
+
+    // A classless control has no observable checked contract, so it is intentionally one-shot.
+    // During HTML parsing, however, the page's own trailing scripts may not have attached the
+    // click handler yet. Do not spend the one allowed click before DOMContentLoaded; defer the
+    // decision (not the click result) and re-evaluate once the parser has finished.
+    if (document.readyState === 'loading') {
+      if (!parserDeferredAnchors.has(anchor)) {
+        parserDeferredAnchors.add(anchor);
+        const ref = typeof WeakRef === 'function' ? new WeakRef(anchor) : null;
+        addEventListener('DOMContentLoaded', () => {
+          const current = ref?.deref?.();
+          if (current instanceof Element) parserDeferredAnchors.delete(current);
+          if (!lifecyclePaused && current instanceof Element && current.isConnected) processAgreementAnchor(current, true);
+        }, { once: true });
+      }
+      return;
+    }
 
     // Treat classless visual controls as one-shot unknown-state controls; never click the whole agreement row.
     const pseudo = {
@@ -1729,7 +1757,9 @@
   }
 
   function bootstrapSeedElement() {
-    const seed = globalThis.__AUTO_AGREE_BOOTSTRAP_CONTEXT__?.seed;
+    const handoff = globalThis.__AUTO_AGREE_BOOTSTRAP_CONTEXT__;
+    const seed = handoff?.seedRef?.deref?.() || handoff?.seed || null;
+    try { delete globalThis.__AUTO_AGREE_BOOTSTRAP_CONTEXT__; } catch (_) { globalThis.__AUTO_AGREE_BOOTSTRAP_CONTEXT__ = null; }
     const el = seed instanceof Element ? seed : seed?.parentElement;
     return el instanceof Element && el.isConnected ? el : null;
   }

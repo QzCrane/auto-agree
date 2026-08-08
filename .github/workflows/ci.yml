@@ -13,13 +13,55 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  verify:
+  core:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
       - uses: actions/setup-node@v7
         with:
           node-version: '24'
       - run: npm test
       - run: python tools/package_extension.py --check
+
+  unpacked-e2e:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '24'
+      - name: Install pinned Puppeteer test tool
+        run: npm install --no-save --no-package-lock --ignore-scripts puppeteer@25.1.0
+      - name: Install Chrome for Testing explicitly
+        run: npx puppeteer browsers install chrome
+      - name: Inspect managed Chrome for Testing
+        run: |
+          CHROME="$(node --input-type=module -e "import puppeteer from 'puppeteer'; process.stdout.write(await puppeteer.executablePath())")"
+          echo "$CHROME"
+          "$CHROME" --version
+      - name: Ensure virtual display
+        run: |
+          if ! command -v xvfb-run >/dev/null 2>&1; then
+            sudo apt-get update
+            sudo apt-get install -y xvfb
+          fi
+          xvfb-run --help >/dev/null
+      - name: Run real headed unpacked-extension behavior E2E and profile
+        env:
+          AUTO_AGREE_HEADED: '1'
+        run: xvfb-run -a node tests/e2e-extension.mjs --profile
+      - name: Run real unpacked v7-to-v8 update transition
+        env:
+          AUTO_AGREE_PREVIOUS_REF: ${{ github.event.pull_request.base.sha || github.event.before }}
+          AUTO_AGREE_HEADED: '1'
+        run: xvfb-run -a node tests/e2e-update.mjs
+      - name: Print E2E profile evidence
+        if: always()
+        run: |
+          if test -f artifacts/e2e-profile.json; then cat artifacts/e2e-profile.json; fi

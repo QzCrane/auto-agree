@@ -1,0 +1,9 @@
+<!doctype html><meta charset="utf-8"><title>Closed Shadow Login</title>
+<x-login id="host"></x-login>
+<script>
+customElements.define('x-login',class extends HTMLElement{
+  constructor(){super();const r=this.attachShadow({mode:'closed'});r.innerHTML='<style>label{display:flex;gap:8px}</style><form><input id="phone" type="tel" value="13800138000"><label><input id="agree" type="checkbox" required>I agree to the Terms of Service and Privacy Policy</label><button>Login</button></form>';this._root=r;}
+  focusInside(){this._root.querySelector('#phone').focus();}
+  isChecked(){return this._root.querySelector('#agree').checked;}
+});
+</script>

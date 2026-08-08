@@ -7,7 +7,9 @@ Load it from `chrome://extensions` → Developer mode → Load unpacked.
 Runtime order:
 
 1. `bootstrap.js` is declared by the manifest in all matching frames.
-2. `worker.js` injects `semantic-core.js` + `gate.js` after probe evidence.
-3. If Gate accepts, Worker injects `risk-core.js` + `engine.js`.
+2. `worker.js` rejects explicitly inactive document lifecycles and schedules `semantic-core.js` + `gate.js` after probe evidence.
+3. If Gate accepts, Worker schedules `risk-core.js` + `engine.js` with bounded global/per-tab concurrency, queue aging, stale eviction and Engine admission priority.
+4. Probe/Gate handoff is retryable across unexpected Worker termination; profile messages are idempotently retried.
+5. On extension update/reload, Worker uses a persisted session marker and bounded `tabs.query()` + `scripting.executeScript()` bootstrap rehydration for already-open tabs. No `tabs` permission is requested because `<all_urls>` host access already covers the required tab interaction.
 
 Do not add historical implementations to this directory. Historical evidence belongs in `docs/verification/`; obsolete source remains available through Git history.

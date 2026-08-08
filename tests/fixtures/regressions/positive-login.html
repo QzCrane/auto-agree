@@ -1,0 +1,12 @@
+<!doctype html><meta charset="utf-8"><title>Routine Login Terms</title>
+<form id="login">
+  <input id="email" type="email" required value="user@example.com" autocomplete="email">
+  <input id="password" type="password" required value="not-a-real-secret" autocomplete="current-password">
+  <label><input id="agree" type="checkbox" required> I have read and agree to the Terms of Service and Privacy Policy.</label>
+  <button id="continue" type="button" disabled>Login</button>
+</form>
+<script>
+const agree=document.querySelector('#agree'), button=document.querySelector('#continue');
+const sync=()=>button.disabled=!agree.checked;
+agree.addEventListener('change',sync); sync();
+</script>

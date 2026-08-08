@@ -1,10 +1,10 @@
 (() => {
   'use strict';
   if (globalThis.__AUTO_AGREE_GATE__) return;
-  globalThis.__AUTO_AGREE_GATE__ = '7.0.0';
+  globalThis.__AUTO_AGREE_GATE__ = '8.0.0';
 
 
-  const VERSION = '7.0.0';
+  const VERSION = '8.0.0';
   const CORE = globalThis.__AUTO_AGREE_SEMANTIC__;
   if (!CORE || CORE.version !== VERSION) return;
   const { normalize: norm, joinNormalized: joinNorm, compactSemantic, hasNonLatin } = CORE;
@@ -28,6 +28,8 @@
   const JOB_TTL_MS = 2400;
 
   let requested = false;
+  let handoffRetry = 0;
+  const HANDOFF_RETRY_DELAYS = [40, 160, 640];
   let observer = null;
   let backgroundRunning = false;
   let backgroundEpoch = 0;
@@ -223,19 +225,24 @@
   function activate(reason, seed = null) {
     if (requested || paused) return;
     requested = true;
-    globalThis.__AUTO_AGREE_BOOTSTRAP_CONTEXT__ = { reason, seed };
+    globalThis.__AUTO_AGREE_BOOTSTRAP_CONTEXT__ = { reason, seedRef: seed instanceof Element && typeof WeakRef === 'function' ? new WeakRef(seed) : null };
     observer?.disconnect();
     detachEvents();
     detachLifecycle();
     batchJobs.length = 0;
     deepJobs.length = 0;
     chrome.runtime.sendMessage({ type: 'AUTO_AGREE_ACTIVATE', reason }, response => {
-      if (chrome.runtime.lastError || !response?.ok) {
-        requested = false;
-        attachLifecycle();
-        if (document.visibilityState === 'hidden' || document.prerendering) paused = true;
-        else { paused = false; attachEvents(); startObserver(); }
-      }
+      if (!chrome.runtime.lastError && response?.ok) { handoffRetry = 0; return; }
+      requested = false;
+      attachLifecycle();
+      if (document.visibilityState === 'hidden' || document.prerendering) paused = true;
+      else { paused = false; attachEvents(); startObserver(); }
+      const delay = HANDOFF_RETRY_DELAYS[handoffRetry++];
+      if (delay == null) return;
+      const retrySeed = seed instanceof Element && seed.isConnected ? seed : null;
+      setTimeout(() => {
+        if (!paused && !requested) activate('worker-restart-retry', retrySeed);
+      }, delay);
     });
   }
 
@@ -409,8 +416,21 @@
         }
         for (let i = 0; i < nodes.length; i++) {
           if (performance.now() - start >= SYNC_MUTATION_BUDGET_MS) { queueBatch(nodes, i, record.target); break; }
-          const hit = inspectNode(nodes[i], true, Math.min(0.35, Math.max(0.12, SYNC_MUTATION_BUDGET_MS - (performance.now() - start))));
-          if (hit) return activate(`mutation-${hit.reason || 'evidence'}`, hit.seed || nodes[i]);
+          const node = nodes[i];
+const remaining = Math.min(0.35, Math.max(0.12, SYNC_MUTATION_BUDGET_MS - (performance.now() - start)));
+const result = scanEvidence(node, 64, remaining, true);
+if (result.hit) return activate(`mutation-${result.reason || 'evidence'}`, result.seed || node);
+if (result.truncated) queueDeep(node, true);
+
+// Reuse the bounded scan we already paid for. A classless legal row keeps LEGAL/ASSENT
+// in descendant text rather than the row's own attributes; discarding result.flags made
+// such sibling evidence invisible to the local-scope transaction.
+const el = node instanceof Element ? node : node?.parentElement;
+if (!(el instanceof Element)) continue;
+const nf = result.flags | (node.nodeType === Node.TEXT_NODE ? textFlags(node.data || '') : elementFlags(el));
+if (!(nf & (F.AUTH | F.CREDENTIAL | F.LEGAL | F.ASSENT | F.REQUIRED))) continue;
+const scope = localScope(el);
+if (scope instanceof Element && scope !== el) queueDeep(scope, true);
         }
       } else if (record.type === 'characterData') {
         const nf = textFlags(record.target?.data || '');
@@ -509,7 +529,9 @@
     } catch (_) {}
 
     if (document.documentElement) {
-      const probeSeed = globalThis.__AUTO_AGREE_PROBE_CONTEXT__?.seed;
+      const probeContext = globalThis.__AUTO_AGREE_PROBE_CONTEXT__;
+      const probeSeed = probeContext?.seedRef?.deref?.() || probeContext?.seed || null;
+      try { delete globalThis.__AUTO_AGREE_PROBE_CONTEXT__; } catch (_) { globalThis.__AUTO_AGREE_PROBE_CONTEXT__ = null; }
       const seedEl = probeSeed instanceof Element ? probeSeed : probeSeed?.parentElement;
       if (seedEl instanceof Element && seedEl.isConnected) {
         let seedShadow = seedEl.shadowRoot;

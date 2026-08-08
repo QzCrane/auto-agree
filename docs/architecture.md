@@ -93,10 +93,31 @@ The service worker bounds concurrent dynamic injection:
 
 - maximum 4 injections globally;
 - maximum 2 per tab;
-- Engine jobs have priority over Gate jobs;
-- queue length has a hard cap.
+- queue length has a hard cap of 64;
+- Engine starts with higher base priority than Gate;
+- waiting jobs gain bounded age priority so Gate work cannot starve forever behind newly arriving Engine work;
+- equal-score work rotates away from the most recently scheduled tab when another eligible tab exists;
+- stale queued jobs are rejected before consuming an execution slot;
+- a new Engine request can evict a younger lower-priority Gate request when the queue is otherwise full.
 
-This prevents iframe-heavy pages from turning evidence bursts into an unbounded injection storm.
+The queue is transient by design. If the MV3 worker is unexpectedly terminated, the content-side Probe/Gate retry path safely recreates the request rather than treating worker memory as durable authority.
+
+## Worker lifecycle and document lifecycle
+
+`MessageSender.documentLifecycle` is a second-line injection gate. Explicit `prerender`, `cached`, or `pending_deletion` senders are rejected in the Worker even if a stale content-side callback somehow sends a message. Unknown/absent lifecycle is tolerated only for API compatibility; Chrome 120+ content-script senders normally provide the state.
+
+Important worker state is split deliberately:
+
+- durable: site learning and update-rehydration marker → `chrome.storage`;
+- transient/replayable: in-flight injection maps, queues, LRU cache → worker globals.
+
+Probe/Gate handoff messages and profile writes are idempotently replayable after unexpected worker loss.
+
+## Extension update rehydration
+
+When an extension update/reload replaces the Worker, already-open pages are not assumed to have received a fresh static content script. v8 records a short-lived session rehydration marker, queries existing tabs, and schedules `bootstrap.js` into all accessible frames in small batches. A worker restart during this sweep sees the marker and resumes it.
+
+The bootstrap sentinel still prevents duplicate same-generation initialization, while old-generation page scripts remain safe because dynamic Gate/Engine injection is itself idempotent.
 
 ## Lifecycle and ownership
 
