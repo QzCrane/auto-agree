@@ -1,242 +1,147 @@
-'use strict';
-
-const engineInflight = new Map();
-const gateInflight = new Map();
-const profileCache = new Map();
+const VERSION = '10.0.0';
 const PROFILE_PREFIX = 'site:';
-const PROFILE_INDEX_KEY = '__auto_agree_profile_index__';
-const LEGACY_PROFILE_INDEX_KEYS = ['__auto_agree_profile_index_v5__', '__auto_agree_profile_index_v4__', '__auto_agree_profile_index_v3__'];
-const PROFILE_CACHE_MAX = 32;
-const PROFILE_ORIGIN_MAX = 256;
-const PROFILE_FLOW_MAX = 8;
-const PROFILE_TTL_MS = 180 * 24 * 60 * 60 * 1000;
+const PROFILE_MAX = 128;
+const PROFILE_TTL_MS = 21 * 24 * 60 * 60 * 1000;
 const INJECTION_MAX_GLOBAL = 4;
 const INJECTION_MAX_PER_TAB = 2;
 const INJECTION_QUEUE_MAX = 64;
-const INJECTION_AGING_MS = 1200;
-const INJECTION_STALE_MS = 15000;
+const INJECTION_AGING_MS = 1800;
+const INJECTION_STALE_MS = 12_000;
 const REHYDRATE_KEY = '__auto_agree_update_rehydrate__';
+const gateInflight = new Map();
+const engineInflight = new Map();
+const profileCache = new Map();
 const injectionQueue = [];
 const injectionActiveByTab = new Map();
 let injectionActive = 0;
 let injectionSeq = 0;
-let lastScheduledTab = -1;
-const VERSION = '10.0.0';
+let lastScheduledTab = null;
 let storageWriteChain = Promise.resolve();
 let rehydratePromise = null;
 
-function cacheProfile(key, value) {
-  if (profileCache.has(key)) profileCache.delete(key);
-  profileCache.set(key, value);
-  while (profileCache.size > PROFILE_CACHE_MAX) profileCache.delete(profileCache.keys().next().value);
-  return value;
-}
-
-function cachedProfile(key) {
-  if (!profileCache.has(key)) return undefined;
-  const value = profileCache.get(key);
-  cacheProfile(key, value);
-  return value;
-}
-
 function targetFor(sender) {
-  const tabId = sender.tab?.id;
+  const tabId = sender?.tab?.id;
   if (!Number.isInteger(tabId)) return null;
-  if (sender.documentId) return { tabId, documentIds: [sender.documentId] };
-  if (Number.isInteger(sender.frameId)) return { tabId, frameIds: [sender.frameId] };
-  return { tabId };
+  const target = { tabId };
+  if (sender.documentId) target.documentIds = [sender.documentId];
+  else if (Number.isInteger(sender.frameId)) target.frameIds = [sender.frameId];
+  return target;
+}
+
+function cleanOrigin(raw) {
+  try {
+    const u = new URL(raw);
+    return `${u.protocol}//${u.host}`;
+  } catch (_) { return ''; }
+}
+
+function profileKey(origin) {
+  const clean = cleanOrigin(origin);
+  return clean ? PROFILE_PREFIX + clean : '';
 }
 
 function sanitizeLocator(locator) {
   if (!locator || typeof locator !== 'object') return null;
-  const selector = typeof locator.selector === 'string' ? locator.selector.trim() : '';
-  if (!selector || selector.length > 420 || /[\u0000-\u001f]/.test(selector)) return null;
-  if (!Array.isArray(locator.hosts) || locator.hosts.length > 8) return null;
-  const hosts = [];
-  for (const raw of locator.hosts) {
-    if (typeof raw !== 'string') return null;
-    const value = raw.trim();
-    if (!value || value.length > 360 || /[\u0000-\u001f]/.test(value)) return null;
-    hosts.push(value);
-  }
+  const hosts = Array.isArray(locator.hosts) ? locator.hosts.filter(x => typeof x === 'string' && x.length < 160).slice(0, 8) : [];
+  const selector = typeof locator.selector === 'string' && locator.selector.length < 360 ? locator.selector : '';
+  if (!selector) return null;
   return { hosts, selector };
 }
 
-function locatorKey(locator) {
-  try { return JSON.stringify(locator || null); } catch (_) { return ''; }
-}
-
-function sanitizeDescriptor(descriptor) {
-  if (!descriptor || typeof descriptor !== 'object') return null;
-  const kind = ['native','aria','data','class','custom','unknown'].includes(descriptor.kind) ? descriptor.kind : 'unknown';
-  const severity = Math.max(0, Math.min(4, Number(descriptor.severity || 0)));
+function sanitizeDescriptor(value) {
+  if (!value || typeof value !== 'object') return null;
+  const kind = typeof value.kind === 'string' ? value.kind.slice(0, 24) : '';
+  const severity = Number.isInteger(value.severity) ? Math.max(0, Math.min(4, value.severity)) : 0;
+  const linkBucket = Number.isInteger(value.linkBucket) ? Math.max(0, Math.min(4, value.linkBucket)) : 0;
   return {
     kind,
     severity,
-    legal: !!descriptor.legal,
-    assent: !!descriptor.assent,
-    required: !!descriptor.required,
-    auth: !!descriptor.auth,
-    linkBucket: Math.max(0, Math.min(2, Number(descriptor.linkBucket || 0)))
+    legal: !!value.legal,
+    assent: !!value.assent,
+    required: !!value.required,
+    auth: !!value.auth,
+    linkBucket
   };
 }
 
-function sanitizeProfile(profile) {
-  if (!profile || typeof profile !== 'object') return null;
-  const now = Date.now();
-  const input = Array.isArray(profile.flows) ? profile.flows : [];
-  const map = new Map();
-  for (const flow of input) {
-    if (!flow?.locator || !flow?.fingerprint) continue;
-    const locator = sanitizeLocator(flow.locator);
-    if (!locator) continue;
-    const ts = Number(flow.ts || 0);
-    if (!Number.isFinite(ts) || now - ts > PROFILE_TTL_MS) continue;
-    const fingerprint = String(flow.fingerprint).slice(0, 520);
-    const key = `${fingerprint}|${locatorKey(locator)}`;
-    const prev = map.get(key);
-    const clean = {
-      fingerprint,
-      locator,
-      descriptor: sanitizeDescriptor(flow.descriptor),
-      successes: Math.max(0, Math.min(100000, Number(flow.successes || 0))),
-      failures: Math.max(0, Math.min(1000, Number(flow.failures || 0))),
-      ts
-    };
-    if (!prev || clean.ts > prev.ts) map.set(key, clean);
-  }
-  const flows = [...map.values()].sort((a,b) => b.ts - a.ts).slice(0, PROFILE_FLOW_MAX);
-  return flows.length ? { version: VERSION, flows } : null;
+function sanitizeFlow(flow) {
+  if (!flow || typeof flow !== 'object') return null;
+  const fingerprint = typeof flow.fingerprint === 'string' ? flow.fingerprint.slice(0, 220) : '';
+  const locator = sanitizeLocator(flow.locator);
+  const descriptor = sanitizeDescriptor(flow.descriptor);
+  if (!fingerprint || !locator || !descriptor) return null;
+  return {
+    fingerprint,
+    locator,
+    descriptor,
+    successes: Math.max(0, Math.min(10000, Number(flow.successes) || 0)),
+    failures: Math.max(0, Math.min(10000, Number(flow.failures) || 0)),
+    ts: Number(flow.ts) || Date.now()
+  };
 }
 
-function mergeProfiles(current, incoming) {
-  const all = [...(current?.flows || []), ...(incoming?.flows || [])];
-  const map = new Map();
-  for (const flow of all) {
-    const locator = sanitizeLocator(flow?.locator);
-    if (!locator || !flow?.fingerprint) continue;
-    const fingerprint = String(flow.fingerprint).slice(0, 520);
-    const key = `${fingerprint}|${locatorKey(locator)}`;
-    const next = {
-      fingerprint,
-      locator,
-      descriptor: sanitizeDescriptor(flow.descriptor),
-      successes: Math.max(0, Math.min(100000, Number(flow.successes || 0))),
-      failures: Math.max(0, Math.min(1000, Number(flow.failures || 0))),
-      ts: Number(flow.ts || 0)
-    };
-    const prev = map.get(key);
-    if (!prev || next.ts > prev.ts) map.set(key, next);
-    else if (next.ts === prev.ts) {
-      prev.successes = Math.max(prev.successes, next.successes);
-      prev.failures = Math.max(prev.failures, next.failures);
-    } else {
-      prev.successes = Math.max(prev.successes, next.successes);
-    }
-  }
-  return sanitizeProfile({ version: VERSION, flows: [...map.values()] });
+function sanitizeProfile(value) {
+  if (!value || typeof value !== 'object') return { version: VERSION, flows: [] };
+  const flows = Array.isArray(value.flows) ? value.flows.map(sanitizeFlow).filter(Boolean).slice(0, 32) : [];
+  return { version: VERSION, flows };
+}
+
+function cacheProfile(key, profile) {
+  if (!key) return;
+  profileCache.delete(key);
+  profileCache.set(key, profile);
+  while (profileCache.size > PROFILE_MAX) profileCache.delete(profileCache.keys().next().value);
 }
 
 async function getProfile(origin) {
-  if (!origin || origin === 'null') return null;
-  const key = `${PROFILE_PREFIX}${origin}`;
-  const hot = cachedProfile(key);
-  if (hot !== undefined) return hot;
-  try {
-    const session = await chrome.storage.session?.get(key);
-    const value = sanitizeProfile(session?.[key]);
-    if (value) return cacheProfile(key, value);
-  } catch (_) {}
-  try {
-    const local = await chrome.storage.local.get(key);
-    const value = sanitizeProfile(local?.[key]);
-    cacheProfile(key, value);
-    if (value) {
-      try { await chrome.storage.session?.set({ [key]: value }); } catch (_) {}
-    }
-    return value;
-  } catch (_) { return null; }
-}
-
-async function updateProfileIndex(origin) {
-  let index = {};
-  try {
-    const keys = [PROFILE_INDEX_KEY, ...LEGACY_PROFILE_INDEX_KEYS];
-    const stored = await chrome.storage.local.get(keys);
-    for (const key of keys) Object.assign(index, stored?.[key] || {});
-    if (LEGACY_PROFILE_INDEX_KEYS.some(key => stored?.[key])) {
-      try { await chrome.storage.local.remove(LEGACY_PROFILE_INDEX_KEYS); } catch (_) {}
-    }
-  } catch (_) {}
-  const now = Date.now();
-  index[origin] = now;
-  const entries = Object.entries(index).filter(([,ts]) => Number.isFinite(Number(ts))).sort((a,b) => Number(b[1]) - Number(a[1]));
-  const keep = entries.slice(0, PROFILE_ORIGIN_MAX);
-  const drop = entries.slice(PROFILE_ORIGIN_MAX);
-  const next = Object.fromEntries(keep);
-  await chrome.storage.local.set({ [PROFILE_INDEX_KEY]: next });
-  if (drop.length) {
-    const keys = drop.map(([oldOrigin]) => `${PROFILE_PREFIX}${oldOrigin}`);
-    try { await chrome.storage.local.remove(keys); } catch (_) {}
-    try { await chrome.storage.session?.remove(keys); } catch (_) {}
-    for (const key of keys) profileCache.delete(key);
+  const key = profileKey(origin);
+  if (!key) return { version: VERSION, flows: [] };
+  const cached = profileCache.get(key);
+  if (cached) {
+    cacheProfile(key, cached);
+    return cached;
   }
-}
-
-async function removeProfileIndexOrigin(origin) {
+  let stored = null;
   try {
-    const stored = await chrome.storage.local.get(PROFILE_INDEX_KEY);
-    const index = stored?.[PROFILE_INDEX_KEY] || {};
-    if (Object.prototype.hasOwnProperty.call(index, origin)) {
-      delete index[origin];
-      await chrome.storage.local.set({ [PROFILE_INDEX_KEY]: index });
-    }
+    const result = await chrome.storage.local.get(key);
+    stored = result?.[key];
   } catch (_) {}
+  const profile = sanitizeProfile(stored);
+  const cutoff = Date.now() - PROFILE_TTL_MS;
+  profile.flows = profile.flows.filter(flow => flow.ts >= cutoff);
+  cacheProfile(key, profile);
+  return profile;
 }
 
-function invalidateProfileFlow(origin, payload) {
-  if (!origin || origin === 'null' || !payload?.fingerprint || !payload?.locator) return Promise.resolve(false);
-  const locator = sanitizeLocator(payload.locator);
-  if (!locator) return Promise.resolve(false);
-  const fingerprint = String(payload.fingerprint).slice(0, 520);
-  const targetKey = `${fingerprint}|${locatorKey(locator)}`;
-  const task = async () => {
-    const key = `${PROFILE_PREFIX}${origin}`;
+function putProfile(origin, incoming) {
+  const key = profileKey(origin);
+  if (!key) return Promise.resolve();
+  const next = sanitizeProfile(incoming);
+  storageWriteChain = storageWriteChain.then(async () => {
     const current = await getProfile(origin);
-    if (!current?.flows?.length) return false;
-    const flows = current.flows.filter(flow => `${flow.fingerprint}|${locatorKey(flow.locator)}` !== targetKey);
-    const next = sanitizeProfile({ version: VERSION, flows });
-    if (!next) {
-      cacheProfile(key, null);
-      try { await chrome.storage.session?.remove(key); } catch (_) {}
-      try { await chrome.storage.local.remove(key); } catch (_) {}
-      await removeProfileIndexOrigin(origin);
-      return true;
+    const byId = new Map(current.flows.map(flow => [flow.fingerprint, flow]));
+    for (const flow of next.flows) {
+      const prior = byId.get(flow.fingerprint);
+      if (!prior || flow.ts >= prior.ts) byId.set(flow.fingerprint, flow);
     }
-    cacheProfile(key, next);
-    try { await chrome.storage.session?.set({ [key]: next }); } catch (_) {}
-    await chrome.storage.local.set({ [key]: next });
-    await updateProfileIndex(origin);
-    return true;
-  };
-  storageWriteChain = storageWriteChain.then(task, task);
+    const merged = { version: VERSION, flows: [...byId.values()].sort((a, b) => b.ts - a.ts).slice(0, 32) };
+    cacheProfile(key, merged);
+    await chrome.storage.local.set({ [key]: merged });
+  }).catch(() => {});
   return storageWriteChain;
 }
 
-function putProfile(origin, profile) {
-  if (!origin || origin === 'null' || !profile) return Promise.resolve(false);
-  const task = async () => {
-    const key = `${PROFILE_PREFIX}${origin}`;
+function invalidateProfileFlow(origin, incoming) {
+  const key = profileKey(origin);
+  if (!key) return Promise.resolve();
+  const target = sanitizeFlow(incoming);
+  storageWriteChain = storageWriteChain.then(async () => {
     const current = await getProfile(origin);
-    const merged = mergeProfiles(current, sanitizeProfile(profile));
-    if (!merged) return false;
-    cacheProfile(key, merged);
-    try { await chrome.storage.session?.set({ [key]: merged }); } catch (_) {}
-    await chrome.storage.local.set({ [key]: merged });
-    await updateProfileIndex(origin);
-    return true;
-  };
-  storageWriteChain = storageWriteChain.then(task, task);
+    if (!target) return;
+    current.flows = current.flows.filter(flow => flow.fingerprint !== target.fingerprint);
+    cacheProfile(key, current);
+    await chrome.storage.local.set({ [key]: current });
+  }).catch(() => {});
   return storageWriteChain;
 }
 
@@ -343,6 +248,15 @@ function profileOriginForSender(sender) {
   return null;
 }
 
+async function protectAndRehydrateTab(tabId) {
+  const target = { tabId, allFrames: true };
+  // Phase 1 is the authority boundary. semantic-core.js is deliberately first so the guard consumes
+  // the exact same multilingual semantics as Gate/Engine. Bootstrap never runs if protection fails.
+  await scheduleInjection(target, ['semantic-core.js', 'handover-guard.js'], 4);
+  // Phase 2 is replayable recovery. A retry may harmlessly repeat the idempotent protection phase.
+  await scheduleInjection(target, ['bootstrap.js'], 3);
+}
+
 async function rehydrateExistingTabs() {
   if (!chrome.tabs?.query) return;
   let tabs = [];
@@ -352,9 +266,7 @@ async function rehydrateExistingTabs() {
     const retry = [];
     for (let i = 0; i < pending.length; i += 12) {
       const ids = pending.slice(i, i + 12);
-      const results = await Promise.allSettled(ids.map(tabId =>
-        scheduleInjection({ tabId, allFrames: true }, ['handover-guard.js', 'bootstrap.js'], 3)
-      ));
+      const results = await Promise.allSettled(ids.map(tabId => protectAndRehydrateTab(tabId)));
       for (let j = 0; j < results.length; j++) if (results[j].status === 'rejected') retry.push(ids[j]);
     }
     pending = retry;
