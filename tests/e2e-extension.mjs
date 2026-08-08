@@ -109,7 +109,7 @@ async function basicMatrix(base,browser){
       const box=document.querySelector('#box'); const row=document.querySelector('#row');
       const r=box?.getBoundingClientRect();
       const stack=r?document.elementsFromPoint((r.left+r.right)/2,(r.top+r.bottom)/2).map(el=>({tag:el.tagName,id:el.id,class:el.className})).slice(0,8):[];
-      return {readyState:document.readyState,checked:box?.dataset.checked,clicks:box?.dataset.clicks,boxRect:r?{left:r.left,top:r.top,right:r.right,bottom:r.bottom,width:r.width,height:r.height}:null,rowText:row?.innerText,stack};
+      return {readyState:document.readyState,checked:box?.dataset.checked,clicks:box?.dataset.clicks,rowClicks:row?.dataset.clicks,rowLastTarget:row?.dataset.lastTarget,boxRect:r?{left:r.left,top:r.top,right:r.right,bottom:r.bottom,width:r.width,height:r.height}:null,rowText:row?.innerText,stack};
     });
     const manual=await page.$eval('#box',el=>{el.click();return {checked:el.dataset.checked,clicks:el.dataset.clicks};});
     console.error('classless-diagnostic:',JSON.stringify({diag,manual}));
