@@ -1,0 +1,1 @@
+Not release evidence. The branch is research-only until RootBatch overflow is fixed as ordinary source and the permanent real-Chrome structural fuzz gate passes from a clean exact head.
