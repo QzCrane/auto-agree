@@ -3,9 +3,6 @@
   const VERSION = '10.0.0';
   if (globalThis.__AUTO_AGREE_HANDOVER_GUARD__?.version === VERSION) return;
 
-  // This guard exists only on pages that survive an extension update. Old isolated worlds can
-  // remain observable and executable after the new extension generation is installed. Current
-  // Engine clicks receive a synchronous one-shot authorization; stale generations do not.
   const authorized = new WeakSet();
   const causalLocal = new WeakSet();
   const localLeaseByEvent = new WeakMap();
@@ -16,7 +13,7 @@
   const CUSTOM = new Set(['sl-checkbox','ion-checkbox','md-checkbox','mat-checkbox','fluent-checkbox','vaadin-checkbox','ui5-checkbox','calcite-checkbox','lightning-input']);
   const WIDE_CONTAINER = /^(?:html|body|form|dialog|main|section|article)$/i;
   const MAX_LOCAL_WRAPPER_DEPTH = 2;
-  const MAX_LOCAL_WRAPPER_NODES = 24;
+  const MAX_LOCAL_WRAPPER_NODES = 64;
   const MAX_LOCAL_CONTROL_DEPTH = 3;
 
   function composedParent(el) {
@@ -79,18 +76,33 @@
     return root instanceof ShadowRoot ? boundedText(root, 40, 640) : '';
   }
 
-  function candidateNodes(event) {
+  function eventElements(event, limit = 10) {
     const out = [];
     const seen = new WeakSet();
     const add = node => {
-      if (!(node instanceof Element) || seen.has(node)) return;
+      if (!(node instanceof Element) || seen.has(node) || out.length >= limit) return;
       seen.add(node);
       out.push(node);
     };
     const path = typeof event.composedPath === 'function' ? event.composedPath() : [];
-    for (const node of path.slice(0, 10)) add(node);
+    for (const node of path) {
+      add(node);
+      if (out.length >= limit) break;
+    }
+    if (!out.length) {
+      let p = event.target instanceof Element ? event.target : null;
+      for (let i = 0; i < limit && p instanceof Element; i++, p = composedParent(p)) add(p);
+    }
+    return out;
+  }
+
+  function candidateNodes(event) {
+    const out = eventElements(event, 10);
+    const seen = new WeakSet(out);
     let p = out[0] || (event.target instanceof Element ? event.target : null);
-    for (let i = 0; i < 7 && p instanceof Element; i++, p = composedParent(p)) add(p);
+    for (let i = 0; i < 7 && p instanceof Element && out.length < 10; i++, p = composedParent(p)) {
+      if (!seen.has(p)) { seen.add(p); out.push(p); }
+    }
     return out;
   }
 
@@ -141,9 +153,6 @@
     });
   }
 
-  // Return one exact delegated control only if the wrapper can be proven small and unambiguous.
-  // The traversal is bounded from the first direct child onward; no querySelector walks an
-  // arbitrary trusted-event ancestor subtree.
   function boundedUniqueDelegatedControl(root) {
     if (!(root instanceof Element) || WIDE_CONTAINER.test(root.localName) || isProceedAction(root)) return null;
     const stack = [];
@@ -171,29 +180,38 @@
     return found;
   }
 
-  function localDelegationTarget(target) {
-    if (!(target instanceof Element) || isProceedAction(target)) return null;
+  function labelDelegationTarget(label) {
+    if (!(label instanceof HTMLLabelElement)) return null;
+    const associated = label.control;
+    if (associated instanceof Element && isControl(associated)) return associated;
+    return boundedUniqueDelegatedControl(label);
+  }
 
-    const semanticWrapper = target.closest?.('label,[role="checkbox"],[role="radio"],[role="switch"]');
-    if (semanticWrapper instanceof HTMLLabelElement) {
-      const associated = semanticWrapper.control;
-      if (associated instanceof Element && isControl(associated)) return associated;
-      return boundedUniqueDelegatedControl(semanticWrapper);
+  function localDelegationTarget(event) {
+    const path = eventElements(event, 8);
+    if (!path.length) return null;
+
+    // Authority follows the actual composed event path. A proceed action encountered before a
+    // checkbox/control boundary terminates the search, so a button nested inside a large label or
+    // generic container can never mint authority for a sibling/descendant agreement control.
+    for (const node of path) {
+      if (isProceedAction(node)) return null;
+      if (node instanceof HTMLLabelElement) return labelDelegationTarget(node);
+      if (isControl(node)) return node;
+      if (WIDE_CONTAINER.test(node.localName)) break;
     }
-    if (semanticWrapper instanceof Element && isControl(semanticWrapper)) return semanticWrapper;
-    if (isControl(target)) return target;
 
-    let p = target;
-    for (let depth = 0; depth <= MAX_LOCAL_WRAPPER_DEPTH && p instanceof Element; depth++, p = composedParent(p)) {
-      if (WIDE_CONTAINER.test(p.localName) || isProceedAction(p)) continue;
-      const delegated = boundedUniqueDelegatedControl(p);
+    for (let i = 0; i < path.length && i <= MAX_LOCAL_WRAPPER_DEPTH; i++) {
+      const node = path[i];
+      if (!(node instanceof Element) || WIDE_CONTAINER.test(node.localName) || isProceedAction(node)) continue;
+      const delegated = boundedUniqueDelegatedControl(node);
       if (delegated) return delegated;
     }
     return null;
   }
 
   function beginLocalLease(event) {
-    const delegated = localDelegationTarget(event.target instanceof Element ? event.target : null);
+    const delegated = localDelegationTarget(event);
     if (!delegated) return;
     causalLocal.add(delegated);
     localLeaseByEvent.set(event, delegated);
@@ -215,8 +233,6 @@
     const nodes = candidateNodes(event);
     if (!nodes.length) return;
     if (consumeAuthorization(nodes)) {
-      // A current-authorized outer click may synchronously enter page component code that delegates
-      // to one exact descendant control. The causal lease expires when the outer event bubbles out.
       beginLocalLease(event);
       return;
     }
