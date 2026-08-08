@@ -14,8 +14,13 @@ const PROFILE=process.argv.includes('--profile');
 const PREVIOUS_REF=process.env.AUTO_AGREE_PREVIOUS_REF || '';
 
 function chromePath(){
-  const candidates=[process.env.CHROME_PATH,process.env.PUPPETEER_EXECUTABLE_PATH,'/usr/bin/google-chrome','/usr/bin/google-chrome-stable','/usr/bin/chromium','/usr/bin/chromium-browser'].filter(Boolean);
-  return candidates.find(p=>fs.existsSync(p));
+  const explicit=[process.env.CHROME_PATH,process.env.PUPPETEER_EXECUTABLE_PATH].filter(Boolean);
+  for(const candidate of explicit) if(fs.existsSync(candidate)) return candidate;
+  try {
+    const managed=puppeteer.executablePath();
+    if(managed && fs.existsSync(managed)) return managed;
+  } catch (_) {}
+  return ['/usr/bin/chromium','/usr/bin/chromium-browser','/usr/bin/google-chrome','/usr/bin/google-chrome-stable'].find(p=>fs.existsSync(p));
 }
 
 function fixture(name){return fs.readFileSync(path.join(FIXTURES,name),'utf8');}
@@ -41,7 +46,7 @@ async function withServer(fn){
 
 async function launch(extensionPath){
   const executablePath=chromePath();
-  assert.ok(executablePath,'system Chrome/Chromium not found');
+  assert.ok(executablePath,'Chrome for Testing/Chromium not found');
   return puppeteer.launch({headless:true,pipe:true,executablePath,enableExtensions:[extensionPath],args:['--no-first-run','--no-default-browser-check']});
 }
 
