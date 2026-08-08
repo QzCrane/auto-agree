@@ -28,7 +28,7 @@ jobs:
 
   unpacked-e2e:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 12
     steps:
       - uses: actions/checkout@v6
         with:
@@ -36,17 +36,14 @@ jobs:
       - uses: actions/setup-node@v7
         with:
           node-version: '24'
-      - name: Install pinned Puppeteer test tool
-        env:
-          PUPPETEER_SKIP_DOWNLOAD: 'true'
-        run: npm install --no-save --no-package-lock --ignore-scripts puppeteer@25.1.0
-      - name: Inspect system Chrome
+      - name: Install pinned Puppeteer + Chrome for Testing
+        run: npm install --no-save --no-package-lock puppeteer@25.1.0
+      - name: Inspect managed Chrome for Testing
         run: |
-          command -v google-chrome || command -v google-chrome-stable || command -v chromium
-          (google-chrome --version || google-chrome-stable --version || chromium --version)
+          node -e "import('puppeteer').then(p=>console.log(p.default.executablePath()))"
+          "$(node -e "import('puppeteer').then(p=>process.stdout.write(p.default.executablePath()))")" --version
       - name: Run real unpacked-extension E2E and profile
         env:
-          CHROME_PATH: /usr/bin/google-chrome
           AUTO_AGREE_PREVIOUS_REF: ${{ github.event.pull_request.base.sha || github.event.before }}
         run: node tests/e2e-extension.mjs --profile
       - name: Print E2E profile evidence
