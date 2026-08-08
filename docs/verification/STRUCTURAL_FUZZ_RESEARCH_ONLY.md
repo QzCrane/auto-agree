@@ -1,0 +1,1 @@
+Research-only. Do not merge. The real finding is Engine RootBatch overflow silently dropping unfinished discovery work under bursty dynamic insertion. A clean follow-up must fix ordinary source and pass permanent real-Chrome structural fuzz before main changes.
