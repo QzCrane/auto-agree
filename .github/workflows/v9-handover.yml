@@ -36,3 +36,5 @@ jobs:
           git diff --cached --check
           git commit -m "fix: firewall stale update-generation clicks"
           git push origin HEAD:agent/v9-invariant-hardening
+
+# Trigger commit after workflow installation.
