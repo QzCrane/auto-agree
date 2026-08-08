@@ -54,8 +54,10 @@ The guard enforces:
 - a current Engine click receives one exact one-shot target/ancestor authorization immediately before dispatch;
 - unused direct authorization expires at the next microtask checkpoint;
 - agreement-like stale synthetic clicks from non-cooperative old generations are canceled;
-- a trusted event or current-authorized click may delegate one descendant synthetic click only inside a small, exact local control wrapper and only during that same DOM event propagation;
-- bubble phase revokes the local causal lease;
+- a trusted event or current-authorized click may delegate one descendant synthetic click only inside a small, exact local control wrapper and only while the **exact authorizing source Event remains in browser dispatch**;
+- the delegated control is mapped to that exact source Event; if `sourceEvent.eventPhase === Event.NONE`, the mapping is stale and confers no authority;
+- the first valid nested delegation consumes the mapping;
+- bubble cleanup is only an eager release path and is not a correctness dependency, so page `stopPropagation()` cannot leak authority into later asynchronous work;
 - broad `form`, `dialog`, `section`, page/document containers and proceed actions cannot mint sibling-control authority;
 - ambiguous wrappers containing multiple possible delegated controls fail closed;
 - no timer-based lease is permitted to leak authorization into later tasks;
@@ -64,6 +66,12 @@ The guard enforces:
 The guard consumes the shared `semantic-core.js` and resolves bounded explicit accessibility relations (`aria-labelledby`, `aria-describedby`, native external labels). It does not carry a divergent private Terms/assent vocabulary and does not issue an unbounded generic descendant-control query on the trusted-event hot path.
 
 The extension does not request the `tabs` permission: Chrome's Tabs API is available without it for basic tab operations, and the existing `<all_urls>` host permission supplies the host access needed for injection.
+
+## Release-transition identity boundary
+
+The PR transition test stages the exact base commit and derives the previous/current versions from their manifests. The test does not trust a hardcoded historical pair.
+
+Execution-context ID is the primary identity of an old versus rehydrated isolated world. Version strings alone are insufficient because a same-version hotfix/reload can produce two simultaneously observable contexts that both report the same manifest version. A release test that reasons only from version text can therefore produce a false result even when Chrome has created a distinct new world.
 
 ## Artifact boundary
 
@@ -89,7 +97,10 @@ During v10 audit, the old deterministic packager was found to omit runtime JavaS
 - simultaneous old/new isolated-world Engine execution after update;
 - stale-generation click attempts under superseded semantics;
 - page-owned custom controls that synchronously delegate from trusted wrapper interaction to a synthetic descendant click;
+- `stopPropagation()` or `stopImmediatePropagation()` preventing an extension bubble cleanup listener from running;
+- stale local causal tokens surviving into microtasks/timers/later tasks after their source Event dispatch has ended;
 - unused, overlong or overly broad authorization tokens being reused by later stale work;
+- release-transition tests that mistake equal version strings for one execution generation;
 - package-integrity checks that pass despite an incomplete runtime dependency closure.
 
 ## Hard boundaries
@@ -99,5 +110,7 @@ The v9→v10 handover cannot be made retroactively cooperative: v9 shipped no ge
 The cooperative result is a tested Chrome behavior, not a universal browser theorem. `tests/e2e-generation-lease.mjs` remains a release gate so a future Chrome lifecycle change cannot silently invalidate this authority model.
 
 The handover firewall is scoped to Auto Agree's consequential stale authority—agreement-like synthetic clicks. The generation lease is scoped to Auto Agree's isolated-world `HTMLElement.prototype.click`. Neither mechanism is presented as a generic sandbox for arbitrary historical JavaScript side effects.
+
+The local delegation exception is defined by **live browser event dispatch**, not by wall-clock time, successful bubble cleanup or historical user interaction. ADR 0011 and the two-branch real-Chrome fixture are the canonical authority for this rule.
 
 Ordinary content-script extensions also cannot guarantee control over Chrome-owned UI, trusted-physical-input checks, opaque Canvas/WebGL UI with no usable DOM/accessibility surface, or semantics intentionally placed outside any finite bounded sample of an unbounded string.
