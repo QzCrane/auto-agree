@@ -4,6 +4,9 @@ on:
   push:
     branches:
       - feat/v7-repository-convergence
+  pull_request:
+    branches:
+      - main
 
 permissions:
   contents: write
@@ -19,6 +22,7 @@ jobs:
       - name: Checkout feature branch
         uses: actions/checkout@v6
         with:
+          ref: ${{ github.head_ref || github.ref_name }}
           fetch-depth: 0
 
       - name: Reconstruct and verify v7 delta
@@ -74,4 +78,5 @@ jobs:
           git diff --cached --check
           git status --short
           git commit -m 'feat: converge repository on v7 semantic consent engine'
-          git push origin HEAD:${GITHUB_REF_NAME}
+          target="${GITHUB_HEAD_REF:-${GITHUB_REF_NAME}}"
+          git push origin "HEAD:${target}"
