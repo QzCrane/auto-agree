@@ -45,10 +45,18 @@ jobs:
           CHROME="$(node --input-type=module -e "import puppeteer from 'puppeteer'; process.stdout.write(await puppeteer.executablePath())")"
           echo "$CHROME"
           "$CHROME" --version
-      - name: Run real unpacked-extension E2E and profile
+      - name: Ensure virtual display
+        run: |
+          if ! command -v xvfb-run >/dev/null 2>&1; then
+            sudo apt-get update
+            sudo apt-get install -y xvfb
+          fi
+          xvfb-run --help >/dev/null
+      - name: Run real headed unpacked-extension E2E and profile
         env:
           AUTO_AGREE_PREVIOUS_REF: ${{ github.event.pull_request.base.sha || github.event.before }}
-        run: node tests/e2e-extension.mjs --profile
+          AUTO_AGREE_HEADED: '1'
+        run: xvfb-run -a node tests/e2e-extension.mjs --profile
       - name: Print E2E profile evidence
         if: always()
         run: |
