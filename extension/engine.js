@@ -943,7 +943,7 @@
       const text = accessibleText(p, MAX_ROW_TEXT);
       if (!fastSemantic(text)) { depth++; continue; }
       const a = assessText(text);
-      const risk = CONSEQUENTIAL_LOCAL.test(text);
+      const risk = severityFor(text).level >= SEVERITY.CONSEQUENTIAL;
       const rank = a.score - depth * 0.4;
       if (!risk && (!best || rank > best.rank)) best = { row: p, text, assessment: a, rank };
       if (!risk && a.eligible) return { row: p, text, assessment: a };
@@ -960,7 +960,7 @@
       if (p.matches?.('form,dialog,[role="dialog"],[aria-modal="true"],body,html')) break;
       const text = accessibleText(p, MAX_ROW_TEXT);
       const assessment = assessText(text);
-      if (assessment.blocked || CONSEQUENTIAL_LOCAL.test(text)) break;
+      if (assessment.blocked || severityFor(text).level >= SEVERITY.CONSEQUENTIAL) break;
       if (assessment.legal || assessment.assent || assessment.required || assessment.validation) best = p;
       if (knownControlIn(p)) return p;
     }
@@ -1026,7 +1026,7 @@
     const info = findAgreementRow(anchor);
     if (!info?.row) return;
     const context = contextSnapshot(info.row);
-    if (consequentialRisk(info.text, context) || containsNegative(info.text) || containsAttestation(info.text)) return;
+    if (severityFor(info.text, context.text, context.transaction).level >= SEVERITY.CONSEQUENTIAL || containsNegative(info.text) || containsAttestation(info.text)) return;
     if (info.assessment.legal || context.auth) {
       broadShadowEnabled = broadShadowEnabled || context.auth;
       if (broadShadowEnabled) queueShadowSweep(info.row);

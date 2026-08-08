@@ -22,7 +22,10 @@ for(const[name,re]of forbidden)assert.equal(re.test(source),false,`forbidden ${n
 const worker=fs.readFileSync(path.join(root,'worker.js'),'utf8');
 assert.match(worker,/semantic-core\.js/);assert.match(worker,/documentLifecycle/);assert.match(worker,/INJECTION_AGING_MS/);assert.match(worker,/INJECTION_STALE_MS/);assert.match(worker,/onInstalled/);assert.match(worker,/allFrames:\s*true/);
 assert.match(fs.readFileSync(path.join(root,'gate.js'),'utf8'),/__AUTO_AGREE_SEMANTIC__/);
-assert.match(fs.readFileSync(path.join(root,'engine.js'),'utf8'),/credentialInvalid/);
+const engine=fs.readFileSync(path.join(root,'engine.js'),'utf8');
+assert.match(engine,/credentialInvalid/);
+assert.equal(/\bCONSEQUENTIAL_LOCAL\b/.test(engine),false,'engine must consume risk-core through its public severity API');
+assert.equal(/\bconsequentialRisk\b/.test(engine),false,'stale pre-risk-core consequentialRisk helper reference');
 assert.match(fs.readFileSync(path.join(root,'bootstrap.js'),'utf8'),/HANDOFF_RETRY_DELAYS/);
 assert.match(fs.readFileSync(path.join(root,'gate.js'),'utf8'),/HANDOFF_RETRY_DELAYS/);
 console.log('static-contract: PASS');
