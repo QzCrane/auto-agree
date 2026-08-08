@@ -38,11 +38,12 @@ assert.match(worker,/locatorKey/,'flow identity must include its exact DOM\/Shad
 assert.match(worker,/\$\{fingerprint\}\|\$\{locatorKey\(locator\)\}/,'profile merge identity must be fingerprint + locator');
 assert.match(worker,/storageWriteChain = storageWriteChain\.then\(task, task\)/,'profile writes must serialize without swallowing the current operation error');
 assert.match(worker,/protectAndRehydrateTab/,'update rehydration must separate protection from Probe recovery');
-assert.match(worker,/\['semantic-core\.js', 'handover-guard\.js'\]/,'protection phase must install the shared semantic core before handover guard');
+assert.match(worker,/\['generation-lease\.js', 'semantic-core\.js', 'handover-guard\.js'\]/,'protection phase must install the cooperative generation lease and shared semantics before handover guard');
 assert.match(worker,/await scheduleInjection\(target, \['bootstrap\.js'\], 3\)/,'bootstrap must be a later phase after protection resolves');
 assert.equal(/\['handover-guard\.js', 'bootstrap\.js'\]/.test(worker),false,'guard and bootstrap must never share the update injection phase');
 assert.equal(/\bmessage\.origin\b/.test(worker),false,'profile storage identity must come from MessageSender, not message.origin');
-assert.match(worker,/\['semantic-core\.js', 'handover-guard\.js', 'risk-core\.js', 'engine\.js'\]/,'every Engine-capable world must also carry the cooperative handover guard');
+assert.match(worker,/\['generation-lease\.js', 'semantic-core\.js', 'gate\.js'\]/,'every dynamically injected Gate world must carry the cooperative generation lease');
+assert.match(worker,/\['generation-lease\.js', 'semantic-core\.js', 'handover-guard\.js', 'risk-core\.js', 'engine\.js'\]/,'every Engine-capable world must carry both cooperative lease and handover guard');
 
 const guard=fs.readFileSync(path.join(root,'handover-guard.js'),'utf8');
 assert.match(guard,/__AUTO_AGREE_SEMANTIC__/,'handover guard must consume the shared semantic core');
