@@ -12,6 +12,7 @@ const EXTENSION=path.join(ROOT,'extension');
 const FIXTURES=path.join(ROOT,'tests','fixtures','regressions');
 const PROFILE=process.argv.includes('--profile');
 const PREVIOUS_REF=process.env.AUTO_AGREE_PREVIOUS_REF || '';
+const HEADED=process.env.AUTO_AGREE_HEADED==='1';
 
 function fixture(name){return fs.readFileSync(path.join(FIXTURES,name),'utf8');}
 function perfTail(){
@@ -36,7 +37,7 @@ async function withServer(fn){
 
 async function launch(extensionPath){
   const options={
-    headless:true,
+    headless:!HEADED,
     pipe:true,
     dumpio:true,
     enableExtensions:[extensionPath],
@@ -52,6 +53,9 @@ async function launch(extensionPath){
 async function autoAgreeExtension(browser){
   const extensions=await browser.extensions();
   for(const ext of extensions.values()) if(ext.name==='Auto Agree Login Terms') return ext;
+  const installed=[...extensions.values()].map(ext=>({id:ext.id,name:ext.name,version:ext.version}));
+  const workers=browser.targets().filter(t=>t.type()==='service_worker').map(t=>t.url());
+  console.error('extension-diagnostic:',JSON.stringify({installed,workers,headed:HEADED}));
   throw new Error('Auto Agree extension not installed');
 }
 
