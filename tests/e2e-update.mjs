@@ -85,23 +85,23 @@ if(!PREVIOUS_REF) throw new Error('AUTO_AGREE_PREVIOUS_REF is required');
 const tmp=fs.mkdtempSync(path.join(os.tmpdir(),'auto-agree-update-api-'));
 const active=path.join(tmp,'extension');
 stagePrevious(PREVIOUS_REF,active);
-assert.equal(JSON.parse(fs.readFileSync(path.join(active,'manifest.json'),'utf8')).version,'7.0.0');
+assert.equal(JSON.parse(fs.readFileSync(path.join(active,'manifest.json'),'utf8')).version,'8.0.0');
 
 await withServer(async base=>{
   const browser=await launch();
   try{
-    const initialId=await bounded(browser.installExtension(active),5000,'install v7 unpacked');
+    const initialId=await bounded(browser.installExtension(active),5000,'install v8 unpacked');
     let ext=(await browser.extensions()).get(initialId);
     assert.ok(ext,'v7 extension missing after Browser.installExtension');
-    assert.equal(ext.version,'7.0.0');
+    assert.equal(ext.version,'8.0.0');
 
     const page=await browser.newPage();
     await gotoActive(page,`${base}/dynamic.html?update=1`);
 
     replaceDir(CURRENT,active);
-    assert.equal(JSON.parse(fs.readFileSync(path.join(active,'manifest.json'),'utf8')).version,'8.0.0');
+    assert.equal(JSON.parse(fs.readFileSync(path.join(active,'manifest.json'),'utf8')).version,'9.0.0');
 
-    const reloadedId=await bounded(browser.installExtension(active),5000,'reload same unpacked path as v8');
+    const reloadedId=await bounded(browser.installExtension(active),5000,'reload same unpacked path as v9');
     assert.equal(reloadedId,initialId,'same unpacked path must retain extension identity across update');
 
     let observed=[];
@@ -114,7 +114,7 @@ await withServer(async base=>{
           version=handle?await bounded(handle.evaluate(()=>chrome.runtime.getManifest().version),600,'updated manifest read'):'no-worker';
         }catch(error){version=String(error?.message||error);}
         observed.push({url:target.url(),version});
-        if(handle&&version==='8.0.0') return handle;
+        if(handle&&version==='9.0.0') return handle;
       }
       return null;
     },7000,80).catch(async error=>{
@@ -123,13 +123,13 @@ await withServer(async base=>{
       throw error;
     });
 
-    assert.equal(await bounded(worker.evaluate(()=>chrome.runtime.getManifest().version),800,'final v8 manifest read'),'8.0.0');
+    assert.equal(await bounded(worker.evaluate(()=>chrome.runtime.getManifest().version),800,'final v9 manifest read'),'9.0.0');
     await page.bringToFront();
     await page.evaluate(()=>window.insertRoutineLogin());
     await waitChecked(page,'#dynamic-agree');
 
     ext=(await browser.extensions()).get(initialId);
-    console.log('e2e-update:',JSON.stringify({id:initialId,workerVersion:'8.0.0',reportedVersion:ext?.version||null,pageReloaded:false}));
+    console.log('e2e-update:',JSON.stringify({id:initialId,workerVersion:'9.0.0',reportedVersion:ext?.version||null,pageReloaded:false}));
     console.log('e2e-update: PASS');
     await page.close();
   } finally {await browser.close();}

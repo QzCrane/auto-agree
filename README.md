@@ -84,7 +84,7 @@ npm test
 python tools/package_extension.py
 ```
 
-v8 verification includes:
+v9 verification includes:
 
 - dependency-free syntax, permission, semantic-property and Worker scheduler/restart contracts;
 - 10,020 semantic severity/property assertions;
@@ -96,7 +96,7 @@ v8 verification includes:
 - 5,000-checkbox E2E DevTools CPU profile capture;
 - deterministic ZIP integrity verification.
 
-Detailed evidence: [v8 verification report](docs/verification/v8.md).
+Detailed evidence: [v9 verification report](docs/verification/v9.md).
 
 ## Permissions
 

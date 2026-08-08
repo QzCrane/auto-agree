@@ -28,6 +28,7 @@ From v3 onward, detailed version reports were produced during the corresponding 
 | v6.0.0 | [v6.md](v6.md) | `1b65137` |
 | v7.0.0 | [v7.md](v7.md) | `baa7452` main milestone |
 | v8.0.0 | [v8.md](v8.md) | first release with real unpacked-extension Chrome E2E as a merge gate |
+| v9.0.0 | [v9.md](v9.md) | recovered invariant hardening; candidate evidence finalized after release-gating CI |
 
 ## Interpretation rules
 

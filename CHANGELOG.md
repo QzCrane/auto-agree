@@ -1,5 +1,15 @@
 # Changelog
 
+## 9.0.0 — 2026-08-08
+
+- Restored the historical UNKNOWN-state invariant: a classless control with no observable checked contract is one-shot for that DOM element, even after the normal click cooldown expires.
+- Treat native `indeterminate` and ARIA `mixed` states as non-authoritative tri-state controls and never auto-toggle them.
+- Fixed Gate→Engine seed consumption so Shadow probing and scoped Engine bootstrap can both reuse the same weakly-owned handoff without retaining detached DOM.
+- Moved Gate/Engine sentinels behind dependency validation so a partial or out-of-order injection cannot permanently poison later retries.
+- Made semantic/risk cores version-refreshable and included `semantic-core.js` in Engine injection dependency closure for safer cross-version worker/content-tier transitions.
+- Bound site-learning identity to Chrome `MessageSender.origin`/`url` rather than a content-provided `message.origin`.
+- Added real unpacked-Chrome regressions for tri-state controls and classless UNKNOWN one-shot behavior, plus static/worker contracts for the recovered invariants.
+
 ## 8.0.0 — 2026-08-08
 
 - Added real unpacked-extension Puppeteer E2E with explicitly installed Chrome for Testing, including the actual MV3 service worker, dynamic isolated-world injection, all-frame behavior, closed Shadow DOM, worker termination recovery, update transition, and CPU-profile capture.

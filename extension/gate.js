@@ -1,12 +1,10 @@
 (() => {
   'use strict';
-  if (globalThis.__AUTO_AGREE_GATE__) return;
-  globalThis.__AUTO_AGREE_GATE__ = '8.0.0';
-
-
-  const VERSION = '8.0.0';
+  const VERSION = '9.0.0';
   const CORE = globalThis.__AUTO_AGREE_SEMANTIC__;
   if (!CORE || CORE.version !== VERSION) return;
+  if (globalThis.__AUTO_AGREE_GATE__) return;
+  globalThis.__AUTO_AGREE_GATE__ = VERSION;
   const { normalize: norm, joinNormalized: joinNorm, compactSemantic, hasNonLatin } = CORE;
   const { LEGAL, ASSENT, REQUIRED: REQUIRED_TEXT, COMPACT_LEGAL, COMPACT_ASSENT } = CORE.patterns;
   const COMPACT_REQUIRED = /(?:required|mandatory|must(?:agree|accept)|please(?:agree|accept))/i;

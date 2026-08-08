@@ -1,0 +1,4 @@
+<!doctype html><meta charset="utf-8"><title>Classless unknown one-shot</title>
+<style>#row{display:flex;gap:8px;align-items:center;margin-top:8px}#box{display:inline-block;width:16px;height:16px;border:1px solid #333;cursor:pointer}</style>
+<form><input type="email" value="valid@example.com"><div id="row"><span id="box" data-clicks="0"></span><span id="legal">I agree to the Terms of Service</span></div><button type="button">Login</button></form>
+<script>document.querySelector('#box').addEventListener('click',e=>{e.currentTarget.dataset.clicks=String(Number(e.currentTarget.dataset.clicks||0)+1);});</script>
