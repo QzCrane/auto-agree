@@ -34,6 +34,6 @@ assert.equal(read.ok,true);assert.equal(read.profile.flows.length,1);assert.equa
 session.set('__auto_agree_update_rehydrate__',{version:'9.0.0',ts:Date.now()});
 const c=boot([11,12,13]);
 await new Promise(r=>setTimeout(r,20));
-assert.ok(c.calls.some(x=>x.files?.[0]==='bootstrap.js'&&x.target?.allFrames===true));
+assert.ok(c.calls.some(x=>JSON.stringify(x.files)===JSON.stringify(['handover-guard.js','bootstrap.js'])&&x.target?.allFrames===true));
 assert.equal(session.has('__auto_agree_update_rehydrate__'),false);
 console.log('worker-restart: PASS');

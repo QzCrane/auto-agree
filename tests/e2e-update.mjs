@@ -136,6 +136,17 @@ await withServer(async base=>{
 
     assert.equal(await bounded(worker.evaluate(()=>chrome.runtime.getManifest().version),800,'final v9 manifest read'),'9.0.0');
 
+    const dormantHandover=await poll(async()=>{
+      const worlds=await extensionWorldSentinels(dormantPage);
+      return worlds.some(world=>world.handover==='9.0.0')?worlds:null;
+    },5000,60);
+    const activeHandover=await poll(async()=>{
+      const worlds=await extensionWorldSentinels(activePage);
+      return worlds.some(world=>world.handover==='9.0.0')?worlds:null;
+    },5000,60);
+    assert.ok(dormantHandover.some(world=>world.handover==='9.0.0'));
+    assert.ok(activeHandover.some(world=>world.handover==='9.0.0'));
+
     await dormantPage.bringToFront();
     assert.equal(await dormantPage.evaluate(()=>window.__autoAgreeUpdateMarker),'dormant-v8','dormant page reloaded during update');
     await dormantPage.evaluate(()=>window.insertRoutineLogin());
@@ -177,6 +188,7 @@ await withServer(async base=>{
       dormantPageReloaded:false,
       activePageReloaded:false,
       dormantEngine:'9.0.0',
+      handoverGuard:'9.0.0',
       activeOldSentinelVisible:oldSentinelVisible,
       activeCurrentSentinelVisible:currentSentinelVisible,
       activeRoutineClicks:1,

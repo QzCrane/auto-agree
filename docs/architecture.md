@@ -112,13 +112,13 @@ Important worker state is split deliberately:
 - durable: site learning and update-rehydration marker → `chrome.storage`;
 - transient/replayable: in-flight injection maps, queues, LRU cache → worker globals.
 
-Probe/Gate handoff messages and profile writes are idempotently replayable after unexpected worker loss. Profile storage identity is derived from Chrome `MessageSender.origin`/`url`, not from message payload text.
+Probe/Gate handoff messages and profile writes are idempotently replayable after unexpected worker loss. Profile storage identity is derived from Chrome `MessageSender.origin`/`url`, not from message payload text. Update handover injections run at elevated scheduler priority so the cross-generation click firewall is established before ordinary post-update tier work whenever the update rehydration sweep reaches that frame.
 
 ## Extension update rehydration
 
 When an extension update/reload replaces the Worker, already-open pages are not assumed to have received a fresh static content script. v8 introduced a short-lived session rehydration marker; v9 retains it, queries existing tabs, and schedules `bootstrap.js` into all accessible frames in small batches. A worker restart during this sweep sees the marker and resumes it.
 
-The bootstrap sentinel prevents a second Probe authority in the same document. A dormant old Probe can still talk to the new Worker; Engine activation refreshes the current semantic dependency before loading current Risk/Engine code. If an old Engine was already active before update, v9 deliberately does not install a competing Engine beside it; the old closure remains authoritative until page replacement.
+The bootstrap sentinel prevents duplicate current-generation Probe initialization. Real Chrome testing showed that an old isolated-world Engine can remain both observable and executable after extension update while a new isolated world is also created. v9 therefore injects `handover-guard.js` before the Probe into every surviving update frame. The guard blocks untrusted agreement-like clicks unless the current Engine synchronously authorizes that exact DOM target/ancestor chain for one click. Old generations cannot access the new isolated world's authorization set, so stale automatic clicks are vetoed without blocking trusted user clicks.
 
 ## Lifecycle and ownership
 

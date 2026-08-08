@@ -20,7 +20,7 @@ Service-worker globals are never correctness authority. Profile state and pendin
 
 ## Update boundary
 
-On update/reload, the Worker rehydrates `bootstrap.js` into already-open tabs with bounded scheduling. Dormant old Probes may hand off to current dependencies; already-active old Engines are left as the sole click authority rather than hot-installing a competing Engine. The extension does not request the `tabs` permission: Chrome's Tabs API is available without it for basic tab operations, and the existing `<all_urls>` host permission supplies the host access needed for injection.
+On update/reload, the Worker rehydrates `handover-guard.js` + `bootstrap.js` into already-open tabs with bounded high-priority scheduling. Dormant old Probes may hand off to current dependencies. If an old Engine isolated world survives, it cannot obtain the new generation's one-shot click authorization; untrusted agreement-like clicks from that stale world are canceled by the handover guard, while trusted user clicks remain untouched. The extension does not request the `tabs` permission: Chrome's Tabs API is available without it for basic tab operations, and the existing `<all_urls>` host permission supplies the host access needed for injection.
 
 ## Threats considered
 

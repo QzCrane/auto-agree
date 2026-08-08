@@ -853,6 +853,7 @@
         const target = preferredClickTarget(fresh);
         if (target instanceof HTMLElement && performance.now() - (clickMemo.get(s.control)?.time || 0) >= 100) {
           const retryVerifier = armVerifier(fresh, fresh.state, 1);
+          authorizeHandoverClick(target);
           try { target.click(); } catch (_) { stopVerifier(fresh.control); return; }
           clickMemo.set(fresh.control, { time: performance.now(), succeeded: false, retry: true });
           retryVerifier();
@@ -862,11 +863,16 @@
     return check;
   }
 
+  function authorizeHandoverClick(target) {
+    try { globalThis.__AUTO_AGREE_HANDOVER_GUARD__?.authorize?.(target); } catch (_) {}
+  }
+
   function commitClick(s, target) {
     if (!(target instanceof HTMLElement) || target.closest?.('a[href]')) return false;
     const before = s.state;
     if (!before.known) oneShotUnknown.add(s.control);
     const check = armVerifier(s, before, 0);
+    authorizeHandoverClick(target);
     try { target.click(); } catch (_) { oneShotUnknown.delete(s.control); stopVerifier(s.control); return false; }
     clickMemo.set(s.control, { time: performance.now(), succeeded: false });
     check();

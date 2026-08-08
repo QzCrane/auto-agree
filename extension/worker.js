@@ -353,7 +353,7 @@ async function rehydrateExistingTabs() {
     for (let i = 0; i < pending.length; i += 12) {
       const ids = pending.slice(i, i + 12);
       const results = await Promise.allSettled(ids.map(tabId =>
-        scheduleInjection({ tabId, allFrames: true }, ['bootstrap.js'], 0)
+        scheduleInjection({ tabId, allFrames: true }, ['handover-guard.js', 'bootstrap.js'], 3)
       ));
       for (let j = 0; j < results.length; j++) if (results[j].status === 'rejected') retry.push(ids[j]);
     }
