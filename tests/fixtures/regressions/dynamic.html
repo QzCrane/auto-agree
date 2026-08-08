@@ -39,6 +39,14 @@ window.insertExternalIdrefUnknown=()=>{
     event.currentTarget.dataset.clicks=String(Number(event.currentTarget.dataset.clicks||0)+1);
   });
 };
+window.insertSpanishSemanticTrap=()=>{
+  document.querySelector('#mount').innerHTML='<div id="spanish-terms" role="checkbox" aria-checked="mixed" aria-label="Acepto los términos y condiciones" data-clicks="0"></div>';
+  window.dynamicClicks=0;
+  document.querySelector('#spanish-terms').addEventListener('click',event=>{
+    window.dynamicClicks++;
+    event.currentTarget.dataset.clicks=String(Number(event.currentTarget.dataset.clicks||0)+1);
+  });
+};
 window.insertWideCausalTrap=()=>{
   const spans=Array.from({length:72},(_,i)=>'<span>neutral '+i+'</span>').join('');
   document.querySelector('#mount').innerHTML='<div id="wide-causal"><button id="wide-action" type="button">Continue</button>'+spans+'<div id="wide-terms" role="checkbox" aria-checked="mixed" aria-label="Terms of Service" data-clicks="0"></div></div>';
