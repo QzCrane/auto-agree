@@ -7,16 +7,28 @@
   if (!CORE || CORE.version !== VERSION || typeof CORE.assessText !== 'function') {
     throw new Error(`Auto Agree handover semantic dependency unavailable for ${VERSION}`);
   }
+  const { normalize, joinNormalized, assessText } = CORE;
 
   const authorized = new WeakSet();
+  const rejected = new WeakSet();
   const causalLocal = new WeakSet();
   const localLeaseByEvent = new WeakMap();
   const CONTROL = 'input[type="checkbox"],input[type="radio"],[role="checkbox"],[role="radio"],[role="switch"],[aria-checked]';
   const CUSTOM = new Set(['sl-checkbox','ion-checkbox','md-checkbox','mat-checkbox','fluent-checkbox','vaadin-checkbox','ui5-checkbox','calcite-checkbox','lightning-input']);
-  const WIDE_CONTAINER = /^(?:html|body|form|dialog|main|section|article)$/i;
+  const WIDE_CONTAINER = /^(?:html|body|form|dialog|main|section|article|aside|nav|header|footer)$/i;
   const MAX_LOCAL_WRAPPER_DEPTH = 2;
   const MAX_LOCAL_WRAPPER_NODES = 64;
   const MAX_LOCAL_CONTROL_DEPTH = 3;
+  let runtimeRevoked = false;
+
+  function runtimeCurrent() {
+    if (runtimeRevoked) return false;
+    try {
+      if (chrome.runtime?.getManifest?.()?.version === VERSION) return true;
+    } catch (_) {}
+    runtimeRevoked = true;
+    return false;
+  }
 
   function composedParent(el) {
     if (!(el instanceof Element)) return null;
@@ -27,31 +39,75 @@
   }
 
   function boundedText(root, maxNodes = 48, maxChars = 900) {
-    if (!root) return '';
+    if (!root || maxNodes <= 0 || maxChars <= 0) return '';
     const parts = [];
     let chars = 0, nodes = 0;
+    const append = value => {
+      const left = maxChars - chars;
+      if (left <= 0 || value == null) return;
+      const part = normalize(value, left);
+      if (!part) return;
+      parts.push(part);
+      chars += Math.min(left, part.length + 1);
+    };
     const walker = document.createTreeWalker(root, NodeFilter.SHOW_ELEMENT | NodeFilter.SHOW_TEXT);
     let node;
     while (nodes++ < maxNodes && chars < maxChars && (node = walker.nextNode())) {
-      let value = '';
-      if (node.nodeType === Node.TEXT_NODE) value = node.data || '';
+      if (node.nodeType === Node.TEXT_NODE) append(node.data || '');
       else if (node instanceof Element) {
         if (/^(?:script|style|noscript|template)$/i.test(node.localName)) continue;
-        value = `${node.getAttribute('aria-label') || ''} ${node.getAttribute('title') || ''}`;
+        append(node.getAttribute('aria-label'));
+        append(node.getAttribute('title'));
       }
-      value = String(value).replace(/\s+/gu, ' ').trim();
-      if (!value) continue;
-      const left = maxChars - chars;
-      const part = value.slice(0, left);
-      parts.push(part);
-      chars += part.length + 1;
     }
-    return parts.join(' ').slice(0, maxChars);
+    return joinNormalized(parts, maxChars);
   }
 
   function ownText(el) {
     if (!(el instanceof Element)) return '';
-    return `${el.getAttribute('aria-label') || ''} ${el.getAttribute('title') || ''} ${el.getAttribute('name') || ''}`.slice(0, 360);
+    return joinNormalized([
+      el.getAttribute('aria-label'),
+      el.getAttribute('title'),
+      el.getAttribute('name'),
+      el.getAttribute('placeholder'),
+      el.getAttribute('data-testid'),
+      el.id
+    ], 360);
+  }
+
+  function rootQueryById(el, id) {
+    if (!(el instanceof Element) || !id) return null;
+    const root = el.getRootNode?.() || document;
+    try {
+      if (root instanceof Document) return root.getElementById(id);
+      return root.querySelector?.(`#${CSS.escape(id)}`) || null;
+    } catch (_) { return null; }
+  }
+
+  function referencedText(el, maxChars = 480) {
+    if (!(el instanceof Element)) return '';
+    const parts = [];
+    for (const attr of ['aria-labelledby', 'aria-describedby']) {
+      const value = normalize(el.getAttribute(attr), 260);
+      if (!value) continue;
+      const ids = value.split(/\s+/).filter(id => id && id !== 'zzsemanticgapzz').slice(0, 6);
+      for (const id of ids) {
+        const ref = rootQueryById(el, id);
+        if (ref instanceof Element) parts.push(boundedText(ref, 18, 260));
+      }
+    }
+    return joinNormalized(parts, maxChars);
+  }
+
+  function associatedLabelText(el, maxChars = 420) {
+    if (!(el instanceof HTMLInputElement)) return '';
+    const parts = [];
+    try {
+      for (const label of Array.from(el.labels || []).slice(0, 2)) {
+        if (label instanceof Element) parts.push(boundedText(label, 24, 300));
+      }
+    } catch (_) {}
+    return joinNormalized(parts, maxChars);
   }
 
   function isControl(el) {
@@ -108,20 +164,18 @@
     return out;
   }
 
-  function consumeAuthorization(nodes) {
+  function consume(set, nodes) {
     let allowed = false;
-    for (const node of nodes) if (authorized.has(node)) allowed = true;
+    for (const node of nodes) if (set.has(node)) allowed = true;
     if (!allowed) return false;
-    for (const node of nodes) authorized.delete(node);
+    for (const node of nodes) set.delete(node);
     return true;
   }
 
-  function consumeCausalLocal(nodes) {
-    let allowed = false;
-    for (const node of nodes) if (causalLocal.has(node)) allowed = true;
-    if (!allowed) return false;
-    for (const node of nodes) causalLocal.delete(node);
-    return true;
+  function block(event) {
+    event.preventDefault();
+    event.stopImmediatePropagation();
+    event.stopPropagation();
   }
 
   function agreementLike(nodes) {
@@ -130,20 +184,38 @@
     let chars = 0;
     for (const node of nodes.slice(0, 10)) {
       hasControl ||= isControl(node);
-      const values = [ownText(node), boundedText(node, 18, 260), shadowText(node)];
+      const values = [ownText(node), referencedText(node), associatedLabelText(node), boundedText(node, 18, 260), shadowText(node)];
       for (const value of values) {
-        if (!value || chars >= 1200) continue;
-        const part = value.slice(0, 1200 - chars);
+        if (!value || chars >= 1400) continue;
+        const part = normalize(value, 1400 - chars);
+        if (!part) continue;
         parts.push(part);
-        chars += part.length + 1;
+        chars += Math.min(1400 - chars, part.length + 1);
       }
-      if (chars >= 1200) break;
+      if (chars >= 1400) break;
     }
-    const assessment = CORE.assessText(parts.join(' '));
+    const assessment = assessText(joinNormalized(parts, 1400));
     return !!assessment?.legal && (hasControl || !!assessment.assent || !!assessment.required || !!assessment.validation);
   }
 
+  function markRejected(el) {
+    const lease = [];
+    let node = el;
+    for (let i = 0; i < 10 && node instanceof Element; i++, node = composedParent(node)) {
+      rejected.add(node);
+      lease.push(node);
+    }
+    queueMicrotask(() => {
+      for (const leased of lease) rejected.delete(leased);
+    });
+  }
+
   function authorize(el) {
+    if (!(el instanceof Element)) return false;
+    if (!runtimeCurrent()) {
+      markRejected(el);
+      return false;
+    }
     const lease = [];
     let node = el;
     for (let i = 0; i < 10 && node instanceof Element; i++, node = composedParent(node)) {
@@ -153,6 +225,7 @@
     queueMicrotask(() => {
       for (const leased of lease) authorized.delete(leased);
     });
+    return true;
   }
 
   function boundedUniqueDelegatedControl(root) {
@@ -222,22 +295,26 @@
   }
 
   function onTrustedCapture(event) {
-    if (event.isTrusted) beginLocalLease(event);
+    if (event.isTrusted && !runtimeRevoked) beginLocalLease(event);
   }
 
   function onClick(event) {
-    if (event.isTrusted) { beginLocalLease(event); return; }
     const nodes = candidateNodes(event);
     if (!nodes.length) return;
-    if (consumeAuthorization(nodes)) {
+
+    if (!event.isTrusted && !runtimeCurrent()) {
+      if (consume(rejected, nodes)) block(event);
+      return;
+    }
+
+    if (event.isTrusted) { beginLocalLease(event); return; }
+    if (consume(authorized, nodes)) {
       beginLocalLease(event);
       return;
     }
-    if (consumeCausalLocal(nodes)) return;
+    if (consume(causalLocal, nodes)) return;
     if (!agreementLike(nodes)) return;
-    event.preventDefault();
-    event.stopImmediatePropagation();
-    event.stopPropagation();
+    block(event);
   }
 
   addEventListener('pointerdown', onTrustedCapture, true);
@@ -246,5 +323,5 @@
   addEventListener('keydown', finishLocalLease, false);
   addEventListener('click', onClick, true);
   addEventListener('click', finishLocalLease, false);
-  globalThis.__AUTO_AGREE_HANDOVER_GUARD__ = Object.freeze({ version: VERSION, authorize });
+  globalThis.__AUTO_AGREE_HANDOVER_GUARD__ = Object.freeze({ version: VERSION, authorize, runtimeCurrent });
 })();
