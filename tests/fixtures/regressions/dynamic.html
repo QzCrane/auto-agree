@@ -7,5 +7,13 @@ window.insertRoutineLogin=()=>{
   window.dynamicClicks=0;
   document.querySelector('#dynamic-agree').addEventListener('click',()=>{window.dynamicClicks++;});
 };
+window.insertMixedLogin=()=>{
+  document.querySelector('#mount').innerHTML='<form><input type="email" value="user@example.com"><div id="dynamic-mixed" role="checkbox" aria-checked="mixed" aria-label="I agree to the Terms of Service" data-clicks="0"></div><button type="button">Login</button></form>';
+  window.dynamicClicks=0;
+  document.querySelector('#dynamic-mixed').addEventListener('click',event=>{
+    window.dynamicClicks++;
+    event.currentTarget.dataset.clicks=String(Number(event.currentTarget.dataset.clicks||0)+1);
+  });
+};
 window.clearRoutineLogin=()=>{document.querySelector('#mount').replaceChildren();window.dynamicClicks=0;};
 </script>
