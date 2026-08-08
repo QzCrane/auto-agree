@@ -157,6 +157,17 @@ async function basicMatrix(base,browser){
 async function structuralFuzzMatrix(base,browser){
   const page=await browser.newPage();
   await gotoActive(page,`${base}/structural-fuzz.html`);
+
+  // The product intentionally boots from the local context that earned activation rather than
+  // scanning every unrelated pre-existing form on a page. Establish one real Engine first, then
+  // mount the fuzz corpus dynamically so this test measures structural/mutation coverage rather
+  // than contradicting seed-scoped activation policy.
+  await waitChecked(page,'#seed-agree',4000);
+  await poll(async()=>{
+    const worlds=await extensionWorldSentinels(page);
+    return worlds.some(world=>world.engine==='10.0.0');
+  },4000,60);
+  await page.evaluate(()=>window.startStructuralFuzz());
   await page.waitForFunction(()=>window.structuralFuzzReady===true,{timeout:5000});
 
   // Wait only for the positive routine cases. Blocked/already/disabled/mixed cases are asserted
