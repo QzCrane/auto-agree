@@ -7,7 +7,8 @@
   // remain observable and executable after the new extension generation is installed. Current
   // Engine clicks receive a synchronous one-shot authorization; stale generations do not.
   const authorized = new WeakSet();
-  const trustedLocal = new WeakSet();
+  const causalLocal = new WeakSet();
+  const localLeaseByEvent = new WeakMap();
   const LEGAL = /(?:terms?(?:\s+of\s+(?:service|use))?|privacy|agreement|eula|协议|協議|条款|條款|隐私|隱私|利用規約|プライバシー|약관|개인정보|услов|конфиденц|الشروط|الخصوصية)/iu;
   const ASSENT = /(?:agree|accept|consent|同意|接受|동의|同意する|соглас|أوافق)/iu;
   const REQUIRED = /(?:required|mandatory|must\s+(?:agree|accept)|please\s+(?:agree|accept)|必须|必須|需(?:要)?同意|请先(?:阅读|閱讀)?(?:并|並)?同意)/iu;
@@ -91,11 +92,11 @@
     return true;
   }
 
-  function consumeTrustedLocal(nodes) {
+  function consumeCausalLocal(nodes) {
     let allowed = false;
-    for (const node of nodes) if (trustedLocal.has(node)) allowed = true;
+    for (const node of nodes) if (causalLocal.has(node)) allowed = true;
     if (!allowed) return false;
-    for (const node of nodes) trustedLocal.delete(node);
+    for (const node of nodes) causalLocal.delete(node);
     return true;
   }
 
@@ -118,32 +119,25 @@
     return LEGAL.test(text) && (hasControl || ASSENT.test(text) || REQUIRED.test(text));
   }
 
-  function leaseWeak(set, nodes) {
+  function authorize(el) {
     const lease = [];
-    for (const node of nodes) {
-      if (!(node instanceof Element)) continue;
-      set.add(node);
+    let node = el;
+    for (let i = 0; i < 10 && node instanceof Element; i++, node = composedParent(node)) {
+      authorized.add(node);
       lease.push(node);
     }
+    // Current Engine invokes HTMLElement.click() synchronously in this same isolated world. If no
+    // click reaches the guard, revoke the unused authorization at the next microtask checkpoint.
     queueMicrotask(() => {
-      for (const leased of lease) set.delete(leased);
+      for (const leased of lease) authorized.delete(leased);
     });
   }
 
-  function authorize(el) {
-    const nodes = [];
-    let node = el;
-    for (let i = 0; i < 10 && node instanceof Element; i++, node = composedParent(node)) nodes.push(node);
-    // Engine dispatches HTMLElement.click() synchronously. If that call throws, is suppressed, or
-    // otherwise emits no click event, do not leave a token that a later stale generation can use.
-    leaseWeak(authorized, nodes);
-  }
-
-  function trustedInteractionRoot(target) {
+  function localInteractionRoot(target) {
     if (!(target instanceof Element)) return null;
-    if (isControl(target)) return target;
     const semanticWrapper = target.closest?.('label,[role="checkbox"],[role="radio"],[role="switch"]');
     if (semanticWrapper instanceof Element) return semanticWrapper;
+    if (isControl(target)) return target;
     let p = target;
     for (let depth = 0; depth < 3 && p instanceof Element; depth++, p = composedParent(p)) {
       if (WIDE_CONTAINER.test(p.localName)) continue;
@@ -152,29 +146,47 @@
     return null;
   }
 
-  function noteTrustedInteraction(event) {
-    if (!event.isTrusted) return;
-    const root = trustedInteractionRoot(event.target instanceof Element ? event.target : null);
-    if (root) leaseWeak(trustedLocal, [root]);
+  function beginLocalLease(event) {
+    const root = localInteractionRoot(event.target instanceof Element ? event.target : null);
+    if (!root) return;
+    causalLocal.add(root);
+    localLeaseByEvent.set(event, root);
+  }
+
+  function finishLocalLease(event) {
+    const root = localLeaseByEvent.get(event);
+    if (!root) return;
+    causalLocal.delete(root);
+    localLeaseByEvent.delete(event);
+  }
+
+  function onTrustedCapture(event) {
+    if (event.isTrusted) beginLocalLease(event);
   }
 
   function onClick(event) {
-    if (event.isTrusted) { noteTrustedInteraction(event); return; }
+    if (event.isTrusted) { beginLocalLease(event); return; }
     const nodes = candidateNodes(event);
     if (!nodes.length) return;
-    if (consumeAuthorization(nodes)) return;
-    // Preserve a page's own custom-checkbox implementation when a genuine user click on that
-    // exact local wrapper synchronously delegates to input.click(). A Login-button click does not
-    // lease a sibling Terms row because broad form/dialog containers are never trusted roots.
-    if (consumeTrustedLocal(nodes)) return;
+    if (consumeAuthorization(nodes)) {
+      // The current Engine's authorized outer click may synchronously enter MAIN-world component
+      // code that delegates to a hidden/native descendant via .click(). Keep one narrow local lease
+      // only until this outer event finishes bubbling; stale MutationObservers run after it expires.
+      beginLocalLease(event);
+      return;
+    }
+    if (consumeCausalLocal(nodes)) return;
     if (!agreementLike(nodes)) return;
     event.preventDefault();
     event.stopImmediatePropagation();
     event.stopPropagation();
   }
 
-  addEventListener('pointerdown', noteTrustedInteraction, true);
-  addEventListener('keydown', noteTrustedInteraction, true);
+  addEventListener('pointerdown', onTrustedCapture, true);
+  addEventListener('pointerdown', finishLocalLease, false);
+  addEventListener('keydown', onTrustedCapture, true);
+  addEventListener('keydown', finishLocalLease, false);
   addEventListener('click', onClick, true);
+  addEventListener('click', finishLocalLease, false);
   globalThis.__AUTO_AGREE_HANDOVER_GUARD__ = Object.freeze({ version: VERSION, authorize });
 })();
