@@ -1,21 +1,23 @@
 (() => {
   'use strict';
   if (globalThis.__AUTO_AGREE_GATE__) return;
-  globalThis.__AUTO_AGREE_GATE__ = '6.0.0';
+  globalThis.__AUTO_AGREE_GATE__ = '7.0.0';
 
-  // v4 bootstrap is an evidence gate, not a keyword gate. Weak signals such as a footer
+
+  const VERSION = '7.0.0';
+  const CORE = globalThis.__AUTO_AGREE_SEMANTIC__;
+  if (!CORE || CORE.version !== VERSION) return;
+  const { normalize: norm, joinNormalized: joinNorm, compactSemantic, hasNonLatin } = CORE;
+  const { LEGAL, ASSENT, REQUIRED: REQUIRED_TEXT, COMPACT_LEGAL, COMPACT_ASSENT } = CORE.patterns;
+  const COMPACT_REQUIRED = /(?:required|mandatory|must(?:agree|accept)|please(?:agree|accept))/i;
+
+  // v7 gate is an evidence gate, not a keyword gate. Weak signals such as a footer
   // "Privacy Policy" link or a newsletter email field must never load the full engine alone.
   const AUTH_ACTION = /(?:登录|登入|登陆|注册|註冊|验证码登录|驗證碼登入|获取验证码|獲取驗證碼|发送验证码|發送驗證碼|login|log\s*in|sign\s*in|sign\s*up|register|verification\s*code|connexion|anmelden|iniciar\s+sesi[oó]n|ログイン|로그인|войти|تسجيل\s+الدخول|inloggen|zaloguj|giriş\s+yap|đăng\s+nhập|masuk|เข้าสู่ระบบ|लॉग\s*इन|σύνδεση|התחברות|logga\s+in|logg\s+inn|log\s+ind)/iu;
-  const LEGAL = /(?:用户协议|使用协议|服务协议|服務協議|平台协议|会员协议|许可协议|條款|条款|隐私(?:政策|协议|条款|声明)|隱私(?:政策|協議|條款|聲明)|terms?(?:\s+of\s+(?:service|use))?|privacy\s+(?:policy|notice|agreement|terms)|user\s+agreement|eula|利用規約|プライバシー|이용약관|개인정보|услов|конфиденц|الشروط|الخصوصية|voorwaarden|privacybeleid|warunki|prywatno|kullanım|gizlilik|điều\s+khoản|quyền\s+riêng|syarat|privasi|ข้อกำหนด|ความเป็นส่วนตัว|नियम|शर्तें|गोपनीयता|όροι|απορρήτου|תנאי|פרטיות|villkor|integritet|vilkår|personvern|betingelser|privatliv)/iu;
-  const ASSENT = /(?:我已|本人已|已)?\s*(?:阅读|閱讀|阅悉|閱悉|知悉)?\s*(?:并|並)?\s*(?:同意|接受|遵守)|(?:同意|接受)(?:上述|以上|相关|相關)?|(?:i\s+)?(?:have\s+)?(?:read\s+(?:and|&)\s+)?(?:agree|accept)(?:\s+to)?|i\s+consent\s+to|同意します|동의|соглас|أوافق|akkoord|zgadzam|kabul|đồng\s+ý|setuju|ยอมรับ|सहमत|συμφωνώ|מסכים|godkänner|godtar|accepterer/iu;
-  const REQUIRED_TEXT = /(?:必选|必須|必须|需(?:要)?同意|请先(?:阅读|閱讀)?(?:并|並)?同意|請先(?:閱讀)?(?:並)?同意|required|mandatory|must\s+(?:agree|accept)|please\s+(?:agree|accept))/iu;
   const CREDENTIAL_ATTR = /(?:phone|mobile|tel|email|username|user.?name|account|账号|帳號|手机号|手機號|邮箱|郵箱)/iu;
   const AUTH_ATTR = /(?:login|signin|sign-in|signup|sign-up|register|auth|verification|otp|password|验证码|驗證碼|登录|登入|注册|註冊)/iu;
   const LEGAL_ATTR = /(?:agree|accept|terms?|privacy|agreement|consent|同意|接受|协议|協議|条款|條款|隐私|隱私)/iu;
   const NON_AUTH = /(?:newsletter|subscribe|subscription\s+updates?|mailing\s+list|contact\s+us|contact\s+form|search|site\s+search|feedback|support\s+(?:request|ticket)|订阅资讯|訂閱資訊|邮件订阅|郵件訂閱|联系我们|聯絡我們|站内搜索|站內搜尋|意见反馈|意見反饋)/iu;
-  const COMPACT_LEGAL = /(?:termsof(?:service|use)|privacypolicy|privacyagreement|useragreement|eula)/i;
-  const COMPACT_ASSENT = /(?:i(?:have)?(?:read(?:and)?)?(?:agree|accept)(?:to)?|iconsentto)/i;
-  const COMPACT_REQUIRED = /(?:required|mandatory|must(?:agree|accept)|please(?:agree|accept))/i;
 
   const F = Object.freeze({ AUTH: 1, STRONG_AUTH: 2, CREDENTIAL: 4, LEGAL: 8, ASSENT: 16, CONTROL: 32, REQUIRED: 64, NON_AUTH: 128 });
   const LARGE_BATCH = 96;
@@ -37,63 +39,6 @@
   const deepJobs = [];
   const deepQueued = new WeakSet();
   let localChecked = new WeakSet();
-
-  function norm(value, max = 1000) {
-    if (value == null || max <= 0) return '';
-    const raw = String(value);
-    const inspect = Math.max(256, max * 4 + 128);
-    const normalized = fragment => fragment.replace(/\s+/gu, ' ').trim();
-    const take = (fragment, budget, mode = 'head') => {
-      if (budget <= 0) return '';
-      const text = normalized(fragment);
-      if (text.length <= budget) return text;
-      if (mode === 'tail') return text.slice(-budget);
-      if (mode === 'center') {
-        const start = Math.max(0, Math.floor((text.length - budget) / 2));
-        return text.slice(start, start + budget);
-      }
-      return text.slice(0, budget);
-    };
-    if (raw.length <= inspect) return take(raw, max);
-    // Bounded semantic sampling: inspect fixed-size head/center/tail windows. This keeps CPU
-    // independent of pathological multi-MB strings while avoiding a systematic tail/middle blind spot.
-    const gap = ' zzsemanticgapzz ';
-    const gapCost = gap.length * 2;
-    const headBudget = Math.max(24, Math.floor((max - gapCost) / 3));
-    const middleBudget = Math.max(24, Math.floor((max - gapCost) / 3));
-    const tailBudget = Math.max(0, max - gapCost - headBudget - middleBudget);
-    const windowSize = Math.max(96, Math.max(headBudget, middleBudget, tailBudget) * 4);
-    const center = Math.floor(raw.length / 2);
-    const middleStart = Math.max(0, center - Math.floor(windowSize / 2));
-    const chunks = [
-      take(raw.slice(0, windowSize), headBudget, 'head'),
-      take(raw.slice(middleStart, middleStart + windowSize), middleBudget, 'center'),
-      take(raw.slice(Math.max(0, raw.length - windowSize)), tailBudget, 'tail')
-    ].filter(Boolean);
-    return take(chunks.join(gap), max);
-  }
-
-
-
-  function joinNorm(values, max = 1000) {
-    let out = '';
-    for (const value of values) {
-      const left = max - out.length;
-      if (left <= 0) break;
-      const part = norm(value, left);
-      if (!part) continue;
-      out += (out ? ' ' : '') + part;
-      if (out.length > max) out = out.slice(0, max);
-    }
-    return out;
-  }
-
-  function compactSemantic(value, max = 1400) {
-    const t = norm(value, max).toLowerCase();
-    return t.replace(/[\s\p{P}\p{S}\u200b-\u200d\ufeff]+/gu, '').slice(0, max);
-  }
-
-  function hasNonLatin(value) { return /[^\u0000-\u024f]/u.test(value || ''); }
 
   function rootConnected(root) {
     if (!root) return false;

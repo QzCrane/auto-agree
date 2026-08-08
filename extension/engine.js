@@ -1,9 +1,9 @@
 (() => {
   'use strict';
   if (globalThis.__AUTO_AGREE_ENGINE__) return;
-  globalThis.__AUTO_AGREE_ENGINE__ = '6.0.0';
+  globalThis.__AUTO_AGREE_ENGINE__ = '7.0.0';
 
-  const VERSION = '6.0.0';
+  const VERSION = '7.0.0';
   const MAX_ROW_TEXT = 1400;
   const MAX_CONTEXT_TEXT = 2200;
   const MAX_PENDING_VISIBILITY = 192;
@@ -21,29 +21,14 @@
   const ROOT_BATCH_TTL_MS = 3000;
   const BATCH_JOB_TTL_MS = 3000;
 
-  const LEGAL = /(?:用户协议|使用协议|服务协议|平台协议|会员协议|软件许可|许可协议|最终用户许可|服務協議|使用協議|用戶協議|條款|条款|隐私(?:政策|协议|条款|声明|保护)|隱私(?:政策|協議|條款|聲明|保護)|terms?(?:\s+of\s+(?:service|use|sale))?|privacy\s+(?:policy|notice|agreement|terms)|user\s+agreement|license\s+agreement|eula|conditions?\s+d['’]utilisation|politique\s+de\s+confidentialit[eé]|nutzungsbedingungen|datenschutz(?:erkl[aä]rung)?|t[eé]rminos(?:\s+y\s+condiciones)?|pol[ií]tica\s+de\s+privacidad|termos(?:\s+de\s+uso)?|pol[ií]tica\s+de\s+privacidade|termini(?:\s+di\s+servizio)?|informativa\s+(?:sulla\s+)?privacy|利用規約|プライバシーポリシー|이용약관|개인정보(?:처리)?방침|услов(?:ия|иями)(?:\s+использования)?|политик(?:а|ой)\s+конфиденциальности|الشروط|سياسة\s+الخصوصية|voorwaarden|privacybeleid|warunki(?:\s+korzystania)?|polityka\s+prywatności|kullanım\s+koşulları|gizlilik\s+politikası|điều\s+khoản|chính\s+sách\s+quyền\s+riêng\s+tư|syarat(?:\s+dan\s+ketentuan)?|kebijakan\s+privasi|dasar\s+privasi|ข้อกำหนด|เงื่อนไข|นโยบายความเป็นส่วนตัว|नियम(?:\s+और\s+शर्तें)?|शर्तें|गोपनीयता\s+नीति|όροι|πολιτική\s+απορρήτου|תנאי(?:\s+שימוש)?|מדיניות\s+פרטיות|villkor|integritetspolicy|vilkår|personvern|betingelser|privatlivspolitik)/iu;
-  const ASSENT = /(?:我已|本人已|已)?\s*(?:阅读|閱讀|阅悉|閱悉|知悉)?\s*(?:并|並)?\s*(?:同意|接受|遵守)|(?:同意|接受)(?:上述|以上|相关|相關)?|(?:i\s+)?(?:have\s+)?(?:read\s+(?:and|&)\s+)?(?:agree|accept)(?:\s+to)?|i\s+consent\s+to|j['’](?:ai\s+lu\s+et\s+)?accepte|ich\s+(?:stimme\s+zu|akzeptiere)|(?:he\s+le[ií]do\s+y\s+)?acepto|(?:li\s+e\s+)?aceito|(?:ho\s+letto\s+e\s+)?accetto|同意する|同意します|동의(?:합니다|함)?|(?:я\s+)?(?:согласен|принимаю)|أوافق|أقبل|ik\s+ga\s+akkoord|akkoord|accepteer|zgadzam\s+się|akceptuję|kabul\s+ediyorum|onaylıyorum|tôi\s+đồng\s+ý|đồng\s+ý|chấp\s+nhận|saya\s+setuju|setuju|menerima|ยอมรับ|ตกลง|मैं\s+सहमत\s+हूँ|सहमत|स्वीकार|συμφωνώ|αποδέχομαι|אני\s+מסכים|מסכים|מאשר|jag\s+godkänner|godkänner|jeg\s+godtar|jeg\s+accepterer|accepterer/iu;
-  const READ_WORD = /(?:阅读|閱讀|阅悉|閱悉|知悉|read|lu|le[ií]do|lido|letto|gelesen|確認|확인)/iu;
-  const REQUIRED = /(?:必选|必須|必须|需(?:要)?同意|请先(?:阅读|閱讀)?(?:并|並)?同意|請先(?:閱讀)?(?:並)?同意|required|mandatory|must\s+(?:agree|accept)|please\s+(?:agree|accept)|erforderlich|obligatorio|obrigat[oó]rio|필수)/iu;
-  const VALIDATION = /(?:请先|請先).{0,18}(?:同意|接受|勾选|勾選)|(?:同意|接受).{0,18}(?:后|後)(?:继续|繼續|登录|登入|注册|註冊)|must.{0,20}(?:agree|accept)|please.{0,20}(?:agree|accept)/iu;
-  const NEGATIVE = /(?:不同意|不接受|拒绝|拒絕|decline|disagree|do\s+not\s+agree|don['’]t\s+agree|captcha|recaptcha|hcaptcha|turnstile|人机|人機|机器人|機器人|营销|營銷|推广|推廣|促销|促銷|广告|廣告|newsletter|marketing|promotion|优惠|優惠|活动通知|活動通知|商业信息|商業信息|自动续费|自動續費|连续包月|連續包月|连续包年|連續包年|auto.?renew|subscription|记住我|記住我|保持登录|保持登入|自动登录|自動登入|remember\s+me|keep\s+me\s+signed\s+in|捐赠|捐贈|小费|小費|warranty|donation|通讯录|通訊錄|精准定位|精準定位|个性化广告|個性化廣告|第三方共享|share.{0,16}third.?part|cookie|cookies|优惠券|優惠券)/iu;
-  const ATTESTATION = /(?:已满\s*18|已滿\s*18|年满\s*18|年滿\s*18|成年人|成年人士|over\s+18|18\s+years?\s+old|legal\s+age|本人确认|本人確認|i\s+certify|i\s+confirm\s+that|i\s+declare|实名认证|實名認證|information\s+(?:is|are)\s+(?:true|accurate)|信息真实|資料真實)/iu;
-  const CONSEQUENTIAL_LOCAL = /(?:授权扣款|授權扣款|直接扣款|购买协议|購買協議|订单协议|訂單協議|贷款协议|貸款協議|信贷协议|信貸協議|投资风险|投資風險|交易授权|交易授權|授权交易|授權交易|投资授权|投資授權|投保确认|投保確認|知情同意|劳动合同|勞動合同|雇佣合同|仲裁|放弃.{0,12}权利|放棄.{0,12}權利|集体诉讼|集體訴訟|生物识别.{0,10}(?:同意|授权|授權)|(?:同意|授权|授權).{0,10}生物识别|生物識別.{0,10}(?:同意|授權)|(?:同意|授權).{0,10}生物識別|人脸识别.{0,10}(?:同意|授权|授權)|(?:同意|授权|授權).{0,10}人脸识别|人臉識別.{0,10}(?:同意|授權)|(?:同意|授權).{0,10}人臉識別|授权书|授權書|担保|擔保|purchase\s+agreement|order\s+agreement|terms?\s+of\s+sale|authori[sz]e.{0,20}(?:payment|debit|charge)|direct\s+debit|(?:loan|credit)\s+agreement|investment\s+risk|trading\s+authori[sz]ation|authori[sz](?:e|ation).{0,18}(?:trading|trade|investment)|(?:trading|trade|investment).{0,18}authori[sz](?:e|ation)|insurance\s+(?:application|purchase|policy\s+application)|medical\s+consent|informed\s+consent|consent.{0,18}(?:medical|treatment|surgery)|(?:medical|treatment|surgery).{0,18}consent|employment\s+(?:agreement|contract)|electronic\s+signature|e-?sign(?:ature)?|auto.?renew|subscription\s+plan|arbitration|waiv(?:e|er)|class\s+action|biometric.{0,16}(?:consent|authori[sz])|(?:consent|authori[sz]).{0,16}biometric|facial\s+recognition.{0,16}(?:consent|authori[sz])|(?:consent|authori[sz]).{0,16}facial\s+recognition|power\s+of\s+attorney|guarant(?:or|ee))/iu;
-  const TRANSACTION_ACTION = /(?:下单|下單|提交订单|提交訂單|确认订单|確認訂單|立即购买|立即購買|去支付|确认支付|確認支付|授权扣款|授權扣款|申请贷款|申請貸款|申请借款|申請借款|投保|买入|買入|卖出|賣出|交易下单|交易下單|认购|認購|开通自动续费|開通自動續費|checkout|place\s+(?:an?\s+)?order|complete\s+(?:the\s+)?purchase|buy\s+now|pay\s+now|make\s+(?:a\s+)?payment|authori[sz]e\s+(?:the\s+)?(?:payment|debit|charge)|apply\s+for\s+(?:a\s+)?loan|place\s+(?:a\s+)?trade|subscribe.{0,20}(?:pay|billing|charge)|start\s+(?:a\s+)?subscription|enable\s+auto.?renew)/iu;
-  const AUTH = /(?:登录|登入|登陆|註冊|注册|手机号|手機號|手机号码|手機號碼|短信验证码|短信驗證碼|获取验证码|獲取驗證碼|发送验证码|發送驗證碼|验证码登录|驗證碼登入|login|log\s*in|sign\s*in|sign\s*up|register|phone|mobile|verification\s*code|\botp\b|connexion|anmelden|iniciar\s+sesi[oó]n|entrar|accedi|ログイン|로그인|войти|تسجيل\s+الدخول|inloggen|zaloguj(?:\s+się)?|giriş\s+yap|đăng\s+nhập|masuk|เข้าสู่ระบบ|लॉग\s*इन|σύνδεση|התחברות|logga\s+in|logg\s+inn|log\s+ind)/iu;
-  const PROCEED = /(?:登录|登入|登陆|注册|註冊|继续|繼續|下一步|下一頁|提交|确认|確認|完成|获取验证码|獲取驗證碼|发送验证码|發送驗證碼|login|log\s*in|sign\s*in|sign\s*up|register|continue|next|submit|confirm|verify|get\s+code|send\s+code)/iu;
-  const FAST_TEXT = /(?:同意|接受|协议|協議|条款|條款|隐私|隱私|terms?|privacy|agreement|eula|利用規約|プライバシー|동의|약관|개인정보|соглас|услов|конфиденц|أوافق|الشروط|الخصوصية|voorwaarden|privacybeleid|warunki|prywatności|kullanım|gizlilik|đồng\s+ý|điều\s+khoản|setuju|syarat|ยอมรับ|ข้อกำหนด|सहमत|गोपनीयता|συμφωνώ|όροι|מסכים|תנאי|villkor|vilkår|betingelser)/iu;
-  const CREDENTIAL = /(?:phone|mobile|tel|otp|code|verification|验证码|驗證碼|手机号|手機號|email|password|用户名|用戶名|账号|帳號)/iu;
-  // DOM frameworks sometimes split a single semantic word across inline elements (e.g.
-  // `facial reco` + `<span>gnition</span>`). Keep normal whitespace-preserving text as the
-  // primary representation, but use a punctuation/whitespace-stripped companion only for a
-  // narrow set of high-value legal/risk tokens. This avoids both missed risk blocks and global
-  // "remove all spaces" false positives.
-  const COMPACT_LEGAL = /(?:termsof(?:service|use)|privacypolicy|privacyagreement|useragreement|licenseagreement|eula)/i;
-  const COMPACT_ASSENT = /(?:i(?:have)?(?:read(?:and)?)?(?:agree|accept)(?:to)?|iconsentto)/i;
-  const COMPACT_RISK = /(?:(?:consent|authori[sz](?:e|ation)?).{0,36}(?:facialrecognition|biometric)|(?:facialrecognition|biometric).{0,36}(?:consent|authori[sz](?:e|ation)?)|authori[sz](?:e|ation)?.{0,32}(?:payment|debit|charge|trading|trade|investment)|(?:loan|credit)agreement|investmentrisk|insurance(?:application|purchase)|medicalconsent|informedconsent|employment(?:agreement|contract)|electronicsignature|arbitration|classaction|powerofattorney|autorenew|subscriptionplan)/i;
-  const COMPACT_NEGATIVE = /(?:donotagree|dontagree|rememberme|keepmesignedin|newsletter|marketing|promotion|autorenew|subscription|captcha|recaptcha|hcaptcha|turnstile|thirdpartyshare|sharethirdparty|donation|warranty|cookie|cookies)/i;
-  const COMPACT_ATTESTATION = /(?:over18|18years?old|legalage|icertify|iconfirmthat|ideclare|information(?:is|are)(?:true|accurate))/i;
+  const CORE = globalThis.__AUTO_AGREE_SEMANTIC__;
+  const RISK = globalThis.__AUTO_AGREE_RISK__;
+  if (!CORE || CORE.version !== VERSION || !RISK || RISK.version !== VERSION) return;
+  const { normalize, joinNormalized, compactSemantic, hasNonLatin, assessText, fastSemantic } = CORE;
+  const { containsNegative, containsAttestation, severityFor, SEVERITY } = RISK;
+  const { LEGAL, ASSENT, READ_WORD, REQUIRED, VALIDATION, AUTH, PROCEED, FAST_TEXT, CREDENTIAL, COMPACT_LEGAL, COMPACT_ASSENT } = CORE.patterns;
+  const { TRANSACTION_ACTION } = RISK.patterns;
+
   const CLASS_CHECK = /(?:checkbox|check-box|form-check-input|check_control|check-control)/i;
   const CHECKED_CLASS = /(?:^|\s)(?:is-checked|checked|checkbox-checked|semi-checkbox-checked|ant-checkbox-checked|ant-checkbox-wrapper-checked|arco-checkbox-checked|n-checkbox--checked|Mui-checked|p-highlight)(?:\s|$)/i;
   const CUSTOM_CHECK_TAGS = new Set(['sl-checkbox','ion-checkbox','md-checkbox','mat-checkbox','fluent-checkbox','vaadin-checkbox','ui5-checkbox','calcite-checkbox','lightning-input']);
@@ -74,6 +59,11 @@
   const fragmentRowsSeen = new WeakSet();
   const contextCache = new WeakMap();
   const contextEpoch = new WeakMap();
+  const contextTxnRefs = new Set();
+  const contextTxnRefByKey = new WeakMap();
+  let contextTxnScheduled = false;
+  let contextTxnGeneration = 0;
+  const intentState = new WeakMap();
   const dirtyRoots = new Set();
   const urgentRoots = new Set();
   const rootBatches = [];
@@ -115,82 +105,6 @@
       }
     }
   }) : null;
-
-  function normalize(value, max = MAX_ROW_TEXT) {
-    if (value == null || max <= 0) return '';
-    const raw = String(value);
-    const inspect = Math.max(256, max * 4 + 128);
-    const normalized = fragment => fragment.replace(/\s+/gu, ' ').trim();
-    const take = (fragment, budget, mode = 'head') => {
-      if (budget <= 0) return '';
-      const text = normalized(fragment);
-      if (text.length <= budget) return text;
-      if (mode === 'tail') return text.slice(-budget);
-      if (mode === 'center') {
-        const start = Math.max(0, Math.floor((text.length - budget) / 2));
-        return text.slice(start, start + budget);
-      }
-      return text.slice(0, budget);
-    };
-    if (raw.length <= inspect) return take(raw, max);
-    // Bounded semantic sampling: inspect fixed-size head/center/tail windows. This keeps CPU
-    // independent of pathological multi-MB strings while avoiding a systematic tail/middle blind spot.
-    const gap = ' zzsemanticgapzz ';
-    const gapCost = gap.length * 2;
-    const headBudget = Math.max(24, Math.floor((max - gapCost) / 3));
-    const middleBudget = Math.max(24, Math.floor((max - gapCost) / 3));
-    const tailBudget = Math.max(0, max - gapCost - headBudget - middleBudget);
-    const windowSize = Math.max(96, Math.max(headBudget, middleBudget, tailBudget) * 4);
-    const center = Math.floor(raw.length / 2);
-    const middleStart = Math.max(0, center - Math.floor(windowSize / 2));
-    const chunks = [
-      take(raw.slice(0, windowSize), headBudget, 'head'),
-      take(raw.slice(middleStart, middleStart + windowSize), middleBudget, 'center'),
-      take(raw.slice(Math.max(0, raw.length - windowSize)), tailBudget, 'tail')
-    ].filter(Boolean);
-    return take(chunks.join(gap), max);
-  }
-
-
-  function joinNormalized(values, max = MAX_ROW_TEXT) {
-    let out = '';
-    for (const value of values) {
-      const left = max - out.length;
-      if (left <= 0) break;
-      const part = normalize(value, left);
-      if (!part) continue;
-      out += (out ? ' ' : '') + part;
-      if (out.length > max) out = out.slice(0, max);
-    }
-    return out;
-  }
-
-  function compactSemantic(value, max = MAX_ROW_TEXT) {
-    const t = normalize(value, max).toLowerCase();
-    // Keep letters/digits and CJK/major non-Latin scripts; remove only separators introduced by
-    // markup or punctuation. The result is never displayed or used as sole click authority.
-    return t.replace(/[\s\p{P}\p{S}\u200b-\u200d\ufeff]+/gu, '').slice(0, max);
-  }
-
-  function hasNonLatin(value) {
-    return /[^\u0000-\u024f]/u.test(value || '');
-  }
-
-  function containsNegative(value) {
-    const t = normalize(value);
-    if (!t) return false;
-    if (NEGATIVE.test(t)) return true;
-    const compact = compactSemantic(t);
-    return COMPACT_NEGATIVE.test(compact) || (hasNonLatin(t) && NEGATIVE.test(compact));
-  }
-
-  function containsAttestation(value) {
-    const t = normalize(value);
-    if (!t) return false;
-    if (ATTESTATION.test(t)) return true;
-    const compact = compactSemantic(t);
-    return COMPACT_ATTESTATION.test(compact) || (hasNonLatin(t) && ATTESTATION.test(compact));
-  }
 
   function pushPart(parts, value, budget) {
     if (!value || budget.left <= 0) return;
@@ -301,36 +215,6 @@
     return out;
   }
 
-  function assessText(text) {
-    const t = normalize(text);
-    if (!t) return { eligible: false, score: -100, text: t };
-    if (containsNegative(t) || containsAttestation(t)) return { eligible: false, blocked: true, score: -100, text: t };
-    const compact = compactSemantic(t);
-    const nonLatin = hasNonLatin(t);
-    const legal = LEGAL.test(t) || COMPACT_LEGAL.test(compact) || (nonLatin && LEGAL.test(compact));
-    const assent = ASSENT.test(t) || COMPACT_ASSENT.test(compact) || (nonLatin && ASSENT.test(compact));
-    const required = REQUIRED.test(t);
-    const validation = VALIDATION.test(t);
-    const read = READ_WORD.test(t);
-    let score = 0;
-    if (legal) score += 4;
-    if (assent) score += 5;
-    if (legal && assent) score += 6;
-    if (read && assent) score += 2;
-    if (required) score += 4;
-    if (validation) score += 6;
-    return { eligible: (legal && assent) || (legal && (required || validation)), legal, assent, required, validation, read, score, text: t };
-  }
-
-  function fastSemantic(text) {
-    if (!text) return false;
-    if (FAST_TEXT.test(text)) return true;
-    const compact = compactSemantic(text, 900);
-    const nonLatin = hasNonLatin(text);
-    return COMPACT_LEGAL.test(compact) || COMPACT_ASSENT.test(compact) || COMPACT_RISK.test(compact) ||
-      (nonLatin && (LEGAL.test(compact) || ASSENT.test(compact)));
-  }
-
   function isCheckboxLike(el) {
     if (!(el instanceof Element)) return false;
     const tag = el.localName;
@@ -406,6 +290,52 @@
     contextCache.delete(key);
     if (key instanceof Element) registerContext(key);
     return key;
+  }
+
+  function commitContextTransaction(generation) {
+    if (generation !== lifecycleGeneration || lifecyclePaused) { contextTxnScheduled = false; contextTxnRefs.clear(); return; }
+    contextTxnScheduled = false;
+    for (const ref of [...contextTxnRefs]) {
+      contextTxnRefs.delete(ref);
+      const key = ref?.deref?.();
+      if (!(key instanceof Node) || (key instanceof Element && !key.isConnected)) continue;
+      contextEpoch.set(key, epochOf(key) + 1);
+      contextCache.delete(key);
+      if (key instanceof Element) registerContext(key);
+      processIndexedContext(key instanceof Element ? key : null);
+    }
+  }
+
+  function markContextDirty(node) {
+    const el = node instanceof Element ? node : node?.parentElement;
+    const key = el ? contextKey(el) : document;
+    let ref = contextTxnRefByKey.get(key);
+    if (!ref) { ref = new WeakRef(key); contextTxnRefByKey.set(key, ref); }
+    contextTxnRefs.add(ref);
+    if (contextTxnScheduled) return key;
+    contextTxnScheduled = true;
+    const generation = lifecycleGeneration;
+    contextTxnGeneration = generation;
+    const commit = () => commitContextTransaction(generation);
+    if (typeof requestAnimationFrame === 'function' && document.visibilityState === 'visible') requestAnimationFrame(commit);
+    else queueMicrotask(commit);
+    return key;
+  }
+
+  function noteIntent(node, kind) {
+    const el = node instanceof Element ? node : node?.parentElement;
+    const root = el ? contextKey(el) : document;
+    const now = performance.now();
+    const prev = intentState.get(root) || { score: 0, ts: now };
+    const decay = Math.max(0, 1 - Math.max(0, now - prev.ts) / 8000);
+    const weights = { focus: 1, input: 2, proceed: 4, enter: 3 };
+    const next = { score: prev.score * decay + (weights[kind] || 0), ts: now };
+    intentState.set(root, next);
+    if (next.score >= 3) {
+      processIndexedContext(root instanceof Element ? root : null);
+      if (root instanceof Element) queueRoot(root, true);
+    }
+    return next;
   }
 
   function registerContext(root) {
@@ -601,12 +531,10 @@
     return 1;
   }
 
-  function consequentialRisk(localText, context) {
-    const text = normalize(localText);
-    const compact = compactSemantic(text);
-    return CONSEQUENTIAL_LOCAL.test(text) || COMPACT_RISK.test(compact) ||
-      (hasNonLatin(text) && CONSEQUENTIAL_LOCAL.test(compact)) || !!context?.transaction;
+  function consentSeverity(localText, context) {
+    return severityFor(localText, context?.text || '', !!context?.transaction);
   }
+
 
   function snapshotCandidate(el) {
     const rowInfo = semanticRowInfo(el);
@@ -620,22 +548,53 @@
     const confidence = controlConfidence(el, input);
     const required = !!(input?.required || input?.getAttribute('aria-required') === 'true' || row.getAttribute?.('aria-required') === 'true' || el.getAttribute?.('aria-required') === 'true');
     const disabled = !!(input?.disabled || el.matches?.(':disabled') || el.hasAttribute?.('disabled') || el.getAttribute?.('aria-disabled') === 'true' || row.getAttribute?.('aria-disabled') === 'true');
-    const risky = consequentialRisk(text, context);
-    return { control: el, row, input, text, assessment, context, links, state, confidence, required, disabled, risky };
+    const severity = consentSeverity(text, context);
+    return { control: el, row, input, text, assessment, context, links, state, confidence, required, disabled, severity, risky: severity.level >= SEVERITY.OPTIONAL };
+  }
+
+  function buildSemanticGraph(s) {
+    const a = s.assessment;
+    const facts = Object.freeze({
+      legal: !!a.legal,
+      assent: !!a.assent,
+      required: !!(a.required || a.validation || s.required),
+      auth: !!s.context.auth,
+      transaction: !!s.context.transaction,
+      actionGated: s.context.gatingScore > 0,
+      legalLinks: s.links,
+      controlConfidence: s.confidence,
+      severity: s.severity.level
+    });
+    const nodes = [
+      { id: 'control', kind: 'control' },
+      { id: 'row', kind: 'semantic-row' },
+      { id: 'context', kind: 'context' },
+      { id: 'action', kind: 'proceed-action' }
+    ];
+    const edges = [
+      ['control', 'described-by', 'row'],
+      ['row', 'contained-in', 'context']
+    ];
+    if (facts.actionGated || facts.required) edges.push(['control', 'gates', 'action']);
+    if (facts.legalLinks) edges.push(['row', 'references-legal', 'context']);
+    return Object.freeze({ facts, nodes, edges });
   }
 
   function decisionFor(s) {
-    if (s.disabled || s.risky || s.assessment.blocked || containsNegative(s.text) || containsAttestation(s.text)) return { accept: false, score: -100 };
+    const graph = buildSemanticGraph(s);
+    const f = graph.facts;
+    if (s.disabled || f.severity >= SEVERITY.OPTIONAL || s.assessment.blocked) return { accept: false, score: -100, severity: s.severity, graph };
     const a = s.assessment;
-    let score = a.score + s.links + s.context.gatingScore + (s.context.auth ? 2 : 0) + Math.min(s.confidence, 5);
-    if (s.required) score += 4;
+    let score = a.score + f.legalLinks + s.context.gatingScore + (f.auth ? 2 : 0) + Math.min(f.controlConfidence, 5);
+    if (f.required) score += 4;
 
-    const explicitLegalAssent = a.legal && a.assent;
-    const explicitMandatoryLegal = a.legal && (a.required || a.validation || s.required);
-    const terseAuthLegal = a.legal && s.context.auth && s.confidence >= 4 && (s.links >= 2 || s.required || s.context.gatingScore > 0);
-    const assentWithLegalLinks = a.assent && s.links >= 2 && s.confidence >= 3;
-    const accept = explicitLegalAssent || explicitMandatoryLegal || terseAuthLegal || assentWithLegalLinks || (a.eligible && score >= 12);
-    return { accept, score };
+    const explicitLegalAssent = f.legal && f.assent;
+    const explicitMandatoryLegal = f.legal && f.required;
+    const terseAuthLegal = f.legal && f.auth && f.controlConfidence >= 4 && (f.legalLinks >= 2 || f.required || f.actionGated);
+    const assentWithLegalLinks = f.assent && f.legalLinks >= 2 && f.controlConfidence >= 3;
+    const relationalGate = f.legal && (f.assent || f.required) && (f.auth || f.actionGated) && f.controlConfidence >= 3;
+    const accept = explicitLegalAssent || explicitMandatoryLegal || terseAuthLegal || assentWithLegalLinks || relationalGate || (a.eligible && score >= 12);
+    return { accept, score, severity: s.severity, graph };
   }
 
   function bucketFor(context) {
@@ -662,7 +621,7 @@
   }
 
   function stateFingerprint(s) {
-    return `${s.state.known ? 1 : 0}:${s.state.checked ? 1 : 0}:${s.state.kind}:${s.required ? 1 : 0}:${s.assessment.score}:${s.text.slice(0, 220)}`;
+    return `${s.state.known ? 1 : 0}:${s.state.checked ? 1 : 0}:${s.state.kind}:${s.required ? 1 : 0}:${s.assessment.score}:${s.severity.level}:${s.text.slice(0, 220)}`;
   }
 
   function preferredClickTarget(s) {
@@ -740,6 +699,28 @@
     return `${normalizedPath()}|${sig}`;
   }
 
+  function behaviorDescriptor(s) {
+    return {
+      kind: s?.state?.kind || 'unknown',
+      severity: Number(s?.severity?.level || 0),
+      legal: !!s?.assessment?.legal,
+      assent: !!s?.assessment?.assent,
+      required: !!s?.required,
+      auth: !!s?.context?.auth,
+      linkBucket: Math.min(2, Math.floor(Number(s?.links || 0) / 2))
+    };
+  }
+
+  function descriptorCompatible(stored, live) {
+    if (!stored || typeof stored !== 'object') return true;
+    if (Number(stored.severity || 0) >= SEVERITY.OPTIONAL) return false;
+    if (stored.kind && stored.kind !== 'unknown' && live.kind !== stored.kind) return false;
+    if (stored.legal && !live.legal) return false;
+    if (stored.required && !live.required && !live.assent) return false;
+    if (Number(stored.linkBucket || 0) > Number(live.linkBucket || 0) + 1) return false;
+    return true;
+  }
+
   function profileMessage(type, profile = null) {
     return new Promise(resolve => {
       try {
@@ -761,10 +742,11 @@
     const flows = Array.isArray(profile.flows) ? profile.flows : [];
     let flow = flows.find(f => f?.fingerprint === fingerprint && JSON.stringify(f.locator) === JSON.stringify(locator));
     if (!flow) {
-      flow = { fingerprint, locator, successes: 0, failures: 0, ts: 0 };
+      flow = { fingerprint, locator, descriptor: behaviorDescriptor(s), successes: 0, failures: 0, ts: 0 };
       flows.unshift(flow);
     }
     const previousFailures = Number(flow.failures || 0);
+    flow.descriptor = behaviorDescriptor(s);
     flow.successes = Math.min(100000, Number(flow.successes || 0) + 1);
     flow.failures = 0;
     const shouldPersist = previousFailures > 0 || now - Number(flow.ts || 0) >= PROFILE_REFRESH_MS || profile.version !== VERSION;
@@ -1598,7 +1580,7 @@
     const added = new Set();
     for (const record of records) {
       if (!detailed && observedContextCount && insideObservedContext(record.target)) continue;
-      if (detailed) bumpContext(record.target);
+      if (detailed) markContextDirty(record.target);
       else contextCache.delete(document);
 
       if (record.type === 'childList') {
@@ -1702,6 +1684,7 @@
   function preflight(event) {
     if (lifecyclePaused) return;
     const root = eventContext(event);
+    if (proceedInteraction(event)) noteIntent(event.target, 'proceed');
     recheckPending();
     processIndexedContext(root);
     if (!proceedInteraction(event)) return;
@@ -1726,6 +1709,8 @@
       const el = resolveLocator(flow.locator);
       if (!(el instanceof Element) || !isCheckboxLike(el)) continue;
       const snap = snapshotCandidate(el);
+      const liveDescriptor = behaviorDescriptor(snap);
+      if (!descriptorCompatible(flow.descriptor, liveDescriptor)) { recordCacheFailure(flow); continue; }
       const decision = decisionFor(snap);
       if (decision.accept) processCandidate(el, true);
       else recordCacheFailure(flow);
@@ -1765,7 +1750,7 @@
     observeRoot(root);
   }
 
-  function onKeyDown(event) { if (event.key === 'Enter') preflight(event); }
+  function onKeyDown(event) { if (event.key === 'Enter') { noteIntent(event.target, 'enter'); preflight(event); } }
 
   function onFocusIn(event) {
     if (lifecyclePaused) return;
@@ -1773,6 +1758,7 @@
     if (!target) return;
     const hint = joinNormalized([target.getAttribute('name'), target.getAttribute('type'), target.getAttribute('placeholder'), target.getAttribute('autocomplete')], 300);
     if (CREDENTIAL.test(hint)) {
+      noteIntent(target, 'focus');
       const root = bumpContext(target);
       broadShadowEnabled = true;
       queueShadowSweep(root instanceof Element ? root : document.documentElement);
@@ -1784,6 +1770,7 @@
     if (lifecyclePaused) return;
     const target = event.target instanceof Element ? event.target : null;
     if (!target) return;
+    noteIntent(target, 'input');
     const root = bumpContext(target);
     // Credential/value changes can flip a terse legal control from ambiguous to mandatory.
     // Re-evaluate only the already indexed legal candidates for this context (O(K)), never
@@ -1886,6 +1873,8 @@
     if (initialRescueTimer) clearTimeout(initialRescueTimer);
     initialRescueTimer = 0;
     stopAllVerifiers();
+    contextTxnRefs.clear();
+    contextTxnScheduled = false;
     clearQueuedWork();
   }
 

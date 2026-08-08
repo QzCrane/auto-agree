@@ -10,7 +10,13 @@ const PROFILE_CACHE_MAX = 32;
 const PROFILE_ORIGIN_MAX = 256;
 const PROFILE_FLOW_MAX = 8;
 const PROFILE_TTL_MS = 180 * 24 * 60 * 60 * 1000;
-const VERSION = '6.0.0';
+const INJECTION_MAX_GLOBAL = 4;
+const INJECTION_MAX_PER_TAB = 2;
+const INJECTION_QUEUE_MAX = 64;
+const injectionQueue = [];
+const injectionActiveByTab = new Map();
+let injectionActive = 0;
+const VERSION = '7.0.0';
 let storageWriteChain = Promise.resolve();
 
 function cacheProfile(key, value) {
@@ -54,6 +60,21 @@ function locatorKey(locator) {
   try { return JSON.stringify(locator || null); } catch (_) { return ''; }
 }
 
+function sanitizeDescriptor(descriptor) {
+  if (!descriptor || typeof descriptor !== 'object') return null;
+  const kind = ['native','aria','data','class','custom','unknown'].includes(descriptor.kind) ? descriptor.kind : 'unknown';
+  const severity = Math.max(0, Math.min(4, Number(descriptor.severity || 0)));
+  return {
+    kind,
+    severity,
+    legal: !!descriptor.legal,
+    assent: !!descriptor.assent,
+    required: !!descriptor.required,
+    auth: !!descriptor.auth,
+    linkBucket: Math.max(0, Math.min(2, Number(descriptor.linkBucket || 0)))
+  };
+}
+
 function sanitizeProfile(profile) {
   if (!profile || typeof profile !== 'object') return null;
   const now = Date.now();
@@ -71,6 +92,7 @@ function sanitizeProfile(profile) {
     const clean = {
       fingerprint,
       locator,
+      descriptor: sanitizeDescriptor(flow.descriptor),
       successes: Math.max(0, Math.min(100000, Number(flow.successes || 0))),
       failures: Math.max(0, Math.min(1000, Number(flow.failures || 0))),
       ts
@@ -92,6 +114,7 @@ function mergeProfiles(current, incoming) {
     const next = {
       fingerprint,
       locator,
+      descriptor: sanitizeDescriptor(flow.descriptor),
       successes: Math.max(0, Math.min(100000, Number(flow.successes || 0))),
       failures: Math.max(0, Math.min(1000, Number(flow.failures || 0))),
       ts: Number(flow.ts || 0)
@@ -211,6 +234,35 @@ function putProfile(origin, profile) {
   return storageWriteChain;
 }
 
+function drainInjectionQueue() {
+  if (injectionActive >= INJECTION_MAX_GLOBAL || !injectionQueue.length) return;
+  for (let i = 0; i < injectionQueue.length && injectionActive < INJECTION_MAX_GLOBAL; ) {
+    const job = injectionQueue[i];
+    const tabActive = injectionActiveByTab.get(job.target.tabId) || 0;
+    if (tabActive >= INJECTION_MAX_PER_TAB) { i++; continue; }
+    injectionQueue.splice(i, 1);
+    injectionActive++;
+    injectionActiveByTab.set(job.target.tabId, tabActive + 1);
+    chrome.scripting.executeScript({ target: job.target, files: job.files, world: 'ISOLATED', injectImmediately: true })
+      .then(job.resolve, job.reject)
+      .finally(() => {
+        injectionActive = Math.max(0, injectionActive - 1);
+        const next = Math.max(0, (injectionActiveByTab.get(job.target.tabId) || 1) - 1);
+        if (next) injectionActiveByTab.set(job.target.tabId, next); else injectionActiveByTab.delete(job.target.tabId);
+        drainInjectionQueue();
+      });
+  }
+}
+
+function scheduleInjection(target, files, priority) {
+  if (injectionQueue.length >= INJECTION_QUEUE_MAX) return Promise.reject(new Error('injection-queue-full'));
+  return new Promise((resolve, reject) => {
+    injectionQueue.push({ target, files, priority, resolve, reject, queuedAt: Date.now() });
+    injectionQueue.sort((a,b) => b.priority - a.priority || a.queuedAt - b.queuedAt);
+    drainInjectionQueue();
+  });
+}
+
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (!message || typeof message.type !== 'string') return false;
 
@@ -249,15 +301,10 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   const key = sender.documentId || `${target.tabId}:${sender.frameId ?? 0}`;
   const isGate = message.type === 'AUTO_AGREE_GATE';
   const map = isGate ? gateInflight : engineInflight;
-  const file = isGate ? 'gate.js' : 'engine.js';
+  const files = isGate ? ['semantic-core.js', 'gate.js'] : ['risk-core.js', 'engine.js'];
   let promise = map.get(key);
   if (!promise) {
-    promise = chrome.scripting.executeScript({
-      target,
-      files: [file],
-      world: 'ISOLATED',
-      injectImmediately: true
-    }).finally(() => map.delete(key));
+    promise = scheduleInjection(target, files, isGate ? 1 : 2).finally(() => map.delete(key));
     map.set(key, promise);
   }
 
