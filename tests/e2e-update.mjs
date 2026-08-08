@@ -5,7 +5,7 @@ import http from 'node:http';
 import {execFileSync} from 'node:child_process';
 import assert from 'node:assert/strict';
 import puppeteer from 'puppeteer';
-import {extensionWorldSentinels} from './e2e-isolated-worlds.mjs';
+import {extensionWorldSentinels,evaluateInExecutionContext} from './e2e-isolated-worlds.mjs';
 
 const ROOT=path.resolve('.');
 const CURRENT=path.join(ROOT,'extension');
@@ -91,20 +91,20 @@ assert.equal(JSON.parse(fs.readFileSync(path.join(active,'manifest.json'),'utf8'
 await withServer(async base=>{
   const browser=await launch();
   try{
-    const initialId=await bounded(browser.installExtension(active),5000,'install v8 unpacked');
+    const initialId=await bounded(browser.installExtension(active),5000,'install v9 unpacked');
     let ext=(await browser.extensions()).get(initialId);
-    assert.ok(ext,'v8 extension missing after Browser.installExtension');
+    assert.ok(ext,'v9 extension missing after Browser.installExtension');
     assert.equal(ext.version,'9.0.0');
 
     const dormantPage=await browser.newPage();
     await gotoActive(dormantPage,`${base}/dynamic.html?update=dormant`);
-    await dormantPage.evaluate(()=>{window.__autoAgreeUpdateMarker='dormant-v8';});
+    await dormantPage.evaluate(()=>{window.__autoAgreeUpdateMarker='dormant-v9';});
 
     const activePage=await browser.newPage();
     await gotoActive(activePage,`${base}/dynamic.html?update=active`);
-    await activePage.evaluate(()=>{window.__autoAgreeUpdateMarker='active-v8';window.insertRoutineLogin();});
+    await activePage.evaluate(()=>{window.__autoAgreeUpdateMarker='active-v9';window.insertRoutineLogin();});
     await waitChecked(activePage,'#dynamic-agree');
-    assert.equal(await activePage.evaluate(()=>window.dynamicClicks),1,'v8 active-page setup must click exactly once');
+    assert.equal(await activePage.evaluate(()=>window.dynamicClicks),1,'v9 active-page setup must click exactly once');
     const activeBefore=await extensionWorldSentinels(activePage);
     assert.ok(activeBefore.some(world=>world.engine==='9.0.0'),'active page must have v9 Engine before update');
     await activePage.evaluate(()=>window.clearRoutineLogin());
@@ -112,7 +112,7 @@ await withServer(async base=>{
     replaceDir(CURRENT,active);
     assert.equal(JSON.parse(fs.readFileSync(path.join(active,'manifest.json'),'utf8')).version,'10.0.0');
 
-    const reloadedId=await bounded(browser.installExtension(active),5000,'reload same unpacked path as v9');
+    const reloadedId=await bounded(browser.installExtension(active),5000,'reload same unpacked path as v10');
     assert.equal(reloadedId,initialId,'same unpacked path must retain extension identity across update');
 
     let observed=[];
@@ -134,7 +134,7 @@ await withServer(async base=>{
       throw error;
     });
 
-    assert.equal(await bounded(worker.evaluate(()=>chrome.runtime.getManifest().version),800,'final v9 manifest read'),'10.0.0');
+    assert.equal(await bounded(worker.evaluate(()=>chrome.runtime.getManifest().version),800,'final v10 manifest read'),'10.0.0');
 
     const dormantHandover=await poll(async()=>{
       const worlds=await extensionWorldSentinels(dormantPage);
@@ -148,25 +148,22 @@ await withServer(async base=>{
     assert.ok(activeHandover.some(world=>world.handover==='10.0.0'));
 
     await dormantPage.bringToFront();
-    assert.equal(await dormantPage.evaluate(()=>window.__autoAgreeUpdateMarker),'dormant-v8','dormant page reloaded during update');
+    assert.equal(await dormantPage.evaluate(()=>window.__autoAgreeUpdateMarker),'dormant-v9','dormant page reloaded during update');
     await dormantPage.evaluate(()=>window.insertRoutineLogin());
     await waitChecked(dormantPage,'#dynamic-agree');
-    assert.equal(await dormantPage.evaluate(()=>window.dynamicClicks),1,'dormant old page must get exactly one click after v9 activation');
+    assert.equal(await dormantPage.evaluate(()=>window.dynamicClicks),1,'dormant old page must get exactly one click after v10 activation');
     const dormantAfter=await extensionWorldSentinels(dormantPage);
-    assert.ok(dormantAfter.some(world=>world.engine==='10.0.0'),'dormant v9 Probe must hand off into v9 Engine');
+    assert.ok(dormantAfter.some(world=>world.engine==='10.0.0'),'dormant v9 Probe must hand off into v10 Engine');
     assert.equal(dormantAfter.some(world=>world.engine==='9.0.0'),false,'dormant page must not gain a v9 Engine after update');
 
     await activePage.bringToFront();
-    assert.equal(await activePage.evaluate(()=>window.__autoAgreeUpdateMarker),'active-v8','active page reloaded during update');
+    assert.equal(await activePage.evaluate(()=>window.__autoAgreeUpdateMarker),'active-v9','active page reloaded during update');
     await activePage.evaluate(()=>window.insertRoutineLogin());
     await waitChecked(activePage,'#dynamic-agree');
     assert.equal(await activePage.evaluate(()=>window.dynamicClicks),1,'updated active page must receive exactly one routine-agreement click');
     const activeAfterRoutine=await extensionWorldSentinels(activePage);
-    assert.ok(activeAfterRoutine.some(world=>world.engine==='10.0.0'),'updated active page must expose the current v9 Engine world');
+    assert.ok(activeAfterRoutine.some(world=>world.engine==='10.0.0'),'updated active page must expose the current v10 Engine world');
 
-    // Chrome may retain an observable old isolated-world sentinel after extension reload. Sentinel
-    // coexistence is not sufficient evidence of two live click authorities. Attack that hypothesis
-    // behaviorally with a control that v8 would treat as unchecked but v9 must refuse as tri-state.
     await activePage.evaluate(()=>{window.clearRoutineLogin();window.insertMixedLogin();});
     await new Promise(resolve=>setTimeout(resolve,900));
     const mixedResult=await activePage.$eval('#dynamic-mixed',el=>({
@@ -174,31 +171,29 @@ await withServer(async base=>{
       elementClicks:Number(el.dataset.clicks||0),
       windowClicks:Number(window.dynamicClicks||0)
     }));
-    assert.deepEqual(mixedResult,{state:'mixed',elementClicks:0,windowClicks:0},'legacy v8 mixed-state behavior must not remain an active click authority after update');
+    assert.deepEqual(mixedResult,{state:'mixed',elementClicks:0,windowClicks:0},'legacy v9 mixed-state behavior must not remain an active click authority after update');
     const activeAfterMixed=await extensionWorldSentinels(activePage);
-    const oldSentinelVisible=activeAfterMixed.some(world=>world.engine==='9.0.0');
+    const oldWorld=activeAfterMixed.find(world=>world.engine==='9.0.0');
+    const oldSentinelVisible=!!oldWorld;
     const currentSentinelVisible=activeAfterMixed.some(world=>world.engine==='10.0.0');
-    assert.equal(currentSentinelVisible,true,'v9 Engine sentinel missing after mixed-state discriminator');
+    assert.ok(oldWorld,'stale v9 Engine execution context must remain available for direct authority discrimination');
+    assert.equal(currentSentinelVisible,true,'v10 Engine sentinel missing after mixed-state discriminator');
 
-    // The firewall must not break a site's own custom-checkbox delegation. Puppeteer sends a real
-    // trusted input event to the local wrapper; the page synchronously delegates to input.click(),
-    // which is untrusted. That one descendant synthetic click is causally user-authorized and must
-    // survive, while the unrelated stale-v9 mixed click above remains blocked.
     await activePage.evaluate(()=>{window.clearRoutineLogin();window.insertUserDelegatedTerms();});
     await activePage.click('#delegated-wrapper');
     await waitChecked(activePage,'#delegated-input',2000);
     const delegatedResult=await activePage.$eval('#delegated-input',el=>({checked:el.checked,windowClicks:Number(window.dynamicClicks||0)}));
     assert.deepEqual(delegatedResult,{checked:true,windowClicks:1},'trusted local wrapper delegation must remain functional under the update firewall');
 
-    // Both Engines resolve this external IDREF. The current guard does not, so the stale generation
-    // should leak one extra click until the production fix is applied.
+    // Directly exercise synthetic click authority from the surviving old v9 isolated world. The
+    // control is mixed so current v10 Engine will refuse it; any page click means the current guard
+    // failed to understand the external aria-labelledby legal relation and let stale authority pass.
     await activePage.evaluate(()=>{window.clearRoutineLogin();window.insertExternalIdrefUnknown();});
-    await new Promise(resolve=>setTimeout(resolve,900));
+    await evaluateInExecutionContext(activePage,oldWorld.id,"document.querySelector('#external-unknown')?.click(); true");
+    await new Promise(resolve=>setTimeout(resolve,250));
     const externalIdrefClicks=await activePage.$eval('#external-unknown',el=>Number(el.dataset.clicks||0));
-    assert.equal(externalIdrefClicks,1,'external aria-labelledby Terms control must have only the current-generation authorized click');
+    assert.equal(externalIdrefClicks,0,'external aria-labelledby Terms control must block a direct stale-world synthetic click');
 
-    // A trusted Continue/Login action must not grant a causal lease to a distant sibling Terms
-    // control merely because both happen to live under one large generic DIV.
     await activePage.evaluate(()=>{window.clearRoutineLogin();window.insertWideCausalTrap();});
     await activePage.click('#wide-action');
     await new Promise(resolve=>setTimeout(resolve,350));
@@ -219,7 +214,7 @@ await withServer(async base=>{
       activeRoutineClicks:1,
       activeMixedClicks:0,
       trustedDelegatedClicks:1,
-      externalIdrefClicks:1,
+      externalIdrefClicks:0,
       wideCausalClicks:0
     }));
     console.log('e2e-update-worlds:',JSON.stringify(activeAfterMixed));
