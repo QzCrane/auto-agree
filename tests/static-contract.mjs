@@ -22,10 +22,17 @@ for(const[name,re]of forbidden)assert.equal(re.test(source),false,`forbidden ${n
 const worker=fs.readFileSync(path.join(root,'worker.js'),'utf8');
 assert.match(worker,/semantic-core\.js/);assert.match(worker,/documentLifecycle/);assert.match(worker,/INJECTION_AGING_MS/);assert.match(worker,/INJECTION_STALE_MS/);assert.match(worker,/onInstalled/);assert.match(worker,/allFrames:\s*true/);
 assert.match(worker,/profileOriginForSender/);
-assert.match(worker,/handover-guard\.js/);
+assert.match(worker,/protectAndRehydrateTab/,'update rehydration must separate protection from Probe recovery');
+assert.match(worker,/\['semantic-core\.js', 'handover-guard\.js'\]/,'protection phase must install the shared semantic core before handover guard');
+assert.match(worker,/await scheduleInjection\(target, \['bootstrap\.js'\], 3\)/,'bootstrap must be a later phase after protection resolves');
+assert.equal(/\['handover-guard\.js', 'bootstrap\.js'\]/.test(worker),false,'guard and bootstrap must never share the update injection phase');
 assert.equal(/\bmessage\.origin\b/.test(worker),false,'profile storage identity must come from MessageSender, not message.origin');
 assert.match(worker,/\['semantic-core\.js', 'risk-core\.js', 'engine\.js'\]/,'Engine injection must refresh the shared semantic dependency across extension updates');
 const guard=fs.readFileSync(path.join(root,'handover-guard.js'),'utf8');
+assert.match(guard,/__AUTO_AGREE_SEMANTIC__/,'handover guard must consume the shared semantic core');
+assert.match(guard,/CORE\.assessText/,'handover agreement classification must use the shared semantic classifier');
+assert.match(guard,/CORE\.version !== VERSION/,'guard must reject a missing or stale semantic generation');
+assert.equal(/const\s+(?:LEGAL|ASSENT|REQUIRED)\s*=/.test(guard),false,'handover guard must not maintain a private legal/assent/required regex copy');
 assert.match(guard,/event\.isTrusted/,'handover firewall must never require authorization for trusted user clicks');
 assert.match(guard,/causalLocal/,'local delegated clicks must use a separate causal lease');
 assert.match(guard,/localLeaseByEvent/,'cross-world delegation must be scoped to one DOM event propagation');
@@ -34,6 +41,7 @@ assert.match(guard,/WIDE_CONTAINER/,'causal discovery must exclude broad page/fo
 assert.match(guard,/isProceedAction/,'proceed/action targets must be explicitly excluded from causal authority');
 assert.match(guard,/boundedUniqueDelegatedControl/,'generic classless wrappers must resolve one exact delegated control through bounded traversal');
 assert.match(guard,/localDelegationTarget/,'causal authority must resolve to a delegated control, not an arbitrary region');
+assert.match(guard,/eventElements/,'causal authority must follow the composed event path');
 assert.match(guard,/HTMLLabelElement/);assert.match(guard,/\.control/,'native label association should resolve its exact delegated control');
 assert.match(guard,/MAX_LOCAL_WRAPPER_NODES\s*=\s*\d+/,'generic wrapper traversal must have a hard node cap');
 assert.match(guard,/MAX_LOCAL_CONTROL_DEPTH\s*=\s*\d+/,'generic wrapper traversal must have a hard depth cap');
