@@ -1,4 +1,4 @@
-name: Bootstrap v8 classless scope recomposition
+name: Bootstrap v8 classless scope formatting
 
 on:
   push:
@@ -14,7 +14,7 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  apply:
+  format:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
@@ -22,7 +22,7 @@ jobs:
         with:
           ref: ${{ github.head_ref || github.ref_name }}
           fetch-depth: 0
-      - name: Apply exact local-scope mutation transaction
+      - name: Normalize scope-recomposition indentation
         shell: bash
         run: |
           set -euo pipefail
@@ -30,37 +30,19 @@ jobs:
           from pathlib import Path
           p = Path('extension/gate.js')
           s = p.read_text()
-          a = "    const start = performance.now();\n    for (const record of records) {"
-          ar = "    const start = performance.now();\n    const rescannedScopes = new WeakSet();\n    for (const record of records) {"
-          b = "          const hit = inspectNode(nodes[i], true, Math.min(0.35, Math.max(0.12, SYNC_MUTATION_BUDGET_MS - (performance.now() - start))));\n          if (hit) return activate(`mutation-${hit.reason || 'evidence'}`, hit.seed || nodes[i]);"
-          br = """          const node = nodes[i];
-          const remaining = Math.min(0.35, Math.max(0.12, SYNC_MUTATION_BUDGET_MS - (performance.now() - start)));
-          const hit = inspectNode(node, true, remaining);
-          if (hit) return activate(`mutation-${hit.reason || 'evidence'}`, hit.seed || node);
-
-          // Parser/framework commits can add credentials, a classless legal row, and the proceed
-          // action as sibling subtrees. Recompose only their common local UI scope once per observer
-          // delivery; never fall back to a document-wide rescan.
-          const el = node instanceof Element ? node : node?.parentElement;
-          if (!(el instanceof Element)) continue;
-          const nf = node.nodeType === Node.TEXT_NODE ? textFlags(node.data || '') : elementFlags(el);
-          if (!(nf & (F.AUTH | F.CREDENTIAL | F.LEGAL | F.ASSENT | F.REQUIRED))) continue;
-          const scope = localScope(el);
-          if (!(scope instanceof Element) || scope === el || rescannedScopes.has(scope)) continue;
-          rescannedScopes.add(scope);
-          const local = scanEvidence(scope, 112, Math.min(0.65, Math.max(0.18, SYNC_MUTATION_BUDGET_MS - (performance.now() - start))), true);
-          if (local.hit) return activate(`mutation-scope-${local.reason || 'evidence'}`, local.seed || scope);
-          if (local.truncated) queueDeep(scope, true);"""
-          if s.count(a) != 1: raise SystemExit(f'anchor a count={s.count(a)}')
-          s = s.replace(a, ar, 1)
-          if s.count(b) != 1: raise SystemExit(f'anchor b count={s.count(b)}')
-          p.write_text(s.replace(b, br, 1))
+          start = s.index('          const node = nodes[i];')
+          end = s.index('\n        }\n      } else if (record.type === \'characterData\') {', start)
+          block = s[start:end]
+          lines = block.splitlines()
+          fixed = [lines[0]] + [('          ' + line if line and not line.startswith('          ') else line) for line in lines[1:]]
+          out = s[:start] + '\n'.join(fixed) + s[end:]
+          p.write_text(out)
           PY
           node --check extension/gate.js
           npm test
           python tools/package_extension.py --check
           git diff --check
-      - name: Commit verified product fix
+      - name: Commit formatting
         shell: bash
         run: |
           set -euo pipefail
@@ -68,6 +50,6 @@ jobs:
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git add extension/gate.js
           if git diff --cached --quiet; then exit 0; fi
-          git commit -m 'fix: recompose classless consent evidence at local scope'
+          git commit -m 'style: normalize classless scope recomposition block'
           target="${GITHUB_HEAD_REF:-${GITHUB_REF_NAME}}"
           git push origin "HEAD:${target}"
