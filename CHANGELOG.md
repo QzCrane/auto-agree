@@ -2,7 +2,7 @@
 
 ## 8.0.0 — 2026-08-08
 
-- Added real unpacked-extension Puppeteer E2E against system Chrome, including real MV3 service-worker injection, all-frame behavior, closed Shadow DOM, worker termination recovery, update transition, and CPU-profile capture.
+- Added real unpacked-extension Puppeteer E2E with explicitly installed Chrome for Testing, including the actual MV3 service worker, dynamic isolated-world injection, all-frame behavior, closed Shadow DOM, worker termination recovery, update transition, and CPU-profile capture.
 - Added Worker `documentLifecycle` defense-in-depth: explicit prerender/cached/pending-deletion senders cannot schedule Gate/Engine or profile work.
 - Rebuilt injection scheduling with bounded aging, per-tab tie rotation, stale-job eviction, and Engine admission that can preempt younger queued Gate work instead of failing behind a full low-priority queue.
 - Added bounded handoff retries in Probe/Gate and idempotent profile-message retries so unexpected service-worker termination does not strand an otherwise live page.
@@ -10,7 +10,9 @@
 - Strengthened disabled-action causality with native `ValidityState`; a non-empty but invalid credential no longer makes a disabled Login button look like evidence that Terms is the blocker.
 - Converted Probe→Gate and Gate→Engine seed handoff to WeakRef ownership with backward-compatible v7 seed reading and consumption cleanup.
 - Added a sanitized real-world-derived regression corpus (TRAE classless, fragmented consequential language, closed Shadow, iframe, dynamic SPA, native-validity gating).
-- Added E2E CPU-profile artifacts and a broad latency regression ceiling so future micro-optimization follows measured hot paths.
+- Real unpacked E2E exposed and fixed a classless reverse-discovery `ReferenceError` caused by stale pre-`risk-core.js` private identifiers; a static contract now prevents that module-boundary regression.
+- Used the real 5,000-checkbox CPU profile to remove broad nearby-text extraction from ordinary checkbox Probe paths. The profiled workload moved from ~330.9 ms / 0.3056 s TaskDuration to ~286.1 ms / 0.2662 s, and Probe text-scan functions dropped out of the top sampled hotspots.
+- Tightened the real-extension performance gate to `<1000 ms` wall latency and `<0.8 s` TaskDuration while keeping the independent v7→v8 update-transition gate.
 
 ## 7.0.0 — 2026-08-08
 
@@ -30,7 +32,7 @@
 
 ## 5.0.0
 
-- Three-tier Probe → Gate → Engine architecture, weak ownership across background queues, fragmented semantic recovery, serialized profile writes.
+- Three-tier Probe → Gate → Engine architecture, weak ownership across background queues, fragmented semantics, serialized profile writes.
 
 ## 4.0.0
 
@@ -38,7 +40,7 @@
 
 ## 3.0.0
 
-- Lazy frame-specific MV3 injection, bounded text/accessibility resolution, WeakRef candidate indexing, closed Shadow DOM support and adversarial consent testing.
+- Lazy frame-specific MV3 injection, bounded text/accessibility resolution, WeakRef candidate indexing, closed Shadow support and adversarial consent testing.
 
 ## 2.0.0
 
