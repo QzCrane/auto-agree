@@ -54,4 +54,9 @@ assert.equal(/\bCONSEQUENTIAL_LOCAL\b/.test(engine),false,'engine must consume r
 assert.equal(/\bconsequentialRisk\b/.test(engine),false,'stale pre-risk-core consequentialRisk helper reference');
 assert.match(fs.readFileSync(path.join(root,'bootstrap.js'),'utf8'),/HANDOFF_RETRY_DELAYS/);
 assert.match(fs.readFileSync(path.join(root,'gate.js'),'utf8'),/HANDOFF_RETRY_DELAYS/);
+
+const ci=fs.readFileSync(path.resolve('.github/workflows/ci.yml'),'utf8');
+assert.match(ci,/if:\s*github\.event_name == 'pull_request'/,'release transition must be PR-scoped, not replayed on every main push');
+assert.match(ci,/AUTO_AGREE_PREVIOUS_REF:\s*\$\{\{\s*github\.event\.pull_request\.base\.sha\s*\}\}/,'release transition must stage the PR base as its previous version');
+assert.equal(/github\.event\.before/.test(ci),false,'version-specific transition gate must not derive previous version from arbitrary main push history');
 console.log('static-contract: PASS');
