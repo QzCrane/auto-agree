@@ -15,6 +15,9 @@
   const CONTROL = 'input[type="checkbox"],input[type="radio"],[role="checkbox"],[role="radio"],[role="switch"],[aria-checked]';
   const CUSTOM = new Set(['sl-checkbox','ion-checkbox','md-checkbox','mat-checkbox','fluent-checkbox','vaadin-checkbox','ui5-checkbox','calcite-checkbox','lightning-input']);
   const WIDE_CONTAINER = /^(?:html|body|form|dialog|main|section|article)$/i;
+  const MAX_LOCAL_WRAPPER_DEPTH = 2;
+  const MAX_LOCAL_WRAPPER_NODES = 24;
+  const MAX_LOCAL_CONTROL_DEPTH = 3;
 
   function composedParent(el) {
     if (!(el instanceof Element)) return null;
@@ -58,6 +61,13 @@
     if (CUSTOM.has(el.localName)) return true;
     const cls = typeof el.className === 'string' ? el.className : el.getAttribute('class') || '';
     return cls.length <= 500 && /(?:checkbox|check-box|form-check-input|check_control|check-control)/i.test(cls);
+  }
+
+  function isProceedAction(el) {
+    if (!(el instanceof Element)) return false;
+    if (el.matches?.('button,a[href],[role="button"]')) return true;
+    if (el instanceof HTMLInputElement) return /^(?:button|submit|image|reset)$/i.test(el.type || '');
+    return false;
   }
 
   function shadowText(host) {
@@ -133,15 +143,40 @@
     });
   }
 
+  // Generic classless wrappers are allowed only when locality is physically small and bounded.
+  // Do not use querySelector here: a trusted event is a hot path, and an arbitrary ancestor may
+  // contain an unbounded subtree or an unrelated consent control far away from the clicked target.
+  function isSmallLocalControlWrapper(root) {
+    if (!(root instanceof Element) || WIDE_CONTAINER.test(root.localName) || isProceedAction(root)) return false;
+    const stack = [];
+    for (let child = root.firstElementChild; child; child = child.nextElementSibling) stack.push({ node: child, depth: 1 });
+    let visited = 0;
+    let foundControl = false;
+    while (stack.length) {
+      const entry = stack.pop();
+      if (++visited > MAX_LOCAL_WRAPPER_NODES) return false;
+      const node = entry.node;
+      if (!(node instanceof Element)) continue;
+      if (isControl(node)) foundControl = true;
+      if (entry.depth >= MAX_LOCAL_CONTROL_DEPTH) continue;
+      for (let child = node.firstElementChild; child; child = child.nextElementSibling) {
+        if (stack.length + visited >= MAX_LOCAL_WRAPPER_NODES) return false;
+        stack.push({ node: child, depth: entry.depth + 1 });
+      }
+    }
+    return foundControl;
+  }
+
   function localInteractionRoot(target) {
     if (!(target instanceof Element)) return null;
     const semanticWrapper = target.closest?.('label,[role="checkbox"],[role="radio"],[role="switch"]');
     if (semanticWrapper instanceof Element) return semanticWrapper;
     if (isControl(target)) return target;
+    if (isProceedAction(target)) return null;
     let p = target;
-    for (let depth = 0; depth < 3 && p instanceof Element; depth++, p = composedParent(p)) {
-      if (WIDE_CONTAINER.test(p.localName)) continue;
-      try { if (p.querySelector?.(CONTROL)) return p; } catch (_) {}
+    for (let depth = 0; depth <= MAX_LOCAL_WRAPPER_DEPTH && p instanceof Element; depth++, p = composedParent(p)) {
+      if (WIDE_CONTAINER.test(p.localName) || isProceedAction(p)) continue;
+      if (isSmallLocalControlWrapper(p)) return p;
     }
     return null;
   }
