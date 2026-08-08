@@ -7,11 +7,13 @@
   // remain observable and executable after the new extension generation is installed. Current
   // Engine clicks receive a synchronous one-shot authorization; stale generations do not.
   const authorized = new WeakSet();
+  const trustedLocal = new WeakSet();
   const LEGAL = /(?:terms?(?:\s+of\s+(?:service|use))?|privacy|agreement|eula|协议|協議|条款|條款|隐私|隱私|利用規約|プライバシー|약관|개인정보|услов|конфиденц|الشروط|الخصوصية)/iu;
   const ASSENT = /(?:agree|accept|consent|同意|接受|동의|同意する|соглас|أوافق)/iu;
   const REQUIRED = /(?:required|mandatory|must\s+(?:agree|accept)|please\s+(?:agree|accept)|必须|必須|需(?:要)?同意|请先(?:阅读|閱讀)?(?:并|並)?同意)/iu;
   const CONTROL = 'input[type="checkbox"],input[type="radio"],[role="checkbox"],[role="radio"],[role="switch"],[aria-checked]';
   const CUSTOM = new Set(['sl-checkbox','ion-checkbox','md-checkbox','mat-checkbox','fluent-checkbox','vaadin-checkbox','ui5-checkbox','calcite-checkbox','lightning-input']);
+  const WIDE_CONTAINER = /^(?:html|body|form|dialog|main|section|article)$/i;
 
   function composedParent(el) {
     if (!(el instanceof Element)) return null;
@@ -89,6 +91,14 @@
     return true;
   }
 
+  function consumeTrustedLocal(nodes) {
+    let allowed = false;
+    for (const node of nodes) if (trustedLocal.has(node)) allowed = true;
+    if (!allowed) return false;
+    for (const node of nodes) trustedLocal.delete(node);
+    return true;
+  }
+
   function agreementLike(nodes) {
     let hasControl = false;
     const parts = [];
@@ -108,31 +118,63 @@
     return LEGAL.test(text) && (hasControl || ASSENT.test(text) || REQUIRED.test(text));
   }
 
-  function authorize(el) {
+  function leaseWeak(set, nodes) {
     const lease = [];
-    let node = el;
-    for (let i = 0; i < 10 && node instanceof Element; i++, node = composedParent(node)) {
-      authorized.add(node);
+    for (const node of nodes) {
+      if (!(node instanceof Element)) continue;
+      set.add(node);
       lease.push(node);
     }
-    // Engine dispatches HTMLElement.click() synchronously. If that call throws, is suppressed, or
-    // otherwise emits no click event, do not leave a token that a later stale generation can use.
     queueMicrotask(() => {
-      for (const leased of lease) authorized.delete(leased);
+      for (const leased of lease) set.delete(leased);
     });
   }
 
+  function authorize(el) {
+    const nodes = [];
+    let node = el;
+    for (let i = 0; i < 10 && node instanceof Element; i++, node = composedParent(node)) nodes.push(node);
+    // Engine dispatches HTMLElement.click() synchronously. If that call throws, is suppressed, or
+    // otherwise emits no click event, do not leave a token that a later stale generation can use.
+    leaseWeak(authorized, nodes);
+  }
+
+  function trustedInteractionRoot(target) {
+    if (!(target instanceof Element)) return null;
+    if (isControl(target)) return target;
+    const semanticWrapper = target.closest?.('label,[role="checkbox"],[role="radio"],[role="switch"]');
+    if (semanticWrapper instanceof Element) return semanticWrapper;
+    let p = target;
+    for (let depth = 0; depth < 3 && p instanceof Element; depth++, p = composedParent(p)) {
+      if (WIDE_CONTAINER.test(p.localName)) continue;
+      try { if (p.querySelector?.(CONTROL)) return p; } catch (_) {}
+    }
+    return null;
+  }
+
+  function noteTrustedInteraction(event) {
+    if (!event.isTrusted) return;
+    const root = trustedInteractionRoot(event.target instanceof Element ? event.target : null);
+    if (root) leaseWeak(trustedLocal, [root]);
+  }
+
   function onClick(event) {
-    if (event.isTrusted) return;
+    if (event.isTrusted) { noteTrustedInteraction(event); return; }
     const nodes = candidateNodes(event);
     if (!nodes.length) return;
     if (consumeAuthorization(nodes)) return;
+    // Preserve a page's own custom-checkbox implementation when a genuine user click on that
+    // exact local wrapper synchronously delegates to input.click(). A Login-button click does not
+    // lease a sibling Terms row because broad form/dialog containers are never trusted roots.
+    if (consumeTrustedLocal(nodes)) return;
     if (!agreementLike(nodes)) return;
     event.preventDefault();
     event.stopImmediatePropagation();
     event.stopPropagation();
   }
 
+  addEventListener('pointerdown', noteTrustedInteraction, true);
+  addEventListener('keydown', noteTrustedInteraction, true);
   addEventListener('click', onClick, true);
   globalThis.__AUTO_AGREE_HANDOVER_GUARD__ = Object.freeze({ version: VERSION, authorize });
 })();
