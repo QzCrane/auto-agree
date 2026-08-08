@@ -3,12 +3,14 @@
   const VERSION = '10.0.0';
   if (globalThis.__AUTO_AGREE_HANDOVER_GUARD__?.version === VERSION) return;
 
+  const CORE = globalThis.__AUTO_AGREE_SEMANTIC__;
+  if (!CORE || CORE.version !== VERSION || typeof CORE.assessText !== 'function') {
+    throw new Error(`Auto Agree handover semantic dependency unavailable for ${VERSION}`);
+  }
+
   const authorized = new WeakSet();
   const causalLocal = new WeakSet();
   const localLeaseByEvent = new WeakMap();
-  const LEGAL = /(?:terms?(?:\s+of\s+(?:service|use))?|privacy|agreement|eula|协议|協議|条款|條款|隐私|隱私|利用規約|プライバシー|약관|개인정보|услов|конфиденц|الشروط|الخصوصية)/iu;
-  const ASSENT = /(?:agree|accept|consent|同意|接受|동의|同意する|соглас|أوافق)/iu;
-  const REQUIRED = /(?:required|mandatory|must\s+(?:agree|accept)|please\s+(?:agree|accept)|必须|必須|需(?:要)?同意|请先(?:阅读|閱讀)?(?:并|並)?同意)/iu;
   const CONTROL = 'input[type="checkbox"],input[type="radio"],[role="checkbox"],[role="radio"],[role="switch"],[aria-checked]';
   const CUSTOM = new Set(['sl-checkbox','ion-checkbox','md-checkbox','mat-checkbox','fluent-checkbox','vaadin-checkbox','ui5-checkbox','calcite-checkbox','lightning-input']);
   const WIDE_CONTAINER = /^(?:html|body|form|dialog|main|section|article)$/i;
@@ -137,8 +139,8 @@
       }
       if (chars >= 1200) break;
     }
-    const text = parts.join(' ');
-    return LEGAL.test(text) && (hasControl || ASSENT.test(text) || REQUIRED.test(text));
+    const assessment = CORE.assessText(parts.join(' '));
+    return !!assessment?.legal && (hasControl || !!assessment.assent || !!assessment.required || !!assessment.validation);
   }
 
   function authorize(el) {
@@ -190,17 +192,12 @@
   function localDelegationTarget(event) {
     const path = eventElements(event, 8);
     if (!path.length) return null;
-
-    // Authority follows the actual composed event path. A proceed action encountered before a
-    // checkbox/control boundary terminates the search, so a button nested inside a large label or
-    // generic container can never mint authority for a sibling/descendant agreement control.
     for (const node of path) {
       if (isProceedAction(node)) return null;
       if (node instanceof HTMLLabelElement) return labelDelegationTarget(node);
       if (isControl(node)) return node;
       if (WIDE_CONTAINER.test(node.localName)) break;
     }
-
     for (let i = 0; i < path.length && i <= MAX_LOCAL_WRAPPER_DEPTH; i++) {
       const node = path[i];
       if (!(node instanceof Element) || WIDE_CONTAINER.test(node.localName) || isProceedAction(node)) continue;
