@@ -1,0 +1,53 @@
+name: Bootstrap v8 classless diagnostic
+
+on:
+  push:
+    branches: [feat/v8-lifecycle-e2e-hardening]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: write
+
+concurrency:
+  group: bootstrap-v8-classless-diagnostic
+  cancel-in-progress: false
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.head_ref || github.ref_name }}
+          fetch-depth: 0
+      - id: payload
+        shell: bash
+        run: |
+          if test -f .bootstrap-v8-classless-diagnostic/classless-diagnostic.patch.b64; then echo 'present=true' >> "$GITHUB_OUTPUT"; else echo 'present=false' >> "$GITHUB_OUTPUT"; fi
+      - name: Apply exact classless diagnostic
+        if: steps.payload.outputs.present == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          base64 --decode .bootstrap-v8-classless-diagnostic/classless-diagnostic.patch.b64 > /tmp/classless-diagnostic.patch
+          echo 'bbaf6ac6319b2751433bf134ace0163f3f7a4f0b2562596509aaa50ec886d9b5  /tmp/classless-diagnostic.patch' | sha256sum --check --strict
+          git apply --check /tmp/classless-diagnostic.patch
+          git apply /tmp/classless-diagnostic.patch
+          rm -rf .bootstrap-v8-classless-diagnostic
+          node --check tests/e2e-extension.mjs
+          npm test
+          python tools/package_extension.py --check
+          git diff --check
+      - name: Commit diagnostic harness
+        if: steps.payload.outputs.present == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A -- ':!.github/workflows'
+          git commit -m 'test: add classless failure diagnostics'
+          target="${GITHUB_HEAD_REF:-${GITHUB_REF_NAME}}"
+          git push origin "HEAD:${target}"
