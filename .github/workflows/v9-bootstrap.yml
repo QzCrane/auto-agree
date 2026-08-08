@@ -35,6 +35,22 @@ jobs:
           path.write_text(text.replace(old, new, 1), encoding='utf-8')
           PY
           python .v9-bootstrap.py
+      - name: Align restart fixture with sender-bound profile identity
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          path=Path('tests/worker-restart.mjs')
+          text=path.read_text(encoding='utf-8')
+          replacements=[
+            ("vm.runInNewContext(source,{chrome,console,Promise,Map,Set,Date,Error,Number,String,Array,Object,JSON,Math,setTimeout,clearTimeout});","vm.runInNewContext(source,{chrome,console,Promise,Map,Set,Date,Error,Number,String,Array,Object,JSON,Math,URL,setTimeout,clearTimeout});"),
+            ("sender={tab:{id:1},frameId:0,documentId:'d',documentLifecycle:'active'}","sender={tab:{id:1},frameId:0,documentId:'d',documentLifecycle:'active',origin:'https://example.test',url:'https://example.test/login'}"),
+            ("version:'8.0.0'","version:'9.0.0'")
+          ]
+          for old,new in replacements:
+            if old not in text: raise SystemExit(f'missing restart fixture anchor: {old}')
+            text=text.replace(old,new)
+          path.write_text(text,encoding='utf-8')
+          PY
       - name: Remove bootstrap payload
         run: rm .v9-bootstrap.py
       - name: Verify deterministic core
