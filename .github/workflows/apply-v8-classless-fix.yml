@@ -1,0 +1,44 @@
+name: Apply v8 classless repair
+
+on:
+  push:
+    branches: [feat/v8-lifecycle-e2e-hardening]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: write
+
+concurrency:
+  group: apply-v8-classless-repair
+  cancel-in-progress: false
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.head_ref || github.ref_name }}
+          fetch-depth: 0
+      - name: Apply exact repair
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo 'd582226bac7e663b7d643b816fb06133eecd027e5b2e8531feefa0e176d16a89  .v8fix/classless-risk-core.patch' | sha256sum --check --strict
+          git apply --check .v8fix/classless-risk-core.patch
+          git apply .v8fix/classless-risk-core.patch
+          npm test
+          python tools/package_extension.py --check
+      - name: Commit production repair only
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add extension/engine.js tests/static-contract.mjs
+          git diff --cached --check
+          git commit -m 'fix: restore classless risk-core integration'
+          target="${GITHUB_HEAD_REF:-${GITHUB_REF_NAME}}"
+          git push origin "HEAD:${target}"
