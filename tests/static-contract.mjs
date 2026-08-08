@@ -31,6 +31,12 @@ assert.match(guard,/causalLocal/,'local delegated clicks must use a separate cau
 assert.match(guard,/localLeaseByEvent/,'cross-world delegation must be scoped to one DOM event propagation');
 assert.match(guard,/finishLocalLease/,'local causal leases must be revoked in bubble phase');
 assert.match(guard,/WIDE_CONTAINER/,'causal leases must exclude broad page/form containers');
+assert.match(guard,/isProceedAction/,'proceed/action targets must be explicitly excluded from causal-root authority');
+assert.match(guard,/isSmallLocalControlWrapper/,'generic classless wrapper support must use a bounded locality proof');
+assert.match(guard,/MAX_LOCAL_WRAPPER_NODES\s*=\s*\d+/,'generic wrapper traversal must have a hard node cap');
+assert.match(guard,/MAX_LOCAL_CONTROL_DEPTH\s*=\s*\d+/,'generic wrapper traversal must have a hard depth cap');
+assert.equal(/querySelector\?\.\(CONTROL\)|querySelector\s*\(\s*CONTROL\s*\)/.test(guard),false,'trusted-event causal-root discovery must never issue an unbounded generic control subtree query');
+assert.match(guard,/firstElementChild/);assert.match(guard,/nextElementSibling/);
 assert.match(guard,/pointerdown/);assert.match(guard,/keydown/);
 assert.match(guard,/queueMicrotask\s*\(/,'unused direct Engine authorization must expire at a microtask checkpoint');
 assert.match(guard,/authorized\.delete/,'direct Engine authorization must be consumable and revocable');
