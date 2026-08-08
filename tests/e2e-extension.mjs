@@ -65,6 +65,13 @@ async function autoAgreeExtension(browser,timeout=5000){
   throw new Error('Auto Agree extension not installed after bounded registration wait');
 }
 
+async function gotoActive(page,url){
+  await page.bringToFront();
+  await page.goto(url,{waitUntil:'domcontentloaded'});
+  await page.bringToFront();
+  await page.waitForFunction(()=>document.visibilityState==='visible',{timeout:2000});
+}
+
 async function waitChecked(page,selector,timeout=3000){await page.waitForFunction(sel=>document.querySelector(sel)?.checked===true,{timeout},selector);}
 async function waitUnchecked(page,selector,delay=350){await new Promise(r=>setTimeout(r,delay)); assert.equal(await page.$eval(selector,el=>el.checked),false,`${selector} unexpectedly checked`);}
 
@@ -99,10 +106,18 @@ async function poll(fn,timeout=3000,interval=50){
 
 async function basicMatrix(base,browser){
   const page=await browser.newPage();
-  await page.goto(`${base}/positive-login.html`,{waitUntil:'domcontentloaded'}); await waitChecked(page,'#agree');
-  await page.goto(`${base}/marketing-negative.html`,{waitUntil:'domcontentloaded'}); await waitUnchecked(page,'#marketing');
-  await page.goto(`${base}/fragmented-risk.html`,{waitUntil:'domcontentloaded'}); await waitUnchecked(page,'#risk');
-  await page.goto(`${base}/trae-classless.html`,{waitUntil:'domcontentloaded'});
+  await gotoActive(page,`${base}/positive-login.html`);
+  try {
+    await waitChecked(page,'#agree');
+  } catch (error) {
+    const diag=await page.evaluate(()=>({visibility:document.visibilityState,readyState:document.readyState,checked:document.querySelector('#agree')?.checked,buttonDisabled:document.querySelector('#continue')?.disabled}));
+    const worlds=await extensionWorldSentinels(page);
+    console.error('positive-diagnostic:',JSON.stringify({diag,worlds}));
+    throw error;
+  }
+  await gotoActive(page,`${base}/marketing-negative.html`); await waitUnchecked(page,'#marketing');
+  await gotoActive(page,`${base}/fragmented-risk.html`); await waitUnchecked(page,'#risk');
+  await gotoActive(page,`${base}/trae-classless.html`);
   try {
     await page.waitForFunction(()=>document.querySelector('#box')?.dataset.checked==='true',{timeout:3000});
   } catch (error) {
@@ -118,22 +133,22 @@ async function basicMatrix(base,browser){
     throw error;
   }
 
-  await page.goto(`${base}/terse-validity.html`,{waitUntil:'domcontentloaded'}); await waitUnchecked(page,'#agree',300);
+  await gotoActive(page,`${base}/terse-validity.html`); await waitUnchecked(page,'#agree',300);
   await page.$eval('#email',el=>{el.value='valid@example.com';el.dispatchEvent(new Event('input',{bubbles:true}));});
   await waitChecked(page,'#agree');
 
-  await page.goto(`${base}/iframe-parent.html`,{waitUntil:'domcontentloaded'});
+  await gotoActive(page,`${base}/iframe-parent.html`);
   const child=await poll(async()=>page.frames().find(f=>f.url().endsWith('/iframe-child.html'))||null,3000,40);
   await child.waitForFunction(()=>document.querySelector('#frame-agree')?.checked===true,{timeout:3000});
 
-  await page.goto(`${base}/closed-shadow.html`,{waitUntil:'domcontentloaded'});
+  await gotoActive(page,`${base}/closed-shadow.html`);
   await page.$eval('#host',host=>host.focusInside()); await page.waitForFunction(()=>document.querySelector('#host')?.isChecked()===true,{timeout:3000});
   await page.close();
 }
 
 async function workerTerminationMatrix(base,browser,extensionId){
   for(let i=0;i<4;i++){
-    const page=await browser.newPage(); await page.goto(`${base}/dynamic.html?round=${i}`,{waitUntil:'domcontentloaded'});
+    const page=await browser.newPage(); await gotoActive(page,`${base}/dynamic.html?round=${i}`);
     await stopWorker(browser,extensionId);
     await page.evaluate(()=>window.insertRoutineLogin());
     await waitChecked(page,'#dynamic-agree',4000); await page.close();
@@ -143,7 +158,7 @@ async function workerTerminationMatrix(base,browser,extensionId){
 async function profileMatrix(base,browser){
   const page=await browser.newPage(); const session=await page.createCDPSession();
   await session.send('Profiler.enable'); await session.send('Profiler.start'); const t0=performance.now();
-  await page.goto(`${base}/performance-tail.html`,{waitUntil:'domcontentloaded'}); await waitChecked(page,'#tail-agree',4000); const latency=performance.now()-t0;
+  await gotoActive(page,`${base}/performance-tail.html`); await waitChecked(page,'#tail-agree',4000); const latency=performance.now()-t0;
   const {profile}=await session.send('Profiler.stop'); const metrics=await page.metrics();
   const byId=new Map(profile.nodes.map(n=>[n.id,n])); const counts=new Map();
   for(const id of profile.samples||[]) counts.set(id,(counts.get(id)||0)+1);
@@ -160,7 +175,7 @@ async function updateTransition(base){
   const browser=await launch(active);
   try{
     const ext=await autoAgreeExtension(browser); assert.equal(ext.version,'7.0.0',`previous ref is ${ext.version}, expected 7.0.0`);
-    const page=await browser.newPage(); await page.goto(`${base}/dynamic.html?update=1`,{waitUntil:'domcontentloaded'});
+    const page=await browser.newPage(); await gotoActive(page,`${base}/dynamic.html?update=1`);
     replaceDir(EXTENSION,active);
     const workers=await ext.workers(); assert.ok(workers.length,'previous service worker unavailable');
     try{await workers[0].evaluate(()=>chrome.runtime.reload());}catch(_){}
