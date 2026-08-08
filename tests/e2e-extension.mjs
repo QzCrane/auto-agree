@@ -50,13 +50,18 @@ async function launch(extensionPath){
   return puppeteer.launch(options);
 }
 
-async function autoAgreeExtension(browser){
-  const extensions=await browser.extensions();
-  for(const ext of extensions.values()) if(ext.name==='Auto Agree Login Terms') return ext;
+async function autoAgreeExtension(browser,timeout=5000){
+  const deadline=Date.now()+timeout;
+  let extensions=new Map();
+  while(Date.now()<deadline){
+    extensions=await browser.extensions();
+    for(const ext of extensions.values()) if(ext.name==='Auto Agree Login Terms') return ext;
+    await new Promise(resolve=>setTimeout(resolve,50));
+  }
   const installed=[...extensions.values()].map(ext=>({id:ext.id,name:ext.name,version:ext.version}));
   const workers=browser.targets().filter(t=>t.type()==='service_worker').map(t=>t.url());
-  console.error('extension-diagnostic:',JSON.stringify({installed,workers,headed:HEADED}));
-  throw new Error('Auto Agree extension not installed');
+  console.error('extension-diagnostic:',JSON.stringify({installed,workers,headed:HEADED,timeout}));
+  throw new Error('Auto Agree extension not installed after bounded registration wait');
 }
 
 async function waitChecked(page,selector,timeout=3000){await page.waitForFunction(sel=>document.querySelector(sel)?.checked===true,{timeout},selector);}
