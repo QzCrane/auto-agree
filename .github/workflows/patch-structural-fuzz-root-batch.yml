@@ -1,0 +1,94 @@
+name: patch-structural-fuzz-root-batch
+
+on:
+  push:
+    branches: [agent/v11-structural-fuzz-recovery]
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - name: Apply exact engine patch
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          p = Path('extension/engine.js')
+          s = p.read_text()
+          old = '''  function enqueueRootBatch(roots, index, urgent) {
+            if (!roots || index >= roots.length) return;
+            while (rootBatches.length >= MAX_ROOT_BATCHES) rootBatches.shift();
+            const refs = roots.map(root => root && typeof root === 'object' ? new WeakRef(root) : null);
+            rootBatches.push({ refs, index, urgent, createdAt: performance.now() });
+            scheduleBackground();
+          }
+          '''
+          new = '''  function sharedRootBatchParent(roots, index) {
+            let parent = null;
+            for (let i = index; i < roots.length; i++) {
+              const root = roots[i];
+              if (!root || !rootConnected(root)) continue;
+              const next = root instanceof ShadowRoot ? root : root.parentNode;
+              if (!next || !rootConnected(next)) continue;
+              if (!parent) parent = next;
+              else if (parent !== next) return null;
+            }
+            return parent;
+          }
+
+          function appendRootBatchRefs(job, roots, index) {
+            for (let i = index; i < roots.length; i++) {
+              const root = roots[i];
+              if (root && typeof root === 'object') job.refs.push(new WeakRef(root));
+            }
+          }
+
+          function enqueueRootBatch(roots, index, urgent) {
+            if (!roots || index >= roots.length) return;
+            if (rootBatches.length >= MAX_ROOT_BATCHES) {
+              // DOM discovery is state-based, so sibling overflow can be losslessly coalesced to
+              // their live parent instead of discarding an older batch. The parent then enters the
+              // normal generation/time-sliced root path and observes the final subtree state after
+              // the burst settles. This preserves the hard batch-object cap without silent FN.
+              const parent = sharedRootBatchParent(roots, index);
+              if (parent) {
+                queueRoot(parent, urgent);
+                return;
+              }
+              // Mixed-root overflow cannot always be coarsened without jumping to document-wide
+              // scanning. Preserve losslessness with weak refs in the newest bounded batch; this
+              // does not retain detached DOM and avoids making global rescans an attacker-triggered
+              // overflow primitive.
+              const tail = rootBatches[rootBatches.length - 1];
+              appendRootBatchRefs(tail, roots, index);
+              tail.urgent = tail.urgent || urgent;
+              tail.createdAt = performance.now();
+              scheduleBackground();
+              return;
+            }
+            const refs = [];
+            for (let i = index; i < roots.length; i++) {
+              const root = roots[i];
+              if (root && typeof root === 'object') refs.push(new WeakRef(root));
+            }
+            if (!refs.length) return;
+            rootBatches.push({ refs, index: 0, urgent, createdAt: performance.now() });
+            scheduleBackground();
+          }
+          '''
+          if s.count(old) != 1:
+              raise SystemExit(f'exact enqueueRootBatch source mismatch: {s.count(old)} matches')
+          p.write_text(s.replace(old, new))
+          PY
+      - name: Commit patch
+        run: |
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add extension/engine.js
+          git diff --cached --check
+          git commit -m "fix: coalesce root-batch overflow without dropping discovery"
+          git push
