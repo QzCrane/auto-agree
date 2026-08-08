@@ -1,0 +1,1 @@
+Status: research-only, not mergeable. Real Chrome exposed silent Engine RootBatch overflow loss; the clean production repair remains open. Temporary branch-only CI transport must not enter main.
