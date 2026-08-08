@@ -180,6 +180,16 @@ await withServer(async base=>{
     const currentSentinelVisible=activeAfterMixed.some(world=>world.engine==='9.0.0');
     assert.equal(currentSentinelVisible,true,'v9 Engine sentinel missing after mixed-state discriminator');
 
+    // The firewall must not break a site's own custom-checkbox delegation. Puppeteer sends a real
+    // trusted input event to the local wrapper; the page synchronously delegates to input.click(),
+    // which is untrusted. That one descendant synthetic click is causally user-authorized and must
+    // survive, while the unrelated stale-v8 mixed click above remains blocked.
+    await activePage.evaluate(()=>{window.clearRoutineLogin();window.insertUserDelegatedTerms();});
+    await activePage.click('#delegated-wrapper');
+    await waitChecked(activePage,'#delegated-input',2000);
+    const delegatedResult=await activePage.$eval('#delegated-input',el=>({checked:el.checked,windowClicks:Number(window.dynamicClicks||0)}));
+    assert.deepEqual(delegatedResult,{checked:true,windowClicks:1},'trusted local wrapper delegation must remain functional under the update firewall');
+
     ext=(await browser.extensions()).get(initialId);
     console.log('e2e-update:',JSON.stringify({
       id:initialId,
@@ -192,7 +202,8 @@ await withServer(async base=>{
       activeOldSentinelVisible:oldSentinelVisible,
       activeCurrentSentinelVisible:currentSentinelVisible,
       activeRoutineClicks:1,
-      activeMixedClicks:0
+      activeMixedClicks:0,
+      trustedDelegatedClicks:1
     }));
     console.log('e2e-update-worlds:',JSON.stringify(activeAfterMixed));
     console.log('e2e-update: PASS');
