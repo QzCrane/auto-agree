@@ -1,0 +1,45 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Causal propagation lifetime regression</title>
+<style>
+  .row { display:flex; align-items:center; gap:8px; margin:20px; }
+  .visual { display:inline-block; width:22px; height:22px; border:1px solid #555; cursor:pointer; }
+</style>
+
+<div id="sync-wrapper" class="row">
+  <span id="sync-visual" class="visual" tabindex="0"></span>
+  <input id="sync-input" type="checkbox">
+  <span>I agree to the Terms of Service and receive marketing newsletters</span>
+</div>
+
+<div id="async-wrapper" class="row">
+  <span id="async-visual" class="visual" tabindex="0"></span>
+  <input id="async-input" type="checkbox">
+  <span>I agree to the Terms of Service and receive marketing newsletters</span>
+</div>
+
+<script>
+  window.syncClicks = 0;
+  window.asyncClicks = 0;
+  const syncWrapper = document.querySelector('#sync-wrapper');
+  const syncVisual = document.querySelector('#sync-visual');
+  const syncInput = document.querySelector('#sync-input');
+  const asyncWrapper = document.querySelector('#async-wrapper');
+  const asyncVisual = document.querySelector('#async-visual');
+  const asyncInput = document.querySelector('#async-input');
+
+  syncInput.addEventListener('click', () => { window.syncClicks++; });
+  asyncInput.addEventListener('click', () => { window.asyncClicks++; });
+
+  syncWrapper.addEventListener('click', event => {
+    if (event.target !== syncVisual) return;
+    event.stopPropagation();
+    syncInput.click();
+  });
+
+  asyncWrapper.addEventListener('click', event => {
+    if (event.target !== asyncVisual) return;
+    event.stopPropagation();
+    setTimeout(() => asyncInput.click(), 40);
+  });
+</script>
