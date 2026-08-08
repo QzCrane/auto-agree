@@ -418,23 +418,23 @@
         for (let i = 0; i < nodes.length; i++) {
           if (performance.now() - start >= SYNC_MUTATION_BUDGET_MS) { queueBatch(nodes, i, record.target); break; }
           const node = nodes[i];
-const remaining = Math.min(0.35, Math.max(0.12, SYNC_MUTATION_BUDGET_MS - (performance.now() - start)));
-const hit = inspectNode(node, true, remaining);
-if (hit) return activate(`mutation-${hit.reason || 'evidence'}`, hit.seed || node);
+          const remaining = Math.min(0.35, Math.max(0.12, SYNC_MUTATION_BUDGET_MS - (performance.now() - start)));
+          const hit = inspectNode(node, true, remaining);
+          if (hit) return activate(`mutation-${hit.reason || 'evidence'}`, hit.seed || node);
 
-// Parser/framework commits can add credentials, a classless legal row, and the proceed
-// action as sibling subtrees. Recompose only their common local UI scope once per observer
-// delivery; never fall back to a document-wide rescan.
-const el = node instanceof Element ? node : node?.parentElement;
-if (!(el instanceof Element)) continue;
-const nf = node.nodeType === Node.TEXT_NODE ? textFlags(node.data || '') : elementFlags(el);
-if (!(nf & (F.AUTH | F.CREDENTIAL | F.LEGAL | F.ASSENT | F.REQUIRED))) continue;
-const scope = localScope(el);
-if (!(scope instanceof Element) || scope === el || rescannedScopes.has(scope)) continue;
-rescannedScopes.add(scope);
-const local = scanEvidence(scope, 112, Math.min(0.65, Math.max(0.18, SYNC_MUTATION_BUDGET_MS - (performance.now() - start))), true);
-if (local.hit) return activate(`mutation-scope-${local.reason || 'evidence'}`, local.seed || scope);
-if (local.truncated) queueDeep(scope, true);
+          // Parser/framework commits can add credentials, a classless legal row, and the proceed
+          // action as sibling subtrees. Recompose only their common local UI scope once per observer
+          // delivery; never fall back to a document-wide rescan.
+          const el = node instanceof Element ? node : node?.parentElement;
+          if (!(el instanceof Element)) continue;
+          const nf = node.nodeType === Node.TEXT_NODE ? textFlags(node.data || '') : elementFlags(el);
+          if (!(nf & (F.AUTH | F.CREDENTIAL | F.LEGAL | F.ASSENT | F.REQUIRED))) continue;
+          const scope = localScope(el);
+          if (!(scope instanceof Element) || scope === el || rescannedScopes.has(scope)) continue;
+          rescannedScopes.add(scope);
+          const local = scanEvidence(scope, 112, Math.min(0.65, Math.max(0.18, SYNC_MUTATION_BUDGET_MS - (performance.now() - start))), true);
+          if (local.hit) return activate(`mutation-scope-${local.reason || 'evidence'}`, local.seed || scope);
+          if (local.truncated) queueDeep(scope, true);
         }
       } else if (record.type === 'characterData') {
         const nf = textFlags(record.target?.data || '');
