@@ -27,6 +27,9 @@ assert.equal(/\bmessage\.origin\b/.test(worker),false,'profile storage identity 
 assert.match(worker,/\['semantic-core\.js', 'risk-core\.js', 'engine\.js'\]/,'Engine injection must refresh the shared semantic dependency across extension updates');
 const guard=fs.readFileSync(path.join(root,'handover-guard.js'),'utf8');
 assert.match(guard,/event\.isTrusted/,'handover firewall must never require authorization for trusted user clicks');
+assert.match(guard,/trustedLocal/,'trusted local wrapper delegation must have a separate same-task lease');
+assert.match(guard,/WIDE_CONTAINER/,'trusted causal leases must exclude broad page/form containers');
+assert.match(guard,/pointerdown/);assert.match(guard,/keydown/);
 assert.match(guard,/queueMicrotask\s*\(/,'unused handover authorization must expire within the dispatch task');
 assert.match(guard,/authorized\.delete/,'handover authorization must be consumable and revocable');
 assert.ok(guard.indexOf('queueMicrotask') > guard.indexOf('authorized.add'),'authorization expiry must be armed only after the lease is granted');
