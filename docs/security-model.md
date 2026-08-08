@@ -18,48 +18,86 @@ The Worker treats an explicit `MessageSender.documentLifecycle` other than `acti
 
 Service-worker globals are never correctness authority. Profile state and pending update-rehydration state are stored through `chrome.storage`; content-side handoffs are boundedly retryable after a worker disappears. Profile storage namespaces are derived from Chrome `MessageSender.origin`/`url`; a content tier cannot redirect learning by supplying an arbitrary origin string.
 
+Site-learning governance is itself a trust boundary, not just a cache implementation detail. v10 preserves the established limits and identity rules:
+
+- at most 256 persistent origins;
+- at most 8 flows per origin;
+- 180-day profile TTL;
+- 32-entry Worker hot LRU plus `storage.session` and `storage.local` layers;
+- exact flow identity by fingerprint + validated DOM/Shadow locator;
+- strict locator/descriptor sanitization;
+- serialized mutations with persistence failures reported as failures, never apparent success.
+
+Historical success may accelerate discovery but cannot authorize a click.
+
 ## Update-generation authority boundary
 
-On update/reload, the Worker rehydrates `handover-guard.js` + `bootstrap.js` into already-open tabs with bounded high-priority scheduling. Dormant old Probes may hand off to current dependencies.
+An already-open page may contain more than one Auto Agree isolated-world generation after extension replacement. A version sentinel therefore proves presence, not exclusive authority.
 
-Real Chrome testing proved that an old Engine isolated world can remain executable after the new Engine world appears. The new generation therefore does not treat a version sentinel as revocation authority. Instead:
+v10 uses **two independent generation mechanisms** because they protect different historical states.
 
-- a stale synthetic agreement click has no current-generation authorization and is canceled by the handover guard;
+### Cooperative generation lease
+
+Every v10 execution world that can reach Gate/Engine work carries `generation-lease.js`. In Auto Agree's own isolated realm it wraps that realm's `HTMLElement.prototype.click` and synchronously checks `chrome.runtime.getManifest().version` immediately before DOM dispatch.
+
+If the Runtime has been invalidated by extension replacement or the installed manifest version no longer matches the compiled generation, the call becomes a no-op. The page MAIN world is not patched; trusted browser input remains outside this wrapper.
+
+Real Chrome testing established the premise: after a same-path v10→11 manifest replacement without page reload, the old v10 Engine execution context remained JavaScript-executable but its extension Runtime reported `Extension context invalidated.`. The release gate then proved zero stale automated clicks, zero direct stale-world `.click()` effects, and one successful trusted browser click.
+
+### Historical-generation handover firewall
+
+v9 and older generations did not ship the cooperative lease, so they cannot be retroactively revoked from inside themselves. On update/reload, the Worker therefore establishes `generation-lease.js` + `semantic-core.js` + `handover-guard.js` before it rehydrates `bootstrap.js` into already-open tabs.
+
+The guard enforces:
+
+- trusted user clicks always pass;
 - a current Engine click receives one exact one-shot target/ancestor authorization immediately before dispatch;
 - unused direct authorization expires at the next microtask checkpoint;
-- trusted user events are never blocked merely because they are trusted;
-- if a trusted user event or a current-authorized Engine click enters a **small local control wrapper**, one descendant synthetic click may be causally delegated only during that same DOM event propagation;
+- agreement-like stale synthetic clicks from non-cooperative old generations are canceled;
+- a trusted event or current-authorized click may delegate one descendant synthetic click only inside a small, exact local control wrapper and only during that same DOM event propagation;
 - bubble phase revokes the local causal lease;
-- broad `form`, `dialog`, `section`, page/document containers cannot become local lease roots;
-- no timer-based lease is permitted to leak authorization into later tasks.
+- broad `form`, `dialog`, `section`, page/document containers and proceed actions cannot mint sibling-control authority;
+- ambiguous wrappers containing multiple possible delegated controls fail closed;
+- no timer-based lease is permitted to leak authorization into later tasks;
+- a guard whose own extension Runtime is stale becomes passive toward later generations, preventing an old firewall from blocking a future legitimate Engine.
 
-The local causal rule exists because page component implementations often translate a wrapper click into `input.click()`. That nested event is synthetic despite being directly caused by the user. The rule is intentionally narrower than “allow synthetic clicks after any trusted event”: clicking Login cannot authorize a sibling Terms control.
+The guard consumes the shared `semantic-core.js` and resolves bounded explicit accessibility relations (`aria-labelledby`, `aria-describedby`, native external labels). It does not carry a divergent private Terms/assent vocabulary and does not issue an unbounded generic descendant-control query on the trusted-event hot path.
 
 The extension does not request the `tabs` permission: Chrome's Tabs API is available without it for basic tab operations, and the existing `<all_urls>` host permission supplies the host access needed for injection.
+
+## Artifact boundary
+
+A release ZIP is part of the security/correctness boundary. A successful CRC check is not sufficient if a newly referenced runtime module was never added to a hand-maintained package list.
+
+During v10 audit, the old deterministic packager was found to omit runtime JavaScript that had been added after its static list was written. The packager now derives the executable closure from the production `extension/*.js` set and verifies the resulting deterministic archive. This keeps the packaged runtime aligned with the load-unpacked production root.
 
 ## Threats considered
 
 - misleading CSS/class names;
 - split legal/risk words across DOM fragments;
 - stale learned selectors after site redesign;
+- profile namespace spoofing, profile-flow collisions and unbounded profile growth;
 - hidden templates and duplicated inactive modals;
 - cross-frame injection storms, queue starvation and stale-document jobs;
 - closed/nested Shadow DOM;
 - BFCache/frozen/prerender/pending-deletion message races;
 - detached-DOM retention through queues/observers;
-- pathological multi-megabyte attributes/text nodes;
+- pathological multi-megabyte attributes/text nodes, including update-guard semantic paths;
 - mutation storms designed to force synchronous work;
 - MV3 service-worker termination during Probe→Gate, Gate→Engine or profile handoff;
 - extension update/reload while old pages remain open;
 - simultaneous old/new isolated-world Engine execution after update;
 - stale-generation click attempts under superseded semantics;
 - page-owned custom controls that synchronously delegate from trusted wrapper interaction to a synthetic descendant click;
-- unused or overlong authorization tokens being reused by later stale work.
+- unused, overlong or overly broad authorization tokens being reused by later stale work;
+- package-integrity checks that pass despite an incomplete runtime dependency closure.
 
 ## Hard boundaries
 
-The v8→v9 handover cannot be retroactively atomic: v8 shipped no revocable resident generation lease, so there is a finite interval between extension replacement and successful current-guard injection into a surviving frame. Eliminating that historical gap entirely would require prior-generation cooperation or page navigation/reload.
+The v9→v10 handover cannot be made retroactively cooperative: v9 shipped no generation lease, so the new-generation firewall remains necessary until it reaches each surviving frame. Future generations that inherit the v10 lease can self-revoke their ordinary Auto Agree `.click()` primitive as soon as Chrome invalidates their extension Runtime, reducing reliance on that rehydration window.
 
-The handover firewall is scoped to Auto Agree's consequential stale authority—agreement-like synthetic clicks. It is not a generic sandbox for arbitrary historical code side effects.
+The cooperative result is a tested Chrome behavior, not a universal browser theorem. `tests/e2e-generation-lease.mjs` remains a release gate so a future Chrome lifecycle change cannot silently invalidate this authority model.
+
+The handover firewall is scoped to Auto Agree's consequential stale authority—agreement-like synthetic clicks. The generation lease is scoped to Auto Agree's isolated-world `HTMLElement.prototype.click`. Neither mechanism is presented as a generic sandbox for arbitrary historical JavaScript side effects.
 
 Ordinary content-script extensions also cannot guarantee control over Chrome-owned UI, trusted-physical-input checks, opaque Canvas/WebGL UI with no usable DOM/accessibility surface, or semantics intentionally placed outside any finite bounded sample of an unbounded string.
