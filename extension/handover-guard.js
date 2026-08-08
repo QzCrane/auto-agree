@@ -11,7 +11,11 @@
 
   const authorized = new WeakSet();
   const rejected = new WeakSet();
-  const causalLocal = new WeakSet();
+  // Correctness authority is not "this control was once reached by a trusted event". The exact
+  // source Event must still be inside browser dispatch when a nested synthetic control click is
+  // observed. Bubble cleanup remains an eager release path, but stopPropagation cannot extend
+  // authority into a later task because Event.eventPhase returns NONE after dispatch completes.
+  const causalLocal = new WeakMap();
   const localLeaseByEvent = new WeakMap();
   const CONTROL = 'input[type="checkbox"],input[type="radio"],[role="checkbox"],[role="radio"],[role="switch"],[aria-checked]';
   const CUSTOM = new Set(['sl-checkbox','ion-checkbox','md-checkbox','mat-checkbox','fluent-checkbox','vaadin-checkbox','ui5-checkbox','calcite-checkbox','lightning-input']);
@@ -172,6 +176,24 @@
     return true;
   }
 
+  function consumeLiveCausal(nodes) {
+    let allowed = false;
+    for (const node of nodes) {
+      const source = causalLocal.get(node);
+      if (!(source instanceof Event)) continue;
+      if (source.eventPhase === Event.NONE) {
+        causalLocal.delete(node);
+        continue;
+      }
+      allowed = true;
+    }
+    if (!allowed) return false;
+    // Causal delegation is one-shot even during the same source dispatch. A wrapper that needs
+    // multiple downstream actions must receive separate explicit user/current-Engine authority.
+    for (const node of nodes) causalLocal.delete(node);
+    return true;
+  }
+
   function block(event) {
     event.preventDefault();
     event.stopImmediatePropagation();
@@ -283,14 +305,14 @@
   function beginLocalLease(event) {
     const delegated = localDelegationTarget(event);
     if (!delegated) return;
-    causalLocal.add(delegated);
+    causalLocal.set(delegated, event);
     localLeaseByEvent.set(event, delegated);
   }
 
   function finishLocalLease(event) {
     const delegated = localLeaseByEvent.get(event);
     if (!delegated) return;
-    causalLocal.delete(delegated);
+    if (causalLocal.get(delegated) === event) causalLocal.delete(delegated);
     localLeaseByEvent.delete(event);
   }
 
@@ -312,7 +334,7 @@
       beginLocalLease(event);
       return;
     }
-    if (consume(causalLocal, nodes)) return;
+    if (consumeLiveCausal(nodes)) return;
     if (!agreementLike(nodes)) return;
     block(event);
   }
