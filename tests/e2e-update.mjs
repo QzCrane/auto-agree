@@ -143,19 +143,46 @@ await withServer(async base=>{
     assert.equal(await dormantPage.evaluate(()=>window.dynamicClicks),1,'dormant old page must get exactly one click after v9 activation');
     const dormantAfter=await extensionWorldSentinels(dormantPage);
     assert.ok(dormantAfter.some(world=>world.engine==='9.0.0'),'dormant v8 Probe must hand off into v9 Engine');
-    assert.equal(dormantAfter.some(world=>world.engine==='8.0.0'),false,'dormant page must not gain a second old Engine');
+    assert.equal(dormantAfter.some(world=>world.engine==='8.0.0'),false,'dormant page must not gain a v8 Engine after update');
 
     await activePage.bringToFront();
     assert.equal(await activePage.evaluate(()=>window.__autoAgreeUpdateMarker),'active-v8','active page reloaded during update');
     await activePage.evaluate(()=>window.insertRoutineLogin());
     await waitChecked(activePage,'#dynamic-agree');
-    assert.equal(await activePage.evaluate(()=>window.dynamicClicks),1,'already-active old Engine must remain the sole click authority');
-    const activeAfter=await extensionWorldSentinels(activePage);
-    assert.ok(activeAfter.some(world=>world.engine==='8.0.0'),'already-active v8 Engine must continue safely after Worker update');
-    assert.equal(activeAfter.some(world=>world.engine==='9.0.0'),false,'v9 must not install a competing Engine beside an active v8 Engine');
+    assert.equal(await activePage.evaluate(()=>window.dynamicClicks),1,'updated active page must receive exactly one routine-agreement click');
+    const activeAfterRoutine=await extensionWorldSentinels(activePage);
+    assert.ok(activeAfterRoutine.some(world=>world.engine==='9.0.0'),'updated active page must expose the current v9 Engine world');
+
+    // Chrome may retain an observable old isolated-world sentinel after extension reload. Sentinel
+    // coexistence is not sufficient evidence of two live click authorities. Attack that hypothesis
+    // behaviorally with a control that v8 would treat as unchecked but v9 must refuse as tri-state.
+    await activePage.evaluate(()=>{window.clearRoutineLogin();window.insertMixedLogin();});
+    await new Promise(resolve=>setTimeout(resolve,900));
+    const mixedResult=await activePage.$eval('#dynamic-mixed',el=>({
+      state:el.getAttribute('aria-checked'),
+      elementClicks:Number(el.dataset.clicks||0),
+      windowClicks:Number(window.dynamicClicks||0)
+    }));
+    assert.deepEqual(mixedResult,{state:'mixed',elementClicks:0,windowClicks:0},'legacy v8 mixed-state behavior must not remain an active click authority after update');
+    const activeAfterMixed=await extensionWorldSentinels(activePage);
+    const oldSentinelVisible=activeAfterMixed.some(world=>world.engine==='8.0.0');
+    const currentSentinelVisible=activeAfterMixed.some(world=>world.engine==='9.0.0');
+    assert.equal(currentSentinelVisible,true,'v9 Engine sentinel missing after mixed-state discriminator');
 
     ext=(await browser.extensions()).get(initialId);
-    console.log('e2e-update:',JSON.stringify({id:initialId,workerVersion:'9.0.0',reportedVersion:ext?.version||null,dormantPageReloaded:false,activePageReloaded:false,dormantEngine:'9.0.0',activeEngine:'8.0.0'}));
+    console.log('e2e-update:',JSON.stringify({
+      id:initialId,
+      workerVersion:'9.0.0',
+      reportedVersion:ext?.version||null,
+      dormantPageReloaded:false,
+      activePageReloaded:false,
+      dormantEngine:'9.0.0',
+      activeOldSentinelVisible:oldSentinelVisible,
+      activeCurrentSentinelVisible:currentSentinelVisible,
+      activeRoutineClicks:1,
+      activeMixedClicks:0
+    }));
+    console.log('e2e-update-worlds:',JSON.stringify(activeAfterMixed));
     console.log('e2e-update: PASS');
     await dormantPage.close();
     await activePage.close();
