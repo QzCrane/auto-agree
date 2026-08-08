@@ -4,6 +4,8 @@
 
 **Date:** 2026-08-09
 
+> **Related correction:** ADR 0011 supersedes the implementation detail of local page-owned delegated authority. A same-event delegated control is now authorized by an exact live source `Event` (`eventPhase != NONE`), not by assuming bubble cleanup will always run. This does not change the cooperative generation-lease decision in this ADR.
+
 ## Context
 
 ADR 0009 established a new-generation handover firewall because real v8→v9 Chrome testing proved that an already-running old isolated-world Engine can remain executable after extension replacement. That firewall is necessary for historical generations that shipped without a revocation mechanism, but it cannot make the replacement instant: the new Worker must first wake and inject the guard into each surviving frame.
@@ -48,6 +50,8 @@ Older generations such as v9 did not ship the lease. They cannot be retroactivel
 
 The guard also remains a defense for a future activation path that does not go through the leased `HTMLElement.prototype.click` primitive. A stale guard becomes passive toward later generations when its own Runtime is invalidated, so an old firewall cannot turn into a blocker for a new legitimate Engine.
 
+The narrow exception for real page-owned synchronous wrapper delegation is governed by ADR 0011: the exact delegated control maps to the exact source Event and is usable only while that Event is still in browser dispatch. Bubble cleanup is merely eager cleanup.
+
 ## Rejected alternatives
 
 ### Rejected: replace the firewall with the lease immediately
@@ -78,6 +82,8 @@ The real unpacked-Chrome gate must:
 4. show that its lease reports non-current authority;
 5. show that both ordinary stale automation and a direct stale-world `element.click()` produce zero clicks;
 6. show that a real trusted browser click still succeeds exactly once.
+
+The separate handover compatibility gate must also preserve ADR 0011's synchronous/deferred delegation discriminator.
 
 ## Boundary
 
