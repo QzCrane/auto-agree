@@ -1,0 +1,1 @@
+This branch is a non-mergeable research record. The actionable runtime finding is silent `RootBatch` overflow loss in `extension/engine.js`; main is intentionally not modified until a clean source repair plus permanent real-Chrome structural fuzz gate passes.
