@@ -1,0 +1,77 @@
+name: Bootstrap v7 canonical repository
+
+on:
+  push:
+    branches:
+      - feat/v7-repository-convergence
+
+permissions:
+  contents: write
+
+concurrency:
+  group: bootstrap-v7-repository-convergence
+  cancel-in-progress: false
+
+jobs:
+  converge:
+    if: ${{ hashFiles('.bootstrap3/v7.patch.06') != '' }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout feature branch
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Reconstruct and verify v7 delta
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat .bootstrap3/v7.patch.* | base64 --decode > /tmp/v7.patch.xz
+          echo '19a290243d5e0ab981c22f49740f8cc990c94490059ec2143a06aa09b5ca8e56  /tmp/v7.patch.xz' | sha256sum --check --strict
+          xz --decompress --stdout /tmp/v7.patch.xz > /tmp/v7.patch
+
+      - name: Normalize v6 repository layout
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p docs/verification
+          git mv AutoAgree-v3.0-TEST-REPORT.md docs/verification/v3.md
+          git mv AutoAgree-v4.0-TEST-REPORT.md docs/verification/v4.md
+          git mv AutoAgree-v5.0-TEST-REPORT.md docs/verification/v5.md
+          git mv AutoAgree-v6.0-TEST-REPORT.md docs/verification/v6.md
+          git mv auto-agree-extension extension
+          git mv extension/README.txt extension/README.md
+          rm -f extension/content.js
+
+      - name: Apply canonical v7 delta
+        shell: bash
+        run: |
+          set -euo pipefail
+          git apply --check /tmp/v7.patch
+          git apply /tmp/v7.patch
+          rm -rf .bootstrap .bootstrap2 .bootstrap3
+          rm -f .github/workflows/bootstrap-v7.yml
+
+      - name: Verify repository
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm test
+          python3 tools/package_extension.py --check
+          test "$(node -p "require('./extension/manifest.json').version")" = '7.0.0'
+          test ! -e extension/content.js
+          test -f docs/architecture.md
+          test -f docs/verification/v7.md
+          test -f .github/workflows/ci.yml
+
+      - name: Commit canonical repository
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          git diff --cached --check
+          git status --short
+          git commit -m 'feat: converge repository on v7 semantic consent engine'
+          git push origin HEAD:${GITHUB_REF_NAME}
