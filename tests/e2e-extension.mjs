@@ -37,6 +37,7 @@ async function withServer(fn){
 async function launch(extensionPath){
   const options={
     headless:true,
+    pipe:true,
     dumpio:true,
     enableExtensions:[extensionPath],
     args:['--no-first-run','--no-default-browser-check','--disable-dev-shm-usage','--no-sandbox']
