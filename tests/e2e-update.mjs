@@ -5,6 +5,7 @@ import http from 'node:http';
 import {execFileSync} from 'node:child_process';
 import assert from 'node:assert/strict';
 import puppeteer from 'puppeteer';
+import {extensionWorldSentinels} from './e2e-isolated-worlds.mjs';
 
 const ROOT=path.resolve('.');
 const CURRENT=path.join(ROOT,'extension');
@@ -92,11 +93,21 @@ await withServer(async base=>{
   try{
     const initialId=await bounded(browser.installExtension(active),5000,'install v8 unpacked');
     let ext=(await browser.extensions()).get(initialId);
-    assert.ok(ext,'v7 extension missing after Browser.installExtension');
+    assert.ok(ext,'v8 extension missing after Browser.installExtension');
     assert.equal(ext.version,'8.0.0');
 
-    const page=await browser.newPage();
-    await gotoActive(page,`${base}/dynamic.html?update=1`);
+    const dormantPage=await browser.newPage();
+    await gotoActive(dormantPage,`${base}/dynamic.html?update=dormant`);
+    await dormantPage.evaluate(()=>{window.__autoAgreeUpdateMarker='dormant-v8';});
+
+    const activePage=await browser.newPage();
+    await gotoActive(activePage,`${base}/dynamic.html?update=active`);
+    await activePage.evaluate(()=>{window.__autoAgreeUpdateMarker='active-v8';window.insertRoutineLogin();});
+    await waitChecked(activePage,'#dynamic-agree');
+    assert.equal(await activePage.evaluate(()=>window.dynamicClicks),1,'v8 active-page setup must click exactly once');
+    const activeBefore=await extensionWorldSentinels(activePage);
+    assert.ok(activeBefore.some(world=>world.engine==='8.0.0'),'active page must have v8 Engine before update');
+    await activePage.evaluate(()=>window.clearRoutineLogin());
 
     replaceDir(CURRENT,active);
     assert.equal(JSON.parse(fs.readFileSync(path.join(active,'manifest.json'),'utf8')).version,'9.0.0');
@@ -124,14 +135,30 @@ await withServer(async base=>{
     });
 
     assert.equal(await bounded(worker.evaluate(()=>chrome.runtime.getManifest().version),800,'final v9 manifest read'),'9.0.0');
-    await page.bringToFront();
-    await page.evaluate(()=>window.insertRoutineLogin());
-    await waitChecked(page,'#dynamic-agree');
+
+    await dormantPage.bringToFront();
+    assert.equal(await dormantPage.evaluate(()=>window.__autoAgreeUpdateMarker),'dormant-v8','dormant page reloaded during update');
+    await dormantPage.evaluate(()=>window.insertRoutineLogin());
+    await waitChecked(dormantPage,'#dynamic-agree');
+    assert.equal(await dormantPage.evaluate(()=>window.dynamicClicks),1,'dormant old page must get exactly one click after v9 activation');
+    const dormantAfter=await extensionWorldSentinels(dormantPage);
+    assert.ok(dormantAfter.some(world=>world.engine==='9.0.0'),'dormant v8 Probe must hand off into v9 Engine');
+    assert.equal(dormantAfter.some(world=>world.engine==='8.0.0'),false,'dormant page must not gain a second old Engine');
+
+    await activePage.bringToFront();
+    assert.equal(await activePage.evaluate(()=>window.__autoAgreeUpdateMarker),'active-v8','active page reloaded during update');
+    await activePage.evaluate(()=>window.insertRoutineLogin());
+    await waitChecked(activePage,'#dynamic-agree');
+    assert.equal(await activePage.evaluate(()=>window.dynamicClicks),1,'already-active old Engine must remain the sole click authority');
+    const activeAfter=await extensionWorldSentinels(activePage);
+    assert.ok(activeAfter.some(world=>world.engine==='8.0.0'),'already-active v8 Engine must continue safely after Worker update');
+    assert.equal(activeAfter.some(world=>world.engine==='9.0.0'),false,'v9 must not install a competing Engine beside an active v8 Engine');
 
     ext=(await browser.extensions()).get(initialId);
-    console.log('e2e-update:',JSON.stringify({id:initialId,workerVersion:'9.0.0',reportedVersion:ext?.version||null,pageReloaded:false}));
+    console.log('e2e-update:',JSON.stringify({id:initialId,workerVersion:'9.0.0',reportedVersion:ext?.version||null,dormantPageReloaded:false,activePageReloaded:false,dormantEngine:'9.0.0',activeEngine:'8.0.0'}));
     console.log('e2e-update: PASS');
-    await page.close();
+    await dormantPage.close();
+    await activePage.close();
   } finally {await browser.close();}
 });
 

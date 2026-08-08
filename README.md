@@ -90,9 +90,10 @@ v9 verification includes:
 - 10,020 semantic severity/property assertions;
 - real unpacked-extension Puppeteer E2E in Chrome;
 - forced MV3 service-worker termination/restart;
-- v7→v8 update/reload transition on an already-open test page;
+- v8→v9 update/reload transition covering both dormant old Probe and already-active old Engine pages;
 - real iframe and closed-Shadow regression fixtures;
 - native form-validity gating regression;
+- ARIA/data/native tri-state refusal and durable UNKNOWN-state one-shot regression;
 - 5,000-checkbox E2E DevTools CPU profile capture;
 - deterministic ZIP integrity verification.
 

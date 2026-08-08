@@ -118,7 +118,9 @@ async function basicMatrix(base,browser){
 
   await gotoActive(page,`${base}/mixed-control.html`);
   await new Promise(resolve=>setTimeout(resolve,450));
-  assert.deepEqual(await page.$eval('#agree',el=>({state:el.getAttribute('aria-checked'),clicks:Number(el.dataset.clicks||0)})),{state:'mixed',clicks:0});
+  assert.deepEqual(await page.$eval('#aria-mixed',el=>({state:el.getAttribute('aria-checked'),clicks:Number(el.dataset.clicks||0)})),{state:'mixed',clicks:0});
+  assert.deepEqual(await page.$eval('#data-mixed',el=>({state:el.getAttribute('data-state'),clicks:Number(el.dataset.clicks||0)})),{state:'indeterminate',clicks:0});
+  assert.deepEqual(await page.$eval('#native-mixed',el=>({indeterminate:el.indeterminate,checked:el.checked,clicks:Number(el.dataset.clicks||0)})),{indeterminate:true,checked:false,clicks:0});
 
   await gotoActive(page,`${base}/classless-unknown-one-shot.html`);
   await page.waitForFunction(()=>Number(document.querySelector('#box')?.dataset.clicks||0)===1,{timeout:3000});

@@ -16,11 +16,11 @@ The boundary is action-semantic, not industry-semantic. A bank's ordinary login 
 
 The Worker treats an explicit `MessageSender.documentLifecycle` other than `active` as non-authoritative. `prerender`, `cached`, and `pending_deletion` senders cannot schedule dynamic injection or mutate site-learning state. Probe/Gate/Engine retain their own lifecycle guards as an independent first line of defense.
 
-Service-worker globals are never correctness authority. Profile state and pending update-rehydration state are stored through `chrome.storage`; content-side handoffs are boundedly retryable after a worker disappears.
+Service-worker globals are never correctness authority. Profile state and pending update-rehydration state are stored through `chrome.storage`; content-side handoffs are boundedly retryable after a worker disappears. Profile storage namespaces are derived from Chrome `MessageSender.origin`/`url`; a content tier cannot redirect learning by supplying an arbitrary origin string.
 
 ## Update boundary
 
-On update/reload, the Worker rehydrates `bootstrap.js` into already-open tabs with bounded scheduling. The extension does not request the `tabs` permission: Chrome's Tabs API is available without it for basic tab operations, and the existing `<all_urls>` host permission supplies the host access needed for injection.
+On update/reload, the Worker rehydrates `bootstrap.js` into already-open tabs with bounded scheduling. Dormant old Probes may hand off to current dependencies; already-active old Engines are left as the sole click authority rather than hot-installing a competing Engine. The extension does not request the `tabs` permission: Chrome's Tabs API is available without it for basic tab operations, and the existing `<all_urls>` host permission supplies the host access needed for injection.
 
 ## Threats considered
 

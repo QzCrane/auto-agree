@@ -1,5 +1,11 @@
 <!doctype html><meta charset="utf-8"><title>Dynamic Login</title>
 <div id="mount"></div>
 <script>
-window.insertRoutineLogin=()=>{document.querySelector('#mount').innerHTML='<form><input type="email" value="user@example.com"><label><input id="dynamic-agree" type="checkbox" required>I agree to the Terms of Service and Privacy Policy</label><button>Continue</button></form>';};
+window.dynamicClicks=0;
+window.insertRoutineLogin=()=>{
+  document.querySelector('#mount').innerHTML='<form><input type="email" value="user@example.com"><label><input id="dynamic-agree" type="checkbox" required>I agree to the Terms of Service and Privacy Policy</label><button>Continue</button></form>';
+  window.dynamicClicks=0;
+  document.querySelector('#dynamic-agree').addEventListener('click',()=>{window.dynamicClicks++;});
+};
+window.clearRoutineLogin=()=>{document.querySelector('#mount').replaceChildren();window.dynamicClicks=0;};
 </script>

@@ -28,10 +28,12 @@ CI installs a pinned Puppeteer test tool and launches the runner's real Chrome w
 - marketing and fragmented consequential negatives;
 - TRAE-derived classless visual control;
 - native validity causality (invalid email must not make a disabled Login action look agreement-gated);
+- ARIA/data/native mixed-or-indeterminate controls remain untouched;
+- classless UNKNOWN-state controls remain one-shot beyond the normal click cooldown;
 - real iframe/all-frame injection;
 - real closed ShadowRoot discovery through the extension API path;
 - repeated forced MV3 service-worker termination before dynamic evidence appears;
-- v7 → v8 unpacked reload/update transition without reloading the existing test page;
+- v8 → v9 unpacked update with a dormant v8 Probe handing into v9 tiers and an already-active v8 Engine continuing as the sole click authority, without reloading either page;
 - a 5,000-unrelated-checkbox tail-login profile scenario.
 
 With `--profile`, the E2E test records a DevTools CPU profile summary and page metrics to `artifacts/e2e-profile.json`. The latency assertion is deliberately broad; the profile is the authority for deciding future micro-optimizations, not a fragile single-machine microbenchmark.
@@ -46,4 +48,4 @@ MV3 workers are expected to disappear. Tests must assume all worker globals can 
 
 ## Update-transition policy
 
-An extension update can replace the Worker while already-open pages still exist. v8 therefore tests update rehydration explicitly. Existing old-generation page code may either finish safely or hand off to the new Worker; new code must not create a second blind toggler.
+An extension update can replace the Worker while already-open pages still exist. v8 introduced update rehydration; v9 explicitly tests both safe modes: a dormant old Probe may hand off into current Gate/Engine dependencies, while an already-active old Engine remains the sole click authority until page replacement. New code must never create a competing blind toggler in the same document.

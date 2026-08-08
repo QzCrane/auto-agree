@@ -393,6 +393,11 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   }
 
   const profileOrigin = profileOriginForSender(sender);
+  const isProfileMessage = message.type === 'AUTO_AGREE_PROFILE_GET' || message.type === 'AUTO_AGREE_PROFILE_PUT' || message.type === 'AUTO_AGREE_PROFILE_INVALIDATE';
+  if (isProfileMessage && !profileOrigin) {
+    sendResponse({ ok: false, error: 'missing-profile-origin' });
+    return false;
+  }
 
   if (message.type === 'AUTO_AGREE_PROFILE_GET') {
     getProfile(profileOrigin).then(

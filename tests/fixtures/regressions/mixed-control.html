@@ -1,3 +1,12 @@
-<!doctype html><meta charset="utf-8"><title>Mixed consent control must not toggle</title>
-<form><input type="email" value="valid@example.com"><div id="agree" role="checkbox" aria-checked="mixed" aria-label="I agree to the Terms of Service" data-clicks="0"></div><button type="button">Login</button></form>
-<script>document.querySelector('#agree').addEventListener('click',e=>{e.currentTarget.dataset.clicks=String(Number(e.currentTarget.dataset.clicks||0)+1);e.currentTarget.setAttribute('aria-checked','false');});</script>
+<!doctype html><meta charset="utf-8"><title>Mixed consent controls must not toggle</title>
+<form>
+  <input type="email" value="valid@example.com">
+  <div id="aria-mixed" role="checkbox" aria-checked="mixed" aria-label="I agree to the Terms of Service" data-clicks="0"></div>
+  <div id="data-mixed" role="checkbox" data-state="indeterminate" aria-label="I agree to the Terms of Service" data-clicks="0"></div>
+  <label><input id="native-mixed" type="checkbox" required data-clicks="0">I agree to the Terms of Service</label>
+  <button type="button">Login</button>
+</form>
+<script>
+const native=document.querySelector('#native-mixed');native.indeterminate=true;
+for(const id of ['aria-mixed','data-mixed','native-mixed']) document.querySelector('#'+id).addEventListener('click',e=>{e.currentTarget.dataset.clicks=String(Number(e.currentTarget.dataset.clicks||0)+1);});
+</script>

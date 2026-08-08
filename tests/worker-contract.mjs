@@ -57,4 +57,9 @@ assert.equal(local.has('site:https://trusted.example'),true,'sender origin must 
 assert.equal(local.has('site:https://spoofed.example'),false,'message.origin must not select a storage namespace');
 const profileResponse=await message({type:'AUTO_AGREE_PROFILE_GET',origin:'https://spoofed.example'},sender);
 assert.equal(profileResponse?.profile?.flows?.[0]?.fingerprint,'/login|form');
+let missingOriginResponse;
+const keepMissing=listener({type:'AUTO_AGREE_PROFILE_GET'},{...sender,origin:undefined,url:'about:blank'},response=>{missingOriginResponse=response;});
+assert.equal(keepMissing,false);
+assert.equal(missingOriginResponse?.ok,false);
+assert.equal(missingOriginResponse?.error,'missing-profile-origin');
 console.log('worker-contract: PASS');

@@ -34,6 +34,7 @@ sequenceDiagram
       Gate-->>Page: retire/sleep
     else accepted
       Gate->>Worker: AUTO_AGREE_ACTIVATE
+      Worker->>Core: refresh current dependency
       Worker->>Risk: lazy inject
       Worker->>Engine: lazy inject
       Engine->>Engine: graph + severity + live state
@@ -111,13 +112,13 @@ Important worker state is split deliberately:
 - durable: site learning and update-rehydration marker → `chrome.storage`;
 - transient/replayable: in-flight injection maps, queues, LRU cache → worker globals.
 
-Probe/Gate handoff messages and profile writes are idempotently replayable after unexpected worker loss.
+Probe/Gate handoff messages and profile writes are idempotently replayable after unexpected worker loss. Profile storage identity is derived from Chrome `MessageSender.origin`/`url`, not from message payload text.
 
 ## Extension update rehydration
 
-When an extension update/reload replaces the Worker, already-open pages are not assumed to have received a fresh static content script. v8 records a short-lived session rehydration marker, queries existing tabs, and schedules `bootstrap.js` into all accessible frames in small batches. A worker restart during this sweep sees the marker and resumes it.
+When an extension update/reload replaces the Worker, already-open pages are not assumed to have received a fresh static content script. v8 introduced a short-lived session rehydration marker; v9 retains it, queries existing tabs, and schedules `bootstrap.js` into all accessible frames in small batches. A worker restart during this sweep sees the marker and resumes it.
 
-The bootstrap sentinel still prevents duplicate same-generation initialization, while old-generation page scripts remain safe because dynamic Gate/Engine injection is itself idempotent.
+The bootstrap sentinel prevents a second Probe authority in the same document. A dormant old Probe can still talk to the new Worker; Engine activation refreshes the current semantic dependency before loading current Risk/Engine code. If an old Engine was already active before update, v9 deliberately does not install a competing Engine beside it; the old closure remains authoritative until page replacement.
 
 ## Lifecycle and ownership
 

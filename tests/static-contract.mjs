@@ -35,6 +35,8 @@ assert.match(engine,/credentialInvalid/);
 assert.match(engine,/oneShotUnknown/);
 assert.match(engine,/kind: 'mixed'/);
 assert.match(engine,/bootstrapSeedRef/);
+assert.equal(/origin:\s*location\.origin/.test(engine),false,'content tier must not self-report profile origin');
+assert.match(worker,/missing-profile-origin/);
 assert.equal(/\bCONSEQUENTIAL_LOCAL\b/.test(engine),false,'engine must consume risk-core through its public severity API');
 assert.equal(/\bconsequentialRisk\b/.test(engine),false,'stale pre-risk-core consequentialRisk helper reference');
 assert.match(fs.readFileSync(path.join(root,'bootstrap.js'),'utf8'),/HANDOFF_RETRY_DELAYS/);

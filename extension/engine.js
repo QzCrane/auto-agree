@@ -425,9 +425,11 @@
       const state = (n.getAttribute('data-state') || '').toLowerCase();
       if (state === 'checked' || state === 'on') return { known: true, checked: true, kind: 'data' };
       if (state === 'unchecked' || state === 'off') return { known: true, checked: false, kind: 'data' };
+      if (state === 'indeterminate' || state === 'mixed') return { known: true, checked: false, kind: 'mixed' };
       const dc = n.getAttribute('data-checked');
       if (dc === '' || dc === 'true') return { known: true, checked: true, kind: 'data' };
       if (dc === 'false') return { known: true, checked: false, kind: 'data' };
+      if (dc === 'indeterminate' || dc === 'mixed') return { known: true, checked: false, kind: 'mixed' };
     }
     for (const n of [el, row, row?.parentElement]) {
       if (!(n instanceof Element)) continue;
@@ -734,7 +736,7 @@
   function profileMessage(type, profile = null, attempt = 0) {
     return new Promise(resolve => {
       try {
-        chrome.runtime.sendMessage({ type, origin: location.origin, profile }, response => {
+        chrome.runtime.sendMessage({ type, profile }, response => {
           const failed = !!chrome.runtime.lastError || !response?.ok;
           if (!failed) return resolve(response.profile ?? true);
           if (attempt >= 2 || lifecyclePaused) return resolve(null);
@@ -865,7 +867,7 @@
     const before = s.state;
     if (!before.known) oneShotUnknown.add(s.control);
     const check = armVerifier(s, before, 0);
-    try { target.click(); } catch (_) { stopVerifier(s.control); return false; }
+    try { target.click(); } catch (_) { oneShotUnknown.delete(s.control); stopVerifier(s.control); return false; }
     clickMemo.set(s.control, { time: performance.now(), succeeded: false });
     check();
     return true;
