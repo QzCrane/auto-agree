@@ -19,7 +19,8 @@ Two different test layers are mandatory.
 - update rehydration ordering (`handover-guard.js` before `bootstrap.js`);
 - direct current-Engine handover authorization;
 - microtask expiry of unused direct authorization;
-- event-propagation scoping of local causal delegation, with no timer-based authorization lease.
+- event-propagation scoping of local causal delegation, with no timer-based authorization lease;
+- release-transition CI lifecycle: the version-specific previous→current browser test is PR-scoped and stages the PR base, never arbitrary `push` history.
 
 `python tools/package_extension.py --check` verifies the deterministic extension artifact.
 
@@ -40,17 +41,19 @@ CI installs a pinned Puppeteer test tool and launches the runner's real Chrome w
 - repeated forced MV3 service-worker termination before dynamic evidence appears;
 - a 5,000-unrelated-checkbox tail-login profile scenario.
 
-`tests/e2e-update.mjs` separately keeps real pages alive across a v8 → v9 unpacked extension replacement and proves:
+`tests/e2e-update.mjs` separately keeps real pages alive across the release's previous → current unpacked-extension replacement and proves:
 
 - no page reload occurred;
-- a dormant v8 Probe can hand into current v9 tiers;
-- an already-active v8 Engine world can remain simultaneously observable with a current v9 Engine world;
-- the v9 handover guard is physically present before post-update behavior is exercised;
+- a dormant old Probe can hand into current tiers;
+- an already-active old Engine world can remain simultaneously observable with a current Engine world;
+- the current handover guard is physically present before post-update behavior is exercised;
 - a current routine agreement receives exactly one authorized click;
-- a mixed-state agreement that v8 would click twice receives exactly zero stale-generation clicks;
+- a mixed-state agreement that v8 would click twice receives exactly zero stale-generation clicks in the v8→v9 release gate;
 - a genuine trusted browser click on a small custom Terms wrapper may still synchronously delegate one page-owned synthetic descendant click.
 
 The last three assertions are deliberately behavioral. Engine version sentinels alone are not accepted as proof that one generation owns the action surface.
+
+The version-transition step runs only for `pull_request`, using `github.event.pull_request.base.sha` as `AUTO_AGREE_PREVIOUS_REF`. Main pushes still run deterministic core plus current-version real Chrome E2E/profile, but do **not** replay a historical version-specific transition. This prevents the v8→v9 fixture from becoming a false failure on later v9 main commits. Each future release PR must deliberately advance its transition fixture (for example v9→v10).
 
 With `--profile`, the real-extension E2E records a DevTools CPU profile summary and page metrics to `artifacts/e2e-profile.json`. The latency assertion is deliberately broad; the profile is the authority for deciding future micro-optimizations, not a fragile single-machine microbenchmark.
 
