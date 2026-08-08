@@ -14,7 +14,6 @@ concurrency:
 
 jobs:
   converge:
-    if: ${{ hashFiles('.bootstrap3/v7.patch.06') != '' }}
     runs-on: ubuntu-latest
     steps:
       - name: Checkout feature branch
@@ -26,6 +25,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          test -f .bootstrap3/v7.patch.06
           cat .bootstrap3/v7.patch.* | base64 --decode > /tmp/v7.patch.xz
           echo '19a290243d5e0ab981c22f49740f8cc990c94490059ec2143a06aa09b5ca8e56  /tmp/v7.patch.xz' | sha256sum --check --strict
           xz --decompress --stdout /tmp/v7.patch.xz > /tmp/v7.patch
