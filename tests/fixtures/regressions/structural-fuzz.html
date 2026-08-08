@@ -1,0 +1,217 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Deterministic structural consent fuzz</title>
+<style>
+  body { font-family: sans-serif; }
+  .case { display:block; margin:4px 0; padding:2px; }
+  .row { display:flex; align-items:center; gap:6px; min-height:24px; }
+  .fuzz-checkbox { display:inline-block; width:18px; height:18px; border:1px solid #666; }
+</style>
+<div id="cases"></div>
+<script>
+(() => {
+  'use strict';
+  const TOTAL = 300;
+  const BATCH = 25;
+  let state = 0x00a6a9e1 >>> 0;
+  const rand = () => {
+    state = (Math.imul(state, 1664525) + 1013904223) >>> 0;
+    return state / 0x100000000;
+  };
+  const pick = list => list[Math.floor(rand() * list.length) % list.length];
+
+  const routine = [
+    'I have read and agree to the Terms of Service',
+    'I agree to the Privacy Policy',
+    '我已阅读并同意用户协议和隐私政策',
+    '利用規約に同意します',
+    '이용약관에 동의합니다',
+    'أوافق على الشروط وسياسة الخصوصية',
+    'He leído y acepto los términos y condiciones',
+    "J'ai lu et j'accepte les conditions d'utilisation"
+  ];
+  const blocked = [
+    'I agree to the Terms of Service and authorize payment/debit',
+    'I agree to the Terms of Service and consent to facial recognition',
+    'I agree to the Terms of Service and receive marketing newsletters',
+    'I confirm that I am over 18 and agree to the Terms of Service',
+    '我已阅读并同意用户协议并授权扣款',
+    '我已阅读并同意用户协议并接收营销推广信息'
+  ];
+
+  const records = [];
+  const root = document.querySelector('#cases');
+
+  function fragments(text) {
+    const chars = Array.from(text);
+    const wanted = 2 + Math.floor(rand() * 4);
+    const cuts = new Set();
+    while (cuts.size < wanted - 1 && chars.length > 4) {
+      cuts.add(1 + Math.floor(rand() * (chars.length - 2)));
+    }
+    const points = [0, ...[...cuts].sort((a,b) => a-b), chars.length];
+    const frag = document.createDocumentFragment();
+    for (let i = 0; i < points.length - 1; i++) {
+      const span = document.createElement('span');
+      span.textContent = chars.slice(points[i], points[i + 1]).join('');
+      frag.append(span);
+    }
+    return frag;
+  }
+
+  function nest(parent, depth) {
+    let node = parent;
+    for (let i = 0; i < depth; i++) {
+      const next = document.createElement(i % 2 ? 'span' : 'div');
+      next.className = `nest-${i}`;
+      node.append(next);
+      node = next;
+    }
+    return node;
+  }
+
+  function controlState(el, kind) {
+    if (kind === 'native') return { checked: !!el.checked, mixed: !!el.indeterminate };
+    if (kind === 'aria') {
+      const value = el.getAttribute('aria-checked');
+      return { checked: value === 'true', mixed: value === 'mixed' };
+    }
+    const value = el.getAttribute('data-state');
+    return { checked: value === 'checked' || value === 'on', mixed: value === 'mixed' || value === 'indeterminate' };
+  }
+
+  function setInitial(el, kind, mode) {
+    const checked = mode === 'already';
+    const mixed = mode === 'mixed';
+    const disabled = mode === 'disabled';
+    if (kind === 'native') {
+      el.type = 'checkbox';
+      el.required = true;
+      el.checked = checked;
+      el.indeterminate = mixed;
+      el.disabled = disabled;
+    } else if (kind === 'aria') {
+      el.setAttribute('role', 'checkbox');
+      el.setAttribute('aria-required', 'true');
+      el.setAttribute('aria-checked', mixed ? 'mixed' : checked ? 'true' : 'false');
+      if (disabled) el.setAttribute('aria-disabled', 'true');
+      el.tabIndex = 0;
+    } else {
+      el.className = 'fuzz-checkbox';
+      el.setAttribute('aria-required', 'true');
+      el.setAttribute('data-state', mixed ? 'indeterminate' : checked ? 'checked' : 'unchecked');
+      if (disabled) el.setAttribute('aria-disabled', 'true');
+      el.tabIndex = 0;
+    }
+  }
+
+  function attachBehavior(el, kind, mode) {
+    el.dataset.clicks = '0';
+    el.addEventListener('click', event => {
+      el.dataset.clicks = String(Number(el.dataset.clicks || 0) + 1);
+      if (mode === 'disabled' || mode === 'mixed') {
+        event.preventDefault();
+        return;
+      }
+      if (kind === 'aria') el.setAttribute('aria-checked', el.getAttribute('aria-checked') === 'true' ? 'false' : 'true');
+      else if (kind === 'data') el.setAttribute('data-state', el.getAttribute('data-state') === 'checked' ? 'unchecked' : 'checked');
+    });
+  }
+
+  function makeCase(index) {
+    let mode;
+    if (index < 120) mode = 'routine';
+    else if (index < 180) mode = 'blocked';
+    else if (index < 220) mode = 'already';
+    else if (index < 260) mode = 'disabled';
+    else mode = 'mixed';
+
+    const text = mode === 'blocked' ? pick(blocked) : pick(routine);
+    const structure = index % 6;
+    const kind = structure <= 2 ? 'native' : structure <= 4 ? 'aria' : 'data';
+    const caseId = `fuzz-${index}`;
+    const form = document.createElement('form');
+    form.className = 'case';
+    form.dataset.caseId = caseId;
+    form.addEventListener('submit', event => event.preventDefault());
+
+    const auth = document.createElement('input');
+    auth.type = 'email';
+    auth.value = `user${index}@example.com`;
+    auth.name = `email-${index}`;
+    form.append(auth);
+
+    const row = document.createElement('div');
+    row.className = 'row';
+    form.append(row);
+    const shell = nest(row, Math.floor(rand() * 5));
+
+    const control = structure <= 2 ? document.createElement('input') : document.createElement('div');
+    control.id = `${caseId}-control`;
+    setInitial(control, kind, mode);
+    attachBehavior(control, kind, mode);
+
+    const semantic = document.createElement(structure <= 2 ? 'label' : 'span');
+    semantic.id = `${caseId}-semantic`;
+    semantic.append(fragments(text));
+
+    if (structure === 0) {
+      semantic.prepend(control);
+      shell.append(semantic);
+    } else if (structure === 1) {
+      semantic.htmlFor = control.id;
+      shell.append(semantic, control);
+    } else if (structure === 2) {
+      semantic.htmlFor = control.id;
+      shell.append(control, semantic);
+    } else if (structure === 3) {
+      control.setAttribute('aria-labelledby', semantic.id);
+      shell.append(semantic, control);
+    } else if (structure === 4) {
+      control.setAttribute('aria-describedby', semantic.id);
+      shell.append(control, semantic);
+    } else {
+      shell.append(control, semantic);
+    }
+
+    const button = document.createElement('button');
+    button.type = 'submit';
+    button.textContent = 'Login';
+    form.append(button);
+
+    records.push({ id: caseId, mode, structure, kind, text, control });
+    return form;
+  }
+
+  let next = 0;
+  function mountBatch() {
+    const frag = document.createDocumentFragment();
+    const end = Math.min(TOTAL, next + BATCH);
+    for (; next < end; next++) frag.append(makeCase(next));
+    root.append(frag);
+    if (next < TOTAL) {
+      if ((next / BATCH) % 3 === 0) queueMicrotask(mountBatch);
+      else if ((next / BATCH) % 3 === 1) requestAnimationFrame(mountBatch);
+      else setTimeout(mountBatch, 0);
+    } else {
+      window.structuralFuzzReady = true;
+    }
+  }
+
+  window.getStructuralFuzzResults = () => records.map(record => {
+    const stateNow = controlState(record.control, record.kind);
+    return {
+      id: record.id,
+      mode: record.mode,
+      structure: record.structure,
+      kind: record.kind,
+      text: record.text,
+      checked: stateNow.checked,
+      mixed: stateNow.mixed,
+      clicks: Number(record.control.dataset.clicks || 0)
+    };
+  });
+
+  mountBatch();
+})();
+</script>
