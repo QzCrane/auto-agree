@@ -51,6 +51,8 @@ jobs:
             text=text.replace(old,new)
           path.write_text(text,encoding='utf-8')
           PY
+      - name: Keep bootstrap push workflow-neutral
+        run: git checkout -- .github/workflows/ci.yml
       - name: Remove bootstrap payload
         run: rm .v9-bootstrap.py
       - name: Verify deterministic core
