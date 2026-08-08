@@ -34,6 +34,7 @@ function flow(i,{fingerprint=`/login|flow-${i}`,selector=`#agree-${i}`,ts=Date.n
   };
 }
 function profile(...flows){return{version:'10.0.0',flows};}
+function json(value){return JSON.parse(JSON.stringify(value));}
 
 // Serialized concurrent writes preserve the newest eight independent flows for one origin.
 const a=harness();
@@ -41,7 +42,7 @@ const base=Date.now();
 await Promise.all(Array.from({length:64},(_,i)=>a.send({type:'AUTO_AGREE_PROFILE_PUT',profile:profile(flow(i,{ts:base+i}))})));
 const read=await a.send({type:'AUTO_AGREE_PROFILE_GET'});
 assert.equal(read.ok,true);
-assert.deepEqual(read.profile.flows.map(item=>item.fingerprint),Array.from({length:8},(_,j)=>`/login|flow-${63-j}`));
+assert.deepEqual(json(read.profile.flows.map(item=>item.fingerprint)),Array.from({length:8},(_,j)=>`/login|flow-${63-j}`));
 assert.equal(a.session.has('site:https://example.test'),true,'verified profile should populate storage.session hot layer');
 
 // Same flow fingerprint may legitimately have multiple current locators; identity is fingerprint+locator.
