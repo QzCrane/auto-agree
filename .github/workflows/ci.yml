@@ -56,6 +56,10 @@ jobs:
         env:
           AUTO_AGREE_HEADED: '1'
         run: xvfb-run -a node tests/e2e-extension.mjs --profile
+      - name: Probe stale isolated-world runtime generation after update
+        env:
+          AUTO_AGREE_HEADED: '1'
+        run: xvfb-run -a node tests/e2e-generation-runtime.mjs
       - name: Run release update transition against PR base
         if: github.event_name == 'pull_request'
         env:
