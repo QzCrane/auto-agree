@@ -35,7 +35,12 @@ async function withServer(fn){
 }
 
 async function launch(extensionPath){
-  const options={headless:true,pipe:true,enableExtensions:[extensionPath],args:['--no-first-run','--no-default-browser-check']};
+  const options={
+    headless:true,
+    dumpio:true,
+    enableExtensions:[extensionPath],
+    args:['--no-first-run','--no-default-browser-check','--disable-dev-shm-usage','--no-sandbox']
+  };
   if(process.env.CHROME_PATH){
     assert.ok(fs.existsSync(process.env.CHROME_PATH),`CHROME_PATH does not exist: ${process.env.CHROME_PATH}`);
     options.executablePath=process.env.CHROME_PATH;
