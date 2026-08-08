@@ -1,9 +1,6 @@
 (() => {
   'use strict';
-  if (globalThis.__AUTO_AGREE_ENGINE__) return;
-  globalThis.__AUTO_AGREE_ENGINE__ = '8.0.0';
-
-  const VERSION = '8.0.0';
+  const VERSION = '9.0.0';
   const MAX_ROW_TEXT = 1400;
   const MAX_CONTEXT_TEXT = 2200;
   const MAX_PENDING_VISIBILITY = 192;
@@ -24,6 +21,8 @@
   const CORE = globalThis.__AUTO_AGREE_SEMANTIC__;
   const RISK = globalThis.__AUTO_AGREE_RISK__;
   if (!CORE || CORE.version !== VERSION || !RISK || RISK.version !== VERSION) return;
+  if (globalThis.__AUTO_AGREE_ENGINE__) return;
+  globalThis.__AUTO_AGREE_ENGINE__ = VERSION;
   const { normalize, joinNormalized, compactSemantic, hasNonLatin, assessText, fastSemantic } = CORE;
   const { containsNegative, containsAttestation, severityFor, SEVERITY } = RISK;
   const { LEGAL, ASSENT, READ_WORD, REQUIRED, VALIDATION, AUTH, PROCEED, FAST_TEXT, CREDENTIAL, COMPACT_LEGAL, COMPACT_ASSENT } = CORE.patterns;
@@ -46,6 +45,7 @@
   const clickVerifiers = new WeakMap();
   const activeVerifiers = new Set();
   const deferredClicks = new WeakSet();
+  const oneShotUnknown = new WeakSet();
   // Hidden controls can outlive timers in background/frozen pages. The registry owns only
   // lightweight entry objects; both the pending control and its blocker are WeakRefs, so the
   // extension never keeps detached UI alive merely because a rescue timer has not fired yet.
@@ -409,7 +409,10 @@
   }
 
   function readStateRaw(el, row, input) {
-    if (input) return { known: true, checked: !!input.checked, kind: 'native' };
+    if (input) {
+      if (input.indeterminate) return { known: true, checked: false, kind: 'mixed' };
+      return { known: true, checked: !!input.checked, kind: 'native' };
+    }
     const nodes = [el, row];
     const explicit = row?.querySelector?.('[aria-checked],[data-state],[data-checked]');
     if (explicit) nodes.push(explicit);
@@ -417,13 +420,16 @@
       if (!(n instanceof Element)) continue;
       const aria = n.getAttribute('aria-checked');
       if (aria === 'true') return { known: true, checked: true, kind: 'aria' };
-      if (aria === 'false' || aria === 'mixed') return { known: true, checked: false, kind: 'aria' };
+      if (aria === 'false') return { known: true, checked: false, kind: 'aria' };
+      if (aria === 'mixed') return { known: true, checked: false, kind: 'mixed' };
       const state = (n.getAttribute('data-state') || '').toLowerCase();
       if (state === 'checked' || state === 'on') return { known: true, checked: true, kind: 'data' };
       if (state === 'unchecked' || state === 'off') return { known: true, checked: false, kind: 'data' };
+      if (state === 'indeterminate' || state === 'mixed') return { known: true, checked: false, kind: 'mixed' };
       const dc = n.getAttribute('data-checked');
       if (dc === '' || dc === 'true') return { known: true, checked: true, kind: 'data' };
       if (dc === 'false') return { known: true, checked: false, kind: 'data' };
+      if (dc === 'indeterminate' || dc === 'mixed') return { known: true, checked: false, kind: 'mixed' };
     }
     for (const n of [el, row, row?.parentElement]) {
       if (!(n instanceof Element)) continue;
@@ -589,7 +595,7 @@
   function decisionFor(s) {
     const graph = buildSemanticGraph(s);
     const f = graph.facts;
-    if (s.disabled || f.severity >= SEVERITY.OPTIONAL || s.assessment.blocked) return { accept: false, score: -100, severity: s.severity, graph };
+    if (s.disabled || s.state.kind === 'mixed' || f.severity >= SEVERITY.OPTIONAL || s.assessment.blocked) return { accept: false, score: -100, severity: s.severity, graph };
     const a = s.assessment;
     let score = a.score + f.legalLinks + s.context.gatingScore + (f.auth ? 2 : 0) + Math.min(f.controlConfidence, 5);
     if (f.required) score += 4;
@@ -730,7 +736,7 @@
   function profileMessage(type, profile = null, attempt = 0) {
     return new Promise(resolve => {
       try {
-        chrome.runtime.sendMessage({ type, origin: location.origin, profile }, response => {
+        chrome.runtime.sendMessage({ type, profile }, response => {
           const failed = !!chrome.runtime.lastError || !response?.ok;
           if (!failed) return resolve(response.profile ?? true);
           if (attempt >= 2 || lifecyclePaused) return resolve(null);
@@ -808,6 +814,7 @@
       if (verifier.done) return true;
       const state = readFreshState(s);
       if (!(state.known && state.checked)) return false;
+      oneShotUnknown.delete(s.control);
       verifier.done = true;
       stopVerifier(s.control);
       clickMemo.set(s.control, { time: performance.now(), succeeded: true });
@@ -846,6 +853,7 @@
         const target = preferredClickTarget(fresh);
         if (target instanceof HTMLElement && performance.now() - (clickMemo.get(s.control)?.time || 0) >= 100) {
           const retryVerifier = armVerifier(fresh, fresh.state, 1);
+          authorizeHandoverClick(target);
           try { target.click(); } catch (_) { stopVerifier(fresh.control); return; }
           clickMemo.set(fresh.control, { time: performance.now(), succeeded: false, retry: true });
           retryVerifier();
@@ -855,11 +863,17 @@
     return check;
   }
 
+  function authorizeHandoverClick(target) {
+    try { globalThis.__AUTO_AGREE_HANDOVER_GUARD__?.authorize?.(target); } catch (_) {}
+  }
+
   function commitClick(s, target) {
     if (!(target instanceof HTMLElement) || target.closest?.('a[href]')) return false;
     const before = s.state;
+    if (!before.known) oneShotUnknown.add(s.control);
     const check = armVerifier(s, before, 0);
-    try { target.click(); } catch (_) { stopVerifier(s.control); return false; }
+    authorizeHandoverClick(target);
+    try { target.click(); } catch (_) { oneShotUnknown.delete(s.control); stopVerifier(s.control); return false; }
     clickMemo.set(s.control, { time: performance.now(), succeeded: false });
     check();
     return true;
@@ -867,6 +881,7 @@
 
   function performClick(s, overrideTarget = null, urgent = false) {
     if (s.state.known && s.state.checked) return true;
+    if (!s.state.known && oneShotUnknown.has(s.control)) return false;
     const last = clickMemo.get(s.control);
     if (last && performance.now() - last.time < CLICK_COOLDOWN_MS) return !!last.succeeded;
     if (!cheapActive(s.row) || !cheapActive(s.control)) { pend(s.control, s.row); return false; }
@@ -1756,11 +1771,19 @@
     }
   }
 
+  let bootstrapSeedRef = null;
+  let bootstrapSeedResolved = false;
+
   function bootstrapSeedElement() {
-    const handoff = globalThis.__AUTO_AGREE_BOOTSTRAP_CONTEXT__;
-    const seed = handoff?.seedRef?.deref?.() || handoff?.seed || null;
-    try { delete globalThis.__AUTO_AGREE_BOOTSTRAP_CONTEXT__; } catch (_) { globalThis.__AUTO_AGREE_BOOTSTRAP_CONTEXT__ = null; }
-    const el = seed instanceof Element ? seed : seed?.parentElement;
+    if (!bootstrapSeedResolved) {
+      bootstrapSeedResolved = true;
+      const handoff = globalThis.__AUTO_AGREE_BOOTSTRAP_CONTEXT__;
+      const seed = handoff?.seedRef?.deref?.() || handoff?.seed || null;
+      try { delete globalThis.__AUTO_AGREE_BOOTSTRAP_CONTEXT__; } catch (_) { globalThis.__AUTO_AGREE_BOOTSTRAP_CONTEXT__ = null; }
+      const el = seed instanceof Element ? seed : seed?.parentElement;
+      if (el instanceof Element && el.isConnected && typeof WeakRef === 'function') bootstrapSeedRef = new WeakRef(el);
+    }
+    const el = bootstrapSeedRef?.deref?.();
     return el instanceof Element && el.isConnected ? el : null;
   }
 

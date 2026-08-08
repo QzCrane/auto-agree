@@ -20,11 +20,11 @@ A click requires all of the following:
 2. legal/assent or mandatory legal evidence;
 3. a local context compatible with access/onboarding;
 4. severity below `OPTIONAL`;
-5. active/not-disabled/not-already-checked state;
+5. active/not-disabled/not-already-checked state, excluding native indeterminate and ARIA/data mixed states;
 6. visibility proof when the control representation is ambiguous;
 7. post-click state verification.
 
-Unknown custom toggle state is one-shot and is never blindly toggled twice.
+Unknown custom toggle state is one-shot for that unresolved DOM element and is never blindly toggled twice, even after the normal click cooldown expires. Native `indeterminate`, ARIA `mixed`, and data-state `indeterminate`/`mixed` are treated as tri-state ambiguity and are never auto-toggled.
 
 ## Cache rule
 

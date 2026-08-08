@@ -21,7 +21,7 @@ const injectionActiveByTab = new Map();
 let injectionActive = 0;
 let injectionSeq = 0;
 let lastScheduledTab = -1;
-const VERSION = '8.0.0';
+const VERSION = '9.0.0';
 let storageWriteChain = Promise.resolve();
 let rehydratePromise = null;
 
@@ -332,6 +332,17 @@ function senderLifecycleAllowed(sender) {
   return !state || state === 'active';
 }
 
+function profileOriginForSender(sender) {
+  for (const raw of [sender?.origin, sender?.url]) {
+    if (typeof raw !== 'string' || !raw || raw === 'null') continue;
+    try {
+      const parsed = new URL(raw);
+      if (parsed.protocol === 'http:' || parsed.protocol === 'https:') return parsed.origin;
+    } catch (_) {}
+  }
+  return null;
+}
+
 async function rehydrateExistingTabs() {
   if (!chrome.tabs?.query) return;
   let tabs = [];
@@ -342,7 +353,7 @@ async function rehydrateExistingTabs() {
     for (let i = 0; i < pending.length; i += 12) {
       const ids = pending.slice(i, i + 12);
       const results = await Promise.allSettled(ids.map(tabId =>
-        scheduleInjection({ tabId, allFrames: true }, ['bootstrap.js'], 0)
+        scheduleInjection({ tabId, allFrames: true }, ['handover-guard.js', 'bootstrap.js'], 3)
       ));
       for (let j = 0; j < results.length; j++) if (results[j].status === 'rejected') retry.push(ids[j]);
     }
@@ -381,8 +392,15 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return false;
   }
 
+  const profileOrigin = profileOriginForSender(sender);
+  const isProfileMessage = message.type === 'AUTO_AGREE_PROFILE_GET' || message.type === 'AUTO_AGREE_PROFILE_PUT' || message.type === 'AUTO_AGREE_PROFILE_INVALIDATE';
+  if (isProfileMessage && !profileOrigin) {
+    sendResponse({ ok: false, error: 'missing-profile-origin' });
+    return false;
+  }
+
   if (message.type === 'AUTO_AGREE_PROFILE_GET') {
-    getProfile(message.origin).then(
+    getProfile(profileOrigin).then(
       profile => sendResponse({ ok: true, profile }),
       error => sendResponse({ ok: false, error: String(error?.message || error) })
     );
@@ -390,7 +408,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   }
 
   if (message.type === 'AUTO_AGREE_PROFILE_PUT') {
-    putProfile(message.origin, message.profile).then(
+    putProfile(profileOrigin, message.profile).then(
       () => sendResponse({ ok: true }),
       error => sendResponse({ ok: false, error: String(error?.message || error) })
     );
@@ -398,7 +416,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   }
 
   if (message.type === 'AUTO_AGREE_PROFILE_INVALIDATE') {
-    invalidateProfileFlow(message.origin, message.profile).then(
+    invalidateProfileFlow(profileOrigin, message.profile).then(
       () => sendResponse({ ok: true }),
       error => sendResponse({ ok: false, error: String(error?.message || error) })
     );
@@ -416,7 +434,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   const key = sender.documentId || `${target.tabId}:${sender.frameId ?? 0}`;
   const isGate = message.type === 'AUTO_AGREE_GATE';
   const map = isGate ? gateInflight : engineInflight;
-  const files = isGate ? ['semantic-core.js', 'gate.js'] : ['risk-core.js', 'engine.js'];
+  const files = isGate ? ['semantic-core.js', 'gate.js'] : ['semantic-core.js', 'risk-core.js', 'engine.js'];
   let promise = map.get(key);
   if (!promise) {
     promise = scheduleInjection(target, files, isGate ? 1 : 2).finally(() => map.delete(key));

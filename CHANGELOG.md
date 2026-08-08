@@ -1,8 +1,19 @@
 # Changelog
 
+## 9.0.0 — 2026-08-08
+
+- Restored the historical UNKNOWN-state invariant: a classless control with no observable checked contract is one-shot for that DOM element, even after the normal click cooldown expires.
+- Treat native `indeterminate`, ARIA `mixed`, and data `indeterminate` / `mixed` states as non-authoritative tri-state controls and never auto-toggle them.
+- Fixed Gate→Engine seed consumption so Shadow probing and scoped Engine bootstrap can both reuse the same weakly-owned handoff without retaining detached DOM.
+- Moved Gate/Engine sentinels behind dependency validation so a partial or out-of-order injection cannot permanently poison later retries.
+- Made semantic/risk cores version-refreshable and included `semantic-core.js` in Engine injection dependency closure for safer cross-version worker/content-tier transitions.
+- Bound site-learning identity to Chrome `MessageSender.origin`/`url` rather than a content-provided `message.origin`; profile operations fail closed without a usable sender origin.
+- Added a high-priority generation handover firewall after real Chrome proved that old and new Engine isolated worlds can coexist and remain executable across an extension update. Current Engine clicks receive one-shot authorization; stale-generation synthetic agreement clicks are blocked while trusted user clicks remain unaffected.
+- Added real unpacked-Chrome regressions for tri-state controls, classless UNKNOWN one-shot behavior, simultaneous v8/v9 Engine worlds, exactly-one routine update clicks, and zero legacy mixed-state clicks.
+
 ## 8.0.0 — 2026-08-08
 
-- Added real unpacked-extension Puppeteer E2E with explicitly installed Chrome for Testing, including the actual MV3 service worker, dynamic isolated-world injection, all-frame behavior, closed Shadow DOM, worker termination recovery, update transition, and CPU-profile capture.
+- Added real unpacked-extension Puppeteer E2E with explicitly installed Chrome for Testing, including the actual MV3 service worker, dynamic `chrome.scripting` injections, isolated worlds, frame handling, closed-Shadow extension API path and extension update lifecycle under test.
 - Added Worker `documentLifecycle` defense-in-depth: explicit prerender/cached/pending-deletion senders cannot schedule Gate/Engine or profile work.
 - Rebuilt injection scheduling with bounded aging, per-tab tie rotation, stale-job eviction, and Engine admission that can preempt younger queued Gate work instead of failing behind a full low-priority queue.
 - Added bounded handoff retries in Probe/Gate and idempotent profile-message retries so unexpected service-worker termination does not strand an otherwise live page.
@@ -32,7 +43,7 @@
 
 ## 5.0.0
 
-- Three-tier Probe → Gate → Engine architecture, weak ownership across background queues, fragmented semantics, serialized profile writes.
+- Three-tier Probe → Gate → Engine architecture, weak ownership across background queues, fragmented semantics, serialized learning.
 
 ## 4.0.0
 

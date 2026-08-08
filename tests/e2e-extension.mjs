@@ -23,7 +23,7 @@ async function withServer(fn){
     const route=(req.url||'/').split('?')[0];
     let body='';
     const table={
-      '/positive-login.html':'positive-login.html','/terse-validity.html':'terse-validity.html','/marketing-negative.html':'marketing-negative.html','/fragmented-risk.html':'fragmented-risk.html','/footer-noise.html':'footer-noise.html','/trae-classless.html':'trae-classless.html','/dynamic.html':'dynamic.html','/iframe-parent.html':'iframe-parent.html','/iframe-child.html':'iframe-child.html','/closed-shadow.html':'closed-shadow.html'
+      '/positive-login.html':'positive-login.html','/terse-validity.html':'terse-validity.html','/marketing-negative.html':'marketing-negative.html','/fragmented-risk.html':'fragmented-risk.html','/footer-noise.html':'footer-noise.html','/trae-classless.html':'trae-classless.html','/mixed-control.html':'mixed-control.html','/classless-unknown-one-shot.html':'classless-unknown-one-shot.html','/dynamic.html':'dynamic.html','/iframe-parent.html':'iframe-parent.html','/iframe-child.html':'iframe-child.html','/closed-shadow.html':'closed-shadow.html'
     };
     if(route==='/performance-tail.html') body=perfTail(); else if(table[route]) body=fixture(table[route]); else {res.statusCode=404; body='not found';}
     res.setHeader('content-type','text/html; charset=utf-8'); res.end(body);
@@ -116,6 +116,19 @@ async function basicMatrix(base,browser){
     throw error;
   }
 
+  await gotoActive(page,`${base}/mixed-control.html`);
+  await new Promise(resolve=>setTimeout(resolve,450));
+  assert.deepEqual(await page.$eval('#aria-mixed',el=>({state:el.getAttribute('aria-checked'),clicks:Number(el.dataset.clicks||0)})),{state:'mixed',clicks:0});
+  assert.deepEqual(await page.$eval('#data-mixed',el=>({state:el.getAttribute('data-state'),clicks:Number(el.dataset.clicks||0)})),{state:'indeterminate',clicks:0});
+  assert.deepEqual(await page.$eval('#native-mixed',el=>({indeterminate:el.indeterminate,checked:el.checked,clicks:Number(el.dataset.clicks||0)})),{indeterminate:true,checked:false,clicks:0});
+
+  await gotoActive(page,`${base}/classless-unknown-one-shot.html`);
+  await page.waitForFunction(()=>Number(document.querySelector('#box')?.dataset.clicks||0)===1,{timeout:3000});
+  await new Promise(resolve=>setTimeout(resolve,2350));
+  await page.$eval('#legal',el=>{el.textContent='I have read and agree to the Terms of Service';});
+  await new Promise(resolve=>setTimeout(resolve,450));
+  assert.equal(await page.$eval('#box',el=>Number(el.dataset.clicks||0)),1,'unknown-state classless control must remain one-shot after cooldown');
+
   await gotoActive(page,`${base}/terse-validity.html`); await waitUnchecked(page,'#agree',300);
   await page.$eval('#email',el=>{el.value='valid@example.com';el.dispatchEvent(new Event('input',{bubbles:true}));});
   await waitChecked(page,'#agree');
@@ -156,7 +169,7 @@ async function profileMatrix(base,browser){
 await withServer(async base=>{
   const browser=await launch(EXTENSION);
   try{
-    const ext=await autoAgreeExtension(browser); assert.equal(ext.version,'8.0.0');
+    const ext=await autoAgreeExtension(browser); assert.equal(ext.version,'9.0.0');
     await basicMatrix(base,browser); console.log('e2e-basic: PASS');
     await workerTerminationMatrix(base,browser,ext.id); console.log('e2e-worker-termination: PASS');
     if(PROFILE) await profileMatrix(base,browser);

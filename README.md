@@ -31,11 +31,16 @@ flowchart LR
   W --> R
   W --> E
   W --> L
+  U[Update rehydration] --> H[Generation handover guard]
+  H --> P
+  E -. one-shot current-generation authorization .-> H
 ```
 
 The always-present probe is deliberately small and never clicks. Richer code is injected only into the exact document/frame that earns it. Gate and Engine share one semantic base; high-consequence rules are deferred to an engine-only risk core.
 
-See [Architecture](docs/architecture.md), [Decision model](docs/decision-model.md), and [Security model](docs/security-model.md).
+A page that survives an extension update receives a separate generation handover guard before rehydrated Probe work. Real Chrome testing proved that old and new isolated-world Engines can coexist and both remain executable after an update. The guard therefore treats version sentinels as diagnostics—not authority—and blocks stale-generation synthetic agreement clicks unless the current Engine issues a one-shot authorization. Trusted user clicks bypass this firewall.
+
+See [Architecture](docs/architecture.md), [Decision model](docs/decision-model.md), [Security model](docs/security-model.md), and [ADR 0009](docs/decisions/0009-generation-handover-firewall.md).
 
 ## Install
 
@@ -54,6 +59,7 @@ Do not run multiple Auto Agree versions simultaneously: two independent auto-cli
 extension/              load-unpacked production extension
   manifest.json
   bootstrap.js          always-present micro-probe
+  handover-guard.js     update-only cross-generation click firewall
   semantic-core.js      shared bounded legal/assent semantics
   risk-core.js          engine-only consent severity/risk semantics
   gate.js               semantic activation gate
@@ -84,19 +90,22 @@ npm test
 python tools/package_extension.py
 ```
 
-v8 verification includes:
+v9 verification includes:
 
 - dependency-free syntax, permission, semantic-property and Worker scheduler/restart contracts;
 - 10,020 semantic severity/property assertions;
 - real unpacked-extension Puppeteer E2E in Chrome;
 - forced MV3 service-worker termination/restart;
-- v7→v8 update/reload transition on an already-open test page;
+- v8→v9 update transition on non-reloaded dormant and already-active pages;
+- behavioral proof that simultaneous v8/v9 Engine worlds do not restore stale v8 click authority after the handover guard is installed;
+- exactly one current-authorized routine click and zero legacy mixed-state clicks in the active update page;
 - real iframe and closed-Shadow regression fixtures;
 - native form-validity gating regression;
+- ARIA/data/native tri-state refusal and durable UNKNOWN-state one-shot regression;
 - 5,000-checkbox E2E DevTools CPU profile capture;
 - deterministic ZIP integrity verification.
 
-Detailed evidence: [v8 verification report](docs/verification/v8.md).
+Detailed evidence: [v9 verification report](docs/verification/v9.md).
 
 ## Permissions
 
@@ -118,5 +127,6 @@ No `debugger`, cookies, history, `webRequest`, downloads, proxy, clipboard, `nat
 4. Background/frozen/BFCache pages quiesce.
 5. No unbounded subtree stringification, wildcard page scan, polling loop, remote model, or telemetry.
 6. A proposed optimization is rejected when profiling or safety evidence does not justify its added complexity/permission surface.
+7. A sentinel, version string, or loaded module proves presence—not exclusive authority. Cross-generation safety must be behaviorally verified.
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) and [CHANGELOG.md](CHANGELOG.md).

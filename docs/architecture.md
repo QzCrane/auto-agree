@@ -15,12 +15,18 @@ The system therefore optimizes three quantities independently:
 ```mermaid
 sequenceDiagram
   participant Page
+  participant Guard as handover-guard.js
   participant Probe as bootstrap.js
   participant Worker as worker.js
   participant Core as semantic-core.js
   participant Gate as gate.js
   participant Risk as risk-core.js
   participant Engine as engine.js
+
+  opt surviving page after extension update
+    Worker->>Guard: inject first, all accessible frames
+    Worker->>Probe: rehydrate after guard
+  end
 
   Page->>Probe: bounded DOM/auth/legal changes
   alt weak/unrelated evidence
@@ -34,10 +40,12 @@ sequenceDiagram
       Gate-->>Page: retire/sleep
     else accepted
       Gate->>Worker: AUTO_AGREE_ACTIVATE
+      Worker->>Core: refresh current dependency
       Worker->>Risk: lazy inject
       Worker->>Engine: lazy inject
       Engine->>Engine: graph + severity + live state
       alt severity <= routine privacy
+        Engine->>Guard: one-shot click authorization if guard exists
         Engine->>Page: verified activation
       else meaningful consent
         Engine-->>Page: no click
@@ -45,6 +53,8 @@ sequenceDiagram
     end
   end
 ```
+
+`handover-guard.js` is **not** a normal always-present content script. It exists to establish a current-generation action boundary in pages that survive an extension update.
 
 ## Why two semantic cores
 
@@ -94,7 +104,8 @@ The service worker bounds concurrent dynamic injection:
 - maximum 4 injections globally;
 - maximum 2 per tab;
 - queue length has a hard cap of 64;
-- Engine starts with higher base priority than Gate;
+- Engine starts with higher ordinary base priority than Gate;
+- update handover rehydration uses a higher priority than ordinary Gate/Engine work;
 - waiting jobs gain bounded age priority so Gate work cannot starve forever behind newly arriving Engine work;
 - equal-score work rotates away from the most recently scheduled tab when another eligible tab exists;
 - stale queued jobs are rejected before consuming an execution slot;
@@ -111,13 +122,20 @@ Important worker state is split deliberately:
 - durable: site learning and update-rehydration marker → `chrome.storage`;
 - transient/replayable: in-flight injection maps, queues, LRU cache → worker globals.
 
-Probe/Gate handoff messages and profile writes are idempotently replayable after unexpected worker loss.
+Probe/Gate handoff messages and profile writes are idempotently replayable after unexpected worker loss. Profile storage identity is derived from Chrome `MessageSender.origin`/`url`, not from message payload text. Update handover injections run at elevated scheduler priority so the cross-generation click firewall is established before ordinary post-update tier work whenever the rehydration sweep reaches that frame.
 
 ## Extension update rehydration
 
-When an extension update/reload replaces the Worker, already-open pages are not assumed to have received a fresh static content script. v8 records a short-lived session rehydration marker, queries existing tabs, and schedules `bootstrap.js` into all accessible frames in small batches. A worker restart during this sweep sees the marker and resumes it.
+When an extension update/reload replaces the Worker, already-open pages are not assumed to have received a fresh static content script. v8 introduced a short-lived session rehydration marker; v9 retains it, queries existing tabs, and schedules **`handover-guard.js` followed by `bootstrap.js`** into all accessible frames in small batches. A worker restart during this sweep sees the marker and resumes it.
 
-The bootstrap sentinel still prevents duplicate same-generation initialization, while old-generation page scripts remain safe because dynamic Gate/Engine injection is itself idempotent.
+Real Chrome testing showed that an old isolated-world Engine can remain both observable and executable after extension update while a new isolated world is also created. A version sentinel therefore proves presence, not exclusive authority.
+
+v9's guard uses two deliberately different lease scopes:
+
+1. **Direct current-Engine authorization.** Immediately before `.click()`, current Engine authorizes the exact target/ancestor chain in the new isolated world. The click consumes that one-shot authorization. If no click event appears, unused authorization expires at the next microtask checkpoint.
+2. **Local causal delegation.** A trusted user event or an already-authorized current Engine click may enter a small checkbox/control wrapper whose page handler synchronously delegates to a descendant with `.click()`. The guard grants one descendant causal lease only for that same DOM event propagation. Bubble phase revokes it before later MutationObserver work. Broad `form`, `dialog`, `section`, page and document containers are never causal roots, and no timer-based lease survives into a later task.
+
+This distinction matters because isolated-world capture listeners and MAIN-world page handlers can cross a microtask checkpoint during one DOM event. Real-browser testing rejected a microtask-only local lease; event-propagation scoping preserves genuine custom-control behavior without reopening stale-generation authority.
 
 ## Lifecycle and ownership
 

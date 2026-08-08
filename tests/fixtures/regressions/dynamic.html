@@ -1,5 +1,29 @@
 <!doctype html><meta charset="utf-8"><title>Dynamic Login</title>
 <div id="mount"></div>
 <script>
-window.insertRoutineLogin=()=>{document.querySelector('#mount').innerHTML='<form><input type="email" value="user@example.com"><label><input id="dynamic-agree" type="checkbox" required>I agree to the Terms of Service and Privacy Policy</label><button>Continue</button></form>';};
+window.dynamicClicks=0;
+window.insertRoutineLogin=()=>{
+  document.querySelector('#mount').innerHTML='<form><input type="email" value="user@example.com"><label><input id="dynamic-agree" type="checkbox" required>I agree to the Terms of Service and Privacy Policy</label><button>Continue</button></form>';
+  window.dynamicClicks=0;
+  document.querySelector('#dynamic-agree').addEventListener('click',()=>{window.dynamicClicks++;});
+};
+window.insertMixedLogin=()=>{
+  document.querySelector('#mount').innerHTML='<form><input type="email" value="user@example.com"><div id="dynamic-mixed" role="checkbox" aria-checked="mixed" aria-label="I agree to the Terms of Service" data-clicks="0"></div><button type="button">Login</button></form>';
+  window.dynamicClicks=0;
+  document.querySelector('#dynamic-mixed').addEventListener('click',event=>{
+    window.dynamicClicks++;
+    event.currentTarget.dataset.clicks=String(Number(event.currentTarget.dataset.clicks||0)+1);
+  });
+};
+window.insertUserDelegatedTerms=()=>{
+  document.querySelector('#mount').innerHTML='<div id="delegated-wrapper" tabindex="0" style="display:inline-flex;gap:8px;align-items:center;padding:8px"><input id="delegated-input" type="checkbox">Terms of Service</div>';
+  window.dynamicClicks=0;
+  const wrapper=document.querySelector('#delegated-wrapper');
+  const input=document.querySelector('#delegated-input');
+  input.addEventListener('click',()=>{window.dynamicClicks++;});
+  wrapper.addEventListener('click',event=>{
+    if(event.target===wrapper) input.click();
+  });
+};
+window.clearRoutineLogin=()=>{document.querySelector('#mount').replaceChildren();window.dynamicClicks=0;};
 </script>
