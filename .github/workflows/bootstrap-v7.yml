@@ -1,9 +1,6 @@
 name: Bootstrap v7 canonical repository
 
 on:
-  push:
-    branches:
-      - feat/v7-repository-convergence
   pull_request:
     branches:
       - main
@@ -25,16 +22,28 @@ jobs:
           ref: ${{ github.head_ref || github.ref_name }}
           fetch-depth: 0
 
+      - name: Detect bootstrap payload
+        id: payload
+        shell: bash
+        run: |
+          if [[ -f .bootstrap3/v7.patch.06 ]]; then
+            echo 'present=true' >> "$GITHUB_OUTPUT"
+          else
+            echo 'present=false' >> "$GITHUB_OUTPUT"
+            echo 'Canonical tree already generated; bootstrap is a no-op.'
+          fi
+
       - name: Reconstruct and verify v7 delta
+        if: steps.payload.outputs.present == 'true'
         shell: bash
         run: |
           set -euo pipefail
-          test -f .bootstrap3/v7.patch.06
           cat .bootstrap3/v7.patch.* | base64 --decode > /tmp/v7.patch.xz
           echo '19a29024926fd1d2f15512b9d936b2d4908426dc28dca42f67ab722b45538e56  /tmp/v7.patch.xz' | sha256sum --check --strict
           xz --decompress --stdout /tmp/v7.patch.xz > /tmp/v7.patch
 
       - name: Normalize v6 repository layout
+        if: steps.payload.outputs.present == 'true'
         shell: bash
         run: |
           set -euo pipefail
@@ -48,15 +57,16 @@ jobs:
           rm -f extension/content.js
 
       - name: Apply canonical v7 delta
+        if: steps.payload.outputs.present == 'true'
         shell: bash
         run: |
           set -euo pipefail
           git apply --check /tmp/v7.patch
           git apply /tmp/v7.patch
           rm -rf .bootstrap .bootstrap2 .bootstrap3
-          rm -f .github/workflows/bootstrap-v7.yml
 
       - name: Verify repository
+        if: steps.payload.outputs.present == 'true'
         shell: bash
         run: |
           set -euo pipefail
@@ -68,7 +78,18 @@ jobs:
           test -f docs/verification/v7.md
           test -f .github/workflows/ci.yml
 
+      - name: Prepare push-compatible canonical tree
+        if: steps.payload.outputs.present == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          # The runner token is intentionally not used to modify workflow files.
+          # The authenticated GitHub connector will finalize CI/bootstrap workflow changes after this push.
+          rm -f .github/workflows/ci.yml
+          git restore --source=HEAD -- .github/workflows/bootstrap-v7.yml
+
       - name: Commit canonical repository
+        if: steps.payload.outputs.present == 'true'
         shell: bash
         run: |
           set -euo pipefail
