@@ -29,6 +29,7 @@ From v3 onward, detailed version reports were produced during the corresponding 
 | v7.0.0 | [v7.md](v7.md) | `baa7452` main milestone |
 | v8.0.0 | [v8.md](v8.md) | first release with real unpacked-extension Chrome E2E as a merge gate |
 | v9.0.0 | [v9.md](v9.md) | recovered invariants plus real-browser proof and repair of simultaneous old/new Engine click authority during MV3 update |
+| v10.0.0 | [v10.md](v10.md) | cooperative stale-generation self-revocation, bounded shared-semantic handover convergence, profile-governance re-audit and package/runtime closure repair |
 
 ## Interpretation rules
 
@@ -39,5 +40,6 @@ From v3 onward, detailed version reports were produced during the corresponding 
 5. Current production behavior is defined by `extension/`, the current tests, and the current architecture/security documentation—not by an older version report.
 6. A release report is not considered final until its release-gating CI evidence has been incorporated and the corresponding candidate has passed the repository's current verification policy.
 7. Real-browser E2E results describe the committed sanitized regression corpus and the tested browser environment; they do not imply universal correctness across arbitrary websites.
+8. Narrow green tests do not waive historical invariants outside their scope. New releases must preserve previously established safety, resource and persistence contracts or explicitly re-open them with new evidence.
 
 For the high-level evolution map, see [`../history.md`](../history.md). For current architecture, see [`../architecture.md`](../architecture.md).
