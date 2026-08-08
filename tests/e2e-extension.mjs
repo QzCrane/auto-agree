@@ -179,9 +179,19 @@ async function updateTransition(base){
     replaceDir(EXTENSION,active);
     const workers=await ext.workers(); assert.ok(workers.length,'previous service worker unavailable');
     try{await workers[0].evaluate(()=>chrome.runtime.reload());}catch(_){}
-    await browser.waitForTarget(t=>t.type()==='service_worker'&&t.url().startsWith(`chrome-extension://${ext.id}/`),{timeout:5000});
-    const current=await poll(async()=>{const candidate=(await browser.extensions()).get(ext.id);return candidate?.version==='8.0.0'?candidate:null;},5000,60);
-    assert.equal(current.version,'8.0.0');
+    const currentWorker=await poll(async()=>{
+      const targets=browser.targets().filter(t=>t.type()==='service_worker'&&t.url().startsWith(`chrome-extension://${ext.id}/`));
+      for(const target of targets){
+        try{
+          const worker=await target.worker();
+          const version=worker&&await worker.evaluate(()=>chrome.runtime.getManifest().version);
+          if(version==='8.0.0') return worker;
+        }catch(_){}
+      }
+      return null;
+    },7000,60);
+    assert.equal(await currentWorker.evaluate(()=>chrome.runtime.getManifest().version),'8.0.0');
+    await page.bringToFront();
     await page.evaluate(()=>window.insertRoutineLogin()); await waitChecked(page,'#dynamic-agree',5000);
     console.log('update-transition: PASS (v7 page -> v8 worker/runtime rehydrate without page reload)');
     await page.close();
