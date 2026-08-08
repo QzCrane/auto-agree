@@ -23,7 +23,7 @@ async function withServer(fn){
     const route=(req.url||'/').split('?')[0];
     let body='';
     const table={
-      '/positive-login.html':'positive-login.html','/terse-validity.html':'terse-validity.html','/marketing-negative.html':'marketing-negative.html','/fragmented-risk.html':'fragmented-risk.html','/footer-noise.html':'footer-noise.html','/trae-classless.html':'trae-classless.html','/mixed-control.html':'mixed-control.html','/classless-unknown-one-shot.html':'classless-unknown-one-shot.html','/causal-propagation.html':'causal-propagation.html','/dynamic.html':'dynamic.html','/iframe-parent.html':'iframe-parent.html','/iframe-child.html':'iframe-child.html','/closed-shadow.html':'closed-shadow.html'
+      '/positive-login.html':'positive-login.html','/terse-validity.html':'terse-validity.html','/marketing-negative.html':'marketing-negative.html','/fragmented-risk.html':'fragmented-risk.html','/footer-noise.html':'footer-noise.html','/trae-classless.html':'trae-classless.html','/mixed-control.html':'mixed-control.html','/classless-unknown-one-shot.html':'classless-unknown-one-shot.html','/causal-propagation.html':'causal-propagation.html','/structural-fuzz.html':'structural-fuzz.html','/dynamic.html':'dynamic.html','/iframe-parent.html':'iframe-parent.html','/iframe-child.html':'iframe-child.html','/closed-shadow.html':'closed-shadow.html'
     };
     if(route==='/performance-tail.html') body=perfTail(); else if(table[route]) body=fixture(table[route]); else {res.statusCode=404; body='not found';}
     res.setHeader('content-type','text/html; charset=utf-8'); res.end(body);
@@ -140,9 +140,6 @@ async function basicMatrix(base,browser){
   await gotoActive(page,`${base}/closed-shadow.html`);
   await page.$eval('#host',host=>host.focusInside()); await page.waitForFunction(()=>document.querySelector('#host')?.isChecked()===true,{timeout:3000});
 
-  // A local causal lease is supposed to exist only during the trusted source event's propagation.
-  // stopPropagation() prevents the guard's window-bubble cleanup, so this fixture distinguishes a
-  // true event-scoped authority model from a leaked WeakSet token that survives into a later task.
   await gotoActive(page,`${base}/causal-propagation.html`);
   await poll(async()=>{
     const worlds=await extensionWorldSentinels(page);
@@ -154,6 +151,53 @@ async function basicMatrix(base,browser){
   await page.click('#async-visual');
   await new Promise(resolve=>setTimeout(resolve,180));
   assert.deepEqual(await page.evaluate(()=>({checked:document.querySelector('#async-input').checked,clicks:window.asyncClicks})),{checked:false,clicks:0},'stopped source-event propagation must not leak causal authority into a later task');
+  await page.close();
+}
+
+async function structuralFuzzMatrix(base,browser){
+  const page=await browser.newPage();
+  await gotoActive(page,`${base}/structural-fuzz.html`);
+  await page.waitForFunction(()=>window.structuralFuzzReady===true,{timeout:5000});
+
+  // Wait only for the positive routine cases. Blocked/already/disabled/mixed cases are asserted
+  // after a stabilization interval so they cannot "pass" merely because Engine has not run yet.
+  try {
+    await page.waitForFunction(()=>{
+      const results=window.getStructuralFuzzResults?.()||[];
+      const routine=results.filter(item=>item.mode==='routine');
+      return routine.length===120&&routine.every(item=>item.checked&&item.clicks===1);
+    },{timeout:9000});
+  } catch (error) {
+    const diag=await page.evaluate(()=>{
+      const results=window.getStructuralFuzzResults?.()||[];
+      const failures=results.filter(item=>{
+        if(item.mode==='routine') return !item.checked||item.clicks!==1;
+        if(item.mode==='already') return !item.checked||item.clicks!==0;
+        return item.checked||item.clicks!==0;
+      });
+      return {total:results.length,failures:failures.slice(0,20)};
+    });
+    const worlds=await extensionWorldSentinels(page);
+    console.error('structural-fuzz-diagnostic:',JSON.stringify({diag,worlds}));
+    throw error;
+  }
+
+  await new Promise(resolve=>setTimeout(resolve,700));
+  const results=await page.evaluate(()=>window.getStructuralFuzzResults());
+  assert.equal(results.length,300);
+  const failures=[];
+  for(const item of results){
+    let ok=false;
+    if(item.mode==='routine') ok=item.checked===true&&item.mixed===false&&item.clicks===1;
+    else if(item.mode==='already') ok=item.checked===true&&item.clicks===0;
+    else if(item.mode==='mixed') ok=item.checked===false&&item.mixed===true&&item.clicks===0;
+    else ok=item.checked===false&&item.clicks===0;
+    if(!ok) failures.push(item);
+  }
+  assert.deepEqual(failures.slice(0,20),[],`structural fuzz failures (${failures.length} total): ${JSON.stringify(failures.slice(0,20))}`);
+  const counts=Object.fromEntries(['routine','blocked','already','disabled','mixed'].map(mode=>[mode,results.filter(item=>item.mode===mode).length]));
+  console.log('e2e-structural-fuzz:',JSON.stringify({total:results.length,counts,falsePositive:0,falseNegative:0,duplicateToggle:0}));
+  console.log('e2e-structural-fuzz: PASS');
   await page.close();
 }
 
@@ -186,6 +230,7 @@ await withServer(async base=>{
   try{
     const ext=await autoAgreeExtension(browser); assert.equal(ext.version,'10.0.0');
     await basicMatrix(base,browser); console.log('e2e-basic: PASS');
+    await structuralFuzzMatrix(base,browser);
     await workerTerminationMatrix(base,browser,ext.id); console.log('e2e-worker-termination: PASS');
     if(PROFILE) await profileMatrix(base,browser);
   } finally {await browser.close();}
