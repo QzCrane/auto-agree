@@ -1,0 +1,1 @@
+Real Chrome structural fuzz found that Engine can silently discard unfinished `rootBatches` at its hard cap, creating permanent false negatives under bursty dynamic DOM insertion. This branch is research-only and must not be merged until the ordinary source repair and clean exact-head permanent fuzz gate pass.
