@@ -1,22 +1,22 @@
 name: v10-bootstrap
 
 on:
-  pull_request:
-    branches: [main]
+  push:
+    branches: [agent/v10-handover-convergence]
 
 permissions:
   contents: write
 
 jobs:
   apply:
-    if: github.actor != 'github-actions[bot]' && github.event.pull_request.head.repo.full_name == github.repository
+    if: github.actor != 'github-actions[bot]'
     runs-on: ubuntu-latest
     timeout-minutes: 8
     steps:
       - uses: actions/checkout@v6
         with:
           fetch-depth: 0
-          ref: ${{ github.head_ref }}
+          ref: agent/v10-handover-convergence
       - uses: actions/setup-node@v7
         with:
           node-version: '24'
@@ -110,6 +110,4 @@ jobs:
           git add extension package.json tests
           git diff --cached --check
           git commit -m "test: expose v9 handover locality gaps"
-          git push origin HEAD:${{ github.head_ref }}
-
-# PR already exists; this synchronize event activates the bootstrap workflow.
+          git push origin HEAD:agent/v10-handover-convergence
