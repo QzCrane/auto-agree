@@ -36,12 +36,15 @@ jobs:
       - uses: actions/setup-node@v7
         with:
           node-version: '24'
-      - name: Install pinned Puppeteer + Chrome for Testing
-        run: npm install --no-save --no-package-lock puppeteer@25.1.0
+      - name: Install pinned Puppeteer test tool
+        run: npm install --no-save --no-package-lock --ignore-scripts puppeteer@25.1.0
+      - name: Install Chrome for Testing explicitly
+        run: npx puppeteer browsers install chrome
       - name: Inspect managed Chrome for Testing
         run: |
-          node -e "import('puppeteer').then(p=>console.log(p.default.executablePath()))"
-          "$(node -e "import('puppeteer').then(p=>process.stdout.write(p.default.executablePath()))")" --version
+          CHROME="$(node --input-type=module -e "import puppeteer from 'puppeteer'; process.stdout.write(await puppeteer.executablePath())")"
+          echo "$CHROME"
+          "$CHROME" --version
       - name: Run real unpacked-extension E2E and profile
         env:
           AUTO_AGREE_PREVIOUS_REF: ${{ github.event.pull_request.base.sha || github.event.before }}
