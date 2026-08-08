@@ -7,13 +7,21 @@
   .row { display:flex; align-items:center; gap:6px; min-height:24px; }
   .fuzz-checkbox { display:inline-block; width:18px; height:18px; border:1px solid #666; }
 </style>
+<form id="seed-form" class="case">
+  <input type="email" value="seed@example.com">
+  <label><input id="seed-agree" type="checkbox" required>I have read and agree to the Terms of Service</label>
+  <button type="submit">Login</button>
+</form>
 <div id="cases"></div>
 <script>
 (() => {
   'use strict';
+  document.querySelector('#seed-form').addEventListener('submit', event => event.preventDefault());
+
   const TOTAL = 300;
   const BATCH = 25;
   let state = 0x00a6a9e1 >>> 0;
+  let started = false;
   const rand = () => {
     state = (Math.imul(state, 1664525) + 1013904223) >>> 0;
     return state / 0x100000000;
@@ -198,6 +206,12 @@
     }
   }
 
+  window.startStructuralFuzz = () => {
+    if (started) return;
+    started = true;
+    mountBatch();
+  };
+
   window.getStructuralFuzzResults = () => records.map(record => {
     const stateNow = controlState(record.control, record.kind);
     return {
@@ -211,7 +225,5 @@
       clicks: Number(record.control.dataset.clicks || 0)
     };
   });
-
-  mountBatch();
 })();
 </script>
