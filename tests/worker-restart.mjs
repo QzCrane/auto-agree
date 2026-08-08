@@ -9,7 +9,7 @@ const area=map=>({
   async set(obj){for(const [k,v] of Object.entries(obj))map.set(k,v);},
   async remove(keys){for(const k of Array.isArray(keys)?keys:[keys])map.delete(k);}
 });
-const PROTECTION_FILES=['semantic-core.js','handover-guard.js'];
+const PROTECTION_FILES=['generation-lease.js','semantic-core.js','handover-guard.js'];
 const BOOTSTRAP_FILES=['bootstrap.js'];
 function sameFiles(actual,expected){return JSON.stringify(actual)===JSON.stringify(expected);}
 function boot(tabIds=[1,2],failProtectionTabs=new Set()){
@@ -45,7 +45,7 @@ for(const tabId of [11,12,13]){
   const calls=c.calls.filter(x=>x.target?.tabId===tabId);
   const protectIndex=calls.findIndex(x=>sameFiles(x.files,PROTECTION_FILES));
   const bootstrapIndex=calls.findIndex(x=>sameFiles(x.files,BOOTSTRAP_FILES));
-  assert.ok(protectIndex>=0,`tab ${tabId} missing semantic+handover protection`);
+  assert.ok(protectIndex>=0,`tab ${tabId} missing generation lease + semantic + handover protection`);
   assert.ok(bootstrapIndex>protectIndex,`tab ${tabId} bootstrap must occur only after protection`);
   assert.equal(calls[protectIndex].target?.allFrames,true);
   assert.equal(calls[bootstrapIndex].target?.allFrames,true);
@@ -53,7 +53,7 @@ for(const tabId of [11,12,13]){
 assert.equal(session.has('__auto_agree_update_rehydrate__'),false);
 
 // If protection rejects, retry it but never bootstrap that tab. This is the critical authority
-// boundary: failure to establish current semantics/firewall cannot start a new Probe generation.
+// boundary: failure to establish current generation lease/semantics/firewall cannot start a Probe.
 session.set('__auto_agree_update_rehydrate__',{version:'10.0.0',ts:Date.now()});
 const d=boot([21],new Set([21]));
 await new Promise(r=>setTimeout(r,240));
