@@ -9,6 +9,7 @@ on:
 permissions:
   contents: write
 
+# This workflow is temporary transport for one verified source edit; final tree removes it.
 jobs:
   apply:
     runs-on: ubuntu-latest
