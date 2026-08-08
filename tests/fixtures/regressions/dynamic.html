@@ -15,5 +15,15 @@ window.insertMixedLogin=()=>{
     event.currentTarget.dataset.clicks=String(Number(event.currentTarget.dataset.clicks||0)+1);
   });
 };
+window.insertUserDelegatedTerms=()=>{
+  document.querySelector('#mount').innerHTML='<div id="delegated-wrapper" tabindex="0" style="display:inline-flex;gap:8px;align-items:center;padding:8px"><input id="delegated-input" type="checkbox">Terms of Service</div>';
+  window.dynamicClicks=0;
+  const wrapper=document.querySelector('#delegated-wrapper');
+  const input=document.querySelector('#delegated-input');
+  input.addEventListener('click',()=>{window.dynamicClicks++;});
+  wrapper.addEventListener('click',event=>{
+    if(event.target===wrapper) input.click();
+  });
+};
 window.clearRoutineLogin=()=>{document.querySelector('#mount').replaceChildren();window.dynamicClicks=0;};
 </script>
