@@ -23,7 +23,18 @@ jobs:
         with:
           node-version: '24'
       - name: Apply v9 patch
-        run: python .v9-bootstrap.py
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          path = Path('.v9-bootstrap.py')
+          text = path.read_text(encoding='utf-8')
+          old = "replace_once('tests/e2e-update.mjs', \"assert.equal(JSON.parse(fs.readFileSync(path.join(active,'manifest.json'),'utf8')).version,'8.0.0');\", \"assert.equal(JSON.parse(fs.readFileSync(path.join(active,'manifest.json'),'utf8')).version,'9.0.0');\")"
+          new = "replace_once('tests/e2e-update.mjs', \"    replaceDir(CURRENT,active);\\n    assert.equal(JSON.parse(fs.readFileSync(path.join(active,'manifest.json'),'utf8')).version,'8.0.0');\", \"    replaceDir(CURRENT,active);\\n    assert.equal(JSON.parse(fs.readFileSync(path.join(active,'manifest.json'),'utf8')).version,'9.0.0');\")"
+          if text.count(old) != 1:
+              raise SystemExit(f'bootstrap hotfix anchor count={text.count(old)}')
+          path.write_text(text.replace(old, new, 1), encoding='utf-8')
+          PY
+          python .v9-bootstrap.py
       - name: Remove bootstrap payload
         run: rm .v9-bootstrap.py
       - name: Verify deterministic core
