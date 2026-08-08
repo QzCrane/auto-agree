@@ -1,6 +1,6 @@
 (() => {
   'use strict';
-  const VERSION = '9.0.0';
+  const VERSION = '10.0.0';
   const CORE = globalThis.__AUTO_AGREE_SEMANTIC__;
   if (!CORE || CORE.version !== VERSION) return;
   if (globalThis.__AUTO_AGREE_GATE__) return;

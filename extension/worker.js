@@ -21,7 +21,7 @@ const injectionActiveByTab = new Map();
 let injectionActive = 0;
 let injectionSeq = 0;
 let lastScheduledTab = -1;
-const VERSION = '9.0.0';
+const VERSION = '10.0.0';
 let storageWriteChain = Promise.resolve();
 let rehydratePromise = null;
 

@@ -51,7 +51,7 @@ for(const state of ['prerender','cached','pending_deletion']){
 }
 assert.equal(calls.length,before,'inactive documents must never be injected');
 
-const profile={version:'9.0.0',flows:[{fingerprint:'/login|form',locator:{hosts:[],selector:'#agree'},descriptor:{kind:'native',severity:0,legal:true,assent:true,required:true,auth:true,linkBucket:1},successes:1,failures:0,ts:Date.now()}]};
+const profile={version:'10.0.0',flows:[{fingerprint:'/login|form',locator:{hosts:[],selector:'#agree'},descriptor:{kind:'native',severity:0,legal:true,assent:true,required:true,auth:true,linkBucket:1},successes:1,failures:0,ts:Date.now()}]};
 await message({type:'AUTO_AGREE_PROFILE_PUT',origin:'https://spoofed.example',profile},sender);
 assert.equal(local.has('site:https://trusted.example'),true,'sender origin must own the stored profile');
 assert.equal(local.has('site:https://spoofed.example'),false,'message.origin must not select a storage namespace');

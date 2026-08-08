@@ -25,5 +25,27 @@ window.insertUserDelegatedTerms=()=>{
     if(event.target===wrapper) input.click();
   });
 };
-window.clearRoutineLogin=()=>{document.querySelector('#mount').replaceChildren();window.dynamicClicks=0;};
+window.insertExternalIdrefUnknown=()=>{
+  document.querySelector('#mount').innerHTML='<form><input type="email" value="user@example.com"><div id="external-unknown" role="checkbox" aria-labelledby="far-terms-label" data-clicks="0"></div><button type="button">Login</button></form>';
+  document.querySelector('#external-filler')?.remove();
+  document.querySelector('#far-terms-label')?.remove();
+  const filler=document.createElement('div');filler.id='external-filler';
+  for(let i=0;i<72;i++){const span=document.createElement('span');span.textContent='neutral '+i;filler.append(span);}
+  document.body.append(filler);
+  const label=document.createElement('div');label.id='far-terms-label';label.textContent='I agree to the Terms of Service';document.body.append(label);
+  window.dynamicClicks=0;
+  document.querySelector('#external-unknown').addEventListener('click',event=>{
+    window.dynamicClicks++;
+    event.currentTarget.dataset.clicks=String(Number(event.currentTarget.dataset.clicks||0)+1);
+  });
+};
+window.insertWideCausalTrap=()=>{
+  const spans=Array.from({length:72},(_,i)=>'<span>neutral '+i+'</span>').join('');
+  document.querySelector('#mount').innerHTML='<div id="wide-causal"><button id="wide-action" type="button">Continue</button>'+spans+'<div id="wide-terms" role="checkbox" aria-checked="mixed" aria-label="Terms of Service" data-clicks="0"></div></div>';
+  window.dynamicClicks=0;
+  const terms=document.querySelector('#wide-terms');
+  terms.addEventListener('click',event=>{window.dynamicClicks++;event.currentTarget.dataset.clicks=String(Number(event.currentTarget.dataset.clicks||0)+1);});
+  document.querySelector('#wide-action').addEventListener('click',()=>terms.click());
+};
+window.clearRoutineLogin=()=>{document.querySelector('#mount').replaceChildren();document.querySelector('#external-filler')?.remove();document.querySelector('#far-terms-label')?.remove();window.dynamicClicks=0;};
 </script>

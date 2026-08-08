@@ -169,7 +169,7 @@ async function profileMatrix(base,browser){
 await withServer(async base=>{
   const browser=await launch(EXTENSION);
   try{
-    const ext=await autoAgreeExtension(browser); assert.equal(ext.version,'9.0.0');
+    const ext=await autoAgreeExtension(browser); assert.equal(ext.version,'10.0.0');
     await basicMatrix(base,browser); console.log('e2e-basic: PASS');
     await workerTerminationMatrix(base,browser,ext.id); console.log('e2e-worker-termination: PASS');
     if(PROFILE) await profileMatrix(base,browser);

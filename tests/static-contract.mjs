@@ -5,7 +5,7 @@ import assert from 'node:assert/strict';
 const root=path.resolve('extension');
 const manifest=JSON.parse(fs.readFileSync(path.join(root,'manifest.json'),'utf8'));
 assert.equal(manifest.manifest_version,3);
-assert.equal(manifest.version,'9.0.0');
+assert.equal(manifest.version,'10.0.0');
 assert.deepEqual([...manifest.permissions].sort(),['scripting','storage']);
 assert.deepEqual(manifest.host_permissions,['<all_urls>']);
 assert.deepEqual(manifest.content_scripts[0].js,['bootstrap.js']);
