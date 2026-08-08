@@ -94,6 +94,16 @@ function replaceDir(src,dest){
   for(const name of fs.readdirSync(src)) fs.cpSync(path.join(src,name),path.join(dest,name),{recursive:true});
 }
 
+async function bounded(promise,timeout,label){
+  let timer;
+  try{
+    return await Promise.race([
+      promise,
+      new Promise((_,reject)=>{timer=setTimeout(()=>reject(new Error(`${label} timed out after ${timeout}ms`)),timeout);})
+    ]);
+  } finally { if(timer) clearTimeout(timer); }
+}
+
 async function poll(fn,timeout=3000,interval=50){
   const deadline=Date.now()+timeout;
   while(Date.now()<deadline){
@@ -178,19 +188,32 @@ async function updateTransition(base){
     const page=await browser.newPage(); await gotoActive(page,`${base}/dynamic.html?update=1`);
     replaceDir(EXTENSION,active);
     const workers=await ext.workers(); assert.ok(workers.length,'previous service worker unavailable');
-    try{await workers[0].evaluate(()=>chrome.runtime.reload());}catch(_){}
-    const currentWorker=await poll(async()=>{
-      const targets=browser.targets().filter(t=>t.type()==='service_worker'&&t.url().startsWith(`chrome-extension://${ext.id}/`));
-      for(const target of targets){
-        try{
-          const worker=await target.worker();
-          const version=worker&&await worker.evaluate(()=>chrome.runtime.getManifest().version);
-          if(version==='8.0.0') return worker;
-        }catch(_){}
-      }
-      return null;
-    },7000,60);
-    assert.equal(await currentWorker.evaluate(()=>chrome.runtime.getManifest().version),'8.0.0');
+    try{await bounded(workers[0].evaluate(()=>chrome.runtime.reload()),900,'runtime.reload');}catch(_){}
+    let observed=[];
+    let currentWorker;
+    try{
+      currentWorker=await poll(async()=>{
+        const targets=browser.targets().filter(t=>t.type()==='service_worker'&&t.url().startsWith(`chrome-extension://${ext.id}/`));
+        observed=[];
+        for(const target of targets){
+          let worker=null,version='unreadable';
+          try{
+            worker=await bounded(target.worker(),500,'target.worker');
+            version=worker?await bounded(worker.evaluate(()=>chrome.runtime.getManifest().version),500,'worker manifest read'):'no-worker';
+          }catch(error){version=String(error?.message||error);}
+          observed.push({url:target.url(),version});
+          if(worker&&version==='8.0.0') return worker;
+        }
+        return null;
+      },7000,80);
+    }catch(error){
+      let installed=[];
+      try{installed=[...(await bounded(browser.extensions(),800,'browser.extensions')).values()].map(item=>({id:item.id,name:item.name,version:item.version,path:item.path}));}catch(_){}
+      const diskVersion=JSON.parse(fs.readFileSync(path.join(active,'manifest.json'),'utf8')).version;
+      console.error('update-diagnostic:',JSON.stringify({diskVersion,installed,observed,workerTargets:browser.targets().filter(t=>t.type()==='service_worker').map(t=>t.url())}));
+      throw error;
+    }
+    assert.equal(await bounded(currentWorker.evaluate(()=>chrome.runtime.getManifest().version),800,'final manifest read'),'8.0.0');
     await page.bringToFront();
     await page.evaluate(()=>window.insertRoutineLogin()); await waitChecked(page,'#dynamic-agree',5000);
     console.log('update-transition: PASS (v7 page -> v8 worker/runtime rehydrate without page reload)');
