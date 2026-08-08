@@ -1,0 +1,52 @@
+name: Bootstrap v8 Gate control-flag fix
+
+on:
+  push:
+    branches: [feat/v8-lifecycle-e2e-hardening]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.head_ref || github.ref_name }}
+          fetch-depth: 0
+      - name: Preserve composite control evidence
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          p=Path('extension/gate.js')
+          s=p.read_text()
+          old="""      if (hasControl) {
+        flags |= textFlags(boundedEvidenceText(root));
+"""
+          new="""      if (hasControl) {
+        flags |= F.CONTROL;
+        flags |= textFlags(boundedEvidenceText(root));
+"""
+          if s.count(old)!=1: raise SystemExit(f'control fast-path anchor count={s.count(old)}')
+          p.write_text(s.replace(old,new,1))
+          PY
+          node --check extension/gate.js
+          npm test
+          python tools/package_extension.py --check
+          git diff --check
+      - name: Commit verified Gate fix
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add extension/gate.js
+          git commit -m 'fix: preserve known control evidence in Gate composite scan'
+          target="${GITHUB_HEAD_REF:-${GITHUB_REF_NAME}}"
+          git push origin "HEAD:${target}"
