@@ -27,13 +27,7 @@ jobs:
 
           def load(path): return Path(path).read_text(encoding='utf-8')
           def save(path,text): Path(path).write_text(text,encoding='utf-8')
-          def rep(path,old,new,count=1):
-              text=load(path); actual=text.count(old)
-              if actual != count: raise SystemExit(f'{path}: anchor count {actual} != {count}: {old[:100]!r}')
-              save(path,text.replace(old,new,count))
 
-          # Runtime generation bump. These are the files that participate in same-generation
-          # dependency/sentinel contracts; tests that persist or assert the generation move with it.
           version_files=[
               'extension/manifest.json','extension/bootstrap.js','extension/handover-guard.js',
               'extension/semantic-core.js','extension/risk-core.js','extension/gate.js',
@@ -45,15 +39,12 @@ jobs:
               if '9.0.0' not in text: raise SystemExit(f'{path}: no v9 version anchor')
               save(path,text.replace('9.0.0','10.0.0'))
 
-          # Release-transition harness advances from main v9 to candidate v10. Do current-version
-          # replacement first so the former v9 expectations do not get caught by the v8->v9 shift.
           path='tests/e2e-update.mjs'; text=load(path)
           if '9.0.0' not in text or '8.0.0' not in text: raise SystemExit('e2e-update version anchors missing')
           text=text.replace('9.0.0','10.0.0').replace('8.0.0','9.0.0')
           text=text.replace('v8→v9','v9→v10').replace('v8 -> v9','v9 -> v10').replace('v8 Engine','v9 Engine').replace('v8 Probe','v9 Probe').replace('stale-v8','stale-v9')
           save(path,text)
 
-          # Two adversarial fixtures intentionally target current v9 firewall weaknesses.
           path='tests/fixtures/regressions/dynamic.html'; text=load(path)
           anchor="window.clearRoutineLogin=()=>{document.querySelector('#mount').replaceChildren();window.dynamicClicks=0;};"
           if text.count(anchor)!=1: raise SystemExit('dynamic clear anchor missing')
@@ -83,23 +74,16 @@ jobs:
           replacement=additions+"window.clearRoutineLogin=()=>{document.querySelector('#mount').replaceChildren();document.querySelector('#external-filler')?.remove();document.querySelector('#far-terms-label')?.remove();window.dynamicClicks=0;};"
           save(path,text.replace(anchor,replacement,1))
 
-          # Add the red assertions after the already-proven trusted local delegation case.
           path='tests/e2e-update.mjs'; text=load(path)
           anchor="    assert.deepEqual(delegatedResult,{checked:true,windowClicks:1},'trusted local wrapper delegation must remain functional under the update firewall');\n\n    ext=(await browser.extensions()).get(initialId);"
           if text.count(anchor)!=1: raise SystemExit('e2e update delegation anchor missing')
           block=r'''    assert.deepEqual(delegatedResult,{checked:true,windowClicks:1},'trusted local wrapper delegation must remain functional under the update firewall');
 
-    // External IDREF semantics are intentionally outside the clicked control's ancestor text.
-    // Both old and current Engines can resolve aria-labelledby. The handover guard must therefore
-    // resolve the same bounded accessibility relation or the stale generation will click too.
     await activePage.evaluate(()=>{window.clearRoutineLogin();window.insertExternalIdrefUnknown();});
     await new Promise(resolve=>setTimeout(resolve,900));
     const externalIdrefClicks=await activePage.$eval('#external-unknown',el=>Number(el.dataset.clicks||0));
     assert.equal(externalIdrefClicks,1,'external aria-labelledby Terms control must have only the current-generation authorized click');
 
-    // A trusted Continue/Login action must not grant a causal lease to an arbitrary generic DIV
-    // merely because that large subtree contains a distant Terms control. v9 querySelector(CONTROL)
-    // on generic ancestors violates both locality and bounded hot-path work.
     await activePage.evaluate(()=>{window.clearRoutineLogin();window.insertWideCausalTrap();});
     await activePage.click('#wide-action');
     await new Promise(resolve=>setTimeout(resolve,350));
@@ -109,12 +93,10 @@ jobs:
     ext=(await browser.extensions()).get(initialId);'''
           save(path,text.replace(anchor,block,1))
 
-          # Surface the two discriminator counts in successful future evidence.
           path='tests/e2e-update.mjs'; text=load(path)
           anchor="      trustedDelegatedClicks:1\n    }));"
           if text.count(anchor)!=1: raise SystemExit('e2e output anchor missing')
           save(path,text.replace(anchor,"      trustedDelegatedClicks:1,\n      externalIdrefClicks:1,\n      wideCausalClicks:0\n    }));",1))
-
           print('v10 adversarial red-test candidate built')
           PY
       - name: Verify deterministic core still passes before browser discrimination
@@ -129,3 +111,5 @@ jobs:
           git diff --cached --check
           git commit -m "test: expose v9 handover locality gaps"
           git push origin HEAD:${{ github.head_ref }}
+
+# PR already exists; this synchronize event activates the bootstrap workflow.
