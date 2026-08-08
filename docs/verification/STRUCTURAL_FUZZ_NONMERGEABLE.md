@@ -1,0 +1,1 @@
+Non-mergeable research branch. Main must remain unchanged until the Engine RootBatch overflow loss is fixed in ordinary source, temporary CI transport is removed, and clean exact-head real-Chrome structural fuzz passes.
