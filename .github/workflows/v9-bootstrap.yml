@@ -1,8 +1,6 @@
 name: v9-bootstrap
 
 on:
-  push:
-    branches: [agent/v9-invariant-hardening]
   pull_request:
     branches: [main]
 
@@ -18,52 +16,113 @@ jobs:
       - uses: actions/checkout@v6
         with:
           fetch-depth: 0
-          ref: ${{ github.head_ref || github.ref_name }}
+          ref: ${{ github.head_ref }}
       - uses: actions/setup-node@v7
         with:
           node-version: '24'
-      - name: Apply v9 patch
+      - name: Apply final v9 adversarial hardening
         run: |
           python - <<'PY'
           from pathlib import Path
-          path = Path('.v9-bootstrap.py')
-          text = path.read_text(encoding='utf-8')
-          old = "replace_once('tests/e2e-update.mjs', \"assert.equal(JSON.parse(fs.readFileSync(path.join(active,'manifest.json'),'utf8')).version,'8.0.0');\", \"assert.equal(JSON.parse(fs.readFileSync(path.join(active,'manifest.json'),'utf8')).version,'9.0.0');\")"
-          new = "replace_once('tests/e2e-update.mjs', \"    replaceDir(CURRENT,active);\\n    assert.equal(JSON.parse(fs.readFileSync(path.join(active,'manifest.json'),'utf8')).version,'8.0.0');\", \"    replaceDir(CURRENT,active);\\n    assert.equal(JSON.parse(fs.readFileSync(path.join(active,'manifest.json'),'utf8')).version,'9.0.0');\")"
-          if text.count(old) != 1:
-              raise SystemExit(f'bootstrap hotfix anchor count={text.count(old)}')
-          path.write_text(text.replace(old, new, 1), encoding='utf-8')
+
+          def load(path): return Path(path).read_text(encoding='utf-8')
+          def save(path,text): Path(path).write_text(text,encoding='utf-8')
+          def rep(path,old,new,count=1):
+              text=load(path)
+              actual=text.count(old)
+              if actual != count: raise SystemExit(f'{path}: anchor count {actual} != {count}: {old[:100]!r}')
+              save(path,text.replace(old,new,count))
+
+          # Engine state machine: fail-safe tri-state handling, no self-reported origin, and do not
+          # consume the UNKNOWN one-shot if HTMLElement.click itself never executed successfully.
+          rep('extension/engine.js',
+              "      if (state === 'checked' || state === 'on') return { known: true, checked: true, kind: 'data' };\n      if (state === 'unchecked' || state === 'off') return { known: true, checked: false, kind: 'data' };\n      const dc = n.getAttribute('data-checked');\n      if (dc === '' || dc === 'true') return { known: true, checked: true, kind: 'data' };\n      if (dc === 'false') return { known: true, checked: false, kind: 'data' };",
+              "      if (state === 'checked' || state === 'on') return { known: true, checked: true, kind: 'data' };\n      if (state === 'unchecked' || state === 'off') return { known: true, checked: false, kind: 'data' };\n      if (state === 'indeterminate' || state === 'mixed') return { known: true, checked: false, kind: 'mixed' };\n      const dc = n.getAttribute('data-checked');\n      if (dc === '' || dc === 'true') return { known: true, checked: true, kind: 'data' };\n      if (dc === 'false') return { known: true, checked: false, kind: 'data' };\n      if (dc === 'indeterminate' || dc === 'mixed') return { known: true, checked: false, kind: 'mixed' };")
+          rep('extension/engine.js',
+              "    try { target.click(); } catch (_) { stopVerifier(s.control); return false; }\n    clickMemo.set(s.control, { time: performance.now(), succeeded: false });",
+              "    try { target.click(); } catch (_) { oneShotUnknown.delete(s.control); stopVerifier(s.control); return false; }\n    clickMemo.set(s.control, { time: performance.now(), succeeded: false });")
+          rep('extension/engine.js',
+              "        chrome.runtime.sendMessage({ type, origin: location.origin, profile }, response => {",
+              "        chrome.runtime.sendMessage({ type, profile }, response => {")
+
+          # Profile messages fail closed if Chrome did not provide a usable sender origin.
+          rep('extension/worker.js',
+              "  const profileOrigin = profileOriginForSender(sender);\n\n  if (message.type === 'AUTO_AGREE_PROFILE_GET') {",
+              "  const profileOrigin = profileOriginForSender(sender);\n  const isProfileMessage = message.type === 'AUTO_AGREE_PROFILE_GET' || message.type === 'AUTO_AGREE_PROFILE_PUT' || message.type === 'AUTO_AGREE_PROFILE_INVALIDATE';\n  if (isProfileMessage && !profileOrigin) {\n    sendResponse({ ok: false, error: 'missing-profile-origin' });\n    return false;\n  }\n\n  if (message.type === 'AUTO_AGREE_PROFILE_GET') {")
+
+          # Canonical dynamic fixture tracks exact click count and supports removal/reinsertion.
+          Path('tests/fixtures/regressions/dynamic.html').write_text("""<!doctype html><meta charset=\"utf-8\"><title>Dynamic Login</title>\n<div id=\"mount\"></div>\n<script>\nwindow.dynamicClicks=0;\nwindow.insertRoutineLogin=()=>{\n  document.querySelector('#mount').innerHTML='<form><input type=\"email\" value=\"user@example.com\"><label><input id=\"dynamic-agree\" type=\"checkbox\" required>I agree to the Terms of Service and Privacy Policy</label><button>Continue</button></form>';\n  window.dynamicClicks=0;\n  document.querySelector('#dynamic-agree').addEventListener('click',()=>{window.dynamicClicks++;});\n};\nwindow.clearRoutineLogin=()=>{document.querySelector('#mount').replaceChildren();window.dynamicClicks=0;};\n</script>\n""",encoding='utf-8')
+
+          # Three independent tri-state representations must remain untouched.
+          Path('tests/fixtures/regressions/mixed-control.html').write_text("""<!doctype html><meta charset=\"utf-8\"><title>Mixed consent controls must not toggle</title>\n<form>\n  <input type=\"email\" value=\"valid@example.com\">\n  <div id=\"aria-mixed\" role=\"checkbox\" aria-checked=\"mixed\" aria-label=\"I agree to the Terms of Service\" data-clicks=\"0\"></div>\n  <div id=\"data-mixed\" role=\"checkbox\" data-state=\"indeterminate\" aria-label=\"I agree to the Terms of Service\" data-clicks=\"0\"></div>\n  <label><input id=\"native-mixed\" type=\"checkbox\" required data-clicks=\"0\">I agree to the Terms of Service</label>\n  <button type=\"button\">Login</button>\n</form>\n<script>\nconst native=document.querySelector('#native-mixed');native.indeterminate=true;\nfor(const id of ['aria-mixed','data-mixed','native-mixed']) document.querySelector('#'+id).addEventListener('click',e=>{e.currentTarget.dataset.clicks=String(Number(e.currentTarget.dataset.clicks||0)+1);});\n</script>\n""",encoding='utf-8')
+
+          rep('tests/e2e-extension.mjs',
+              "  await gotoActive(page,`${base}/mixed-control.html`);\n  await new Promise(resolve=>setTimeout(resolve,450));\n  assert.deepEqual(await page.$eval('#agree',el=>({state:el.getAttribute('aria-checked'),clicks:Number(el.dataset.clicks||0)})),{state:'mixed',clicks:0});",
+              "  await gotoActive(page,`${base}/mixed-control.html`);\n  await new Promise(resolve=>setTimeout(resolve,450));\n  assert.deepEqual(await page.$eval('#aria-mixed',el=>({state:el.getAttribute('aria-checked'),clicks:Number(el.dataset.clicks||0)})),{state:'mixed',clicks:0});\n  assert.deepEqual(await page.$eval('#data-mixed',el=>({state:el.getAttribute('data-state'),clicks:Number(el.dataset.clicks||0)})),{state:'indeterminate',clicks:0});\n  assert.deepEqual(await page.$eval('#native-mixed',el=>({indeterminate:el.indeterminate,checked:el.checked,clicks:Number(el.dataset.clicks||0)})),{indeterminate:true,checked:false,clicks:0});")
+
+          # Update E2E now proves both cross-version modes: dormant v8 Probe -> v9 Gate/Engine,
+          # and an already-active v8 Engine continuing alone without a competing v9 Engine.
+          rep('tests/e2e-update.mjs',
+              "import puppeteer from 'puppeteer';",
+              "import puppeteer from 'puppeteer';\nimport {extensionWorldSentinels} from './e2e-isolated-worlds.mjs';")
+          rep('tests/e2e-update.mjs',
+              "    assert.ok(ext,'v7 extension missing after Browser.installExtension');",
+              "    assert.ok(ext,'v8 extension missing after Browser.installExtension');")
+          rep('tests/e2e-update.mjs',
+              "    const page=await browser.newPage();\n    await gotoActive(page,`${base}/dynamic.html?update=1`);\n\n    replaceDir(CURRENT,active);",
+              "    const dormantPage=await browser.newPage();\n    await gotoActive(dormantPage,`${base}/dynamic.html?update=dormant`);\n    await dormantPage.evaluate(()=>{window.__autoAgreeUpdateMarker='dormant-v8';});\n\n    const activePage=await browser.newPage();\n    await gotoActive(activePage,`${base}/dynamic.html?update=active`);\n    await activePage.evaluate(()=>{window.__autoAgreeUpdateMarker='active-v8';window.insertRoutineLogin();});\n    await waitChecked(activePage,'#dynamic-agree');\n    assert.equal(await activePage.evaluate(()=>window.dynamicClicks),1,'v8 active-page setup must click exactly once');\n    const activeBefore=await extensionWorldSentinels(activePage);\n    assert.ok(activeBefore.some(world=>world.engine==='8.0.0'),'active page must have v8 Engine before update');\n    await activePage.evaluate(()=>window.clearRoutineLogin());\n\n    replaceDir(CURRENT,active);")
+          rep('tests/e2e-update.mjs',
+              "    assert.equal(await bounded(worker.evaluate(()=>chrome.runtime.getManifest().version),800,'final v9 manifest read'),'9.0.0');\n    await page.bringToFront();\n    await page.evaluate(()=>window.insertRoutineLogin());\n    await waitChecked(page,'#dynamic-agree');\n\n    ext=(await browser.extensions()).get(initialId);\n    console.log('e2e-update:',JSON.stringify({id:initialId,workerVersion:'9.0.0',reportedVersion:ext?.version||null,pageReloaded:false}));\n    console.log('e2e-update: PASS');\n    await page.close();",
+              "    assert.equal(await bounded(worker.evaluate(()=>chrome.runtime.getManifest().version),800,'final v9 manifest read'),'9.0.0');\n\n    await dormantPage.bringToFront();\n    assert.equal(await dormantPage.evaluate(()=>window.__autoAgreeUpdateMarker),'dormant-v8','dormant page reloaded during update');\n    await dormantPage.evaluate(()=>window.insertRoutineLogin());\n    await waitChecked(dormantPage,'#dynamic-agree');\n    assert.equal(await dormantPage.evaluate(()=>window.dynamicClicks),1,'dormant old page must get exactly one click after v9 activation');\n    const dormantAfter=await extensionWorldSentinels(dormantPage);\n    assert.ok(dormantAfter.some(world=>world.engine==='9.0.0'),'dormant v8 Probe must hand off into v9 Engine');\n    assert.equal(dormantAfter.some(world=>world.engine==='8.0.0'),false,'dormant page must not gain a second old Engine');\n\n    await activePage.bringToFront();\n    assert.equal(await activePage.evaluate(()=>window.__autoAgreeUpdateMarker),'active-v8','active page reloaded during update');\n    await activePage.evaluate(()=>window.insertRoutineLogin());\n    await waitChecked(activePage,'#dynamic-agree');\n    assert.equal(await activePage.evaluate(()=>window.dynamicClicks),1,'already-active old Engine must remain the sole click authority');\n    const activeAfter=await extensionWorldSentinels(activePage);\n    assert.ok(activeAfter.some(world=>world.engine==='8.0.0'),'already-active v8 Engine must continue safely after Worker update');\n    assert.equal(activeAfter.some(world=>world.engine==='9.0.0'),false,'v9 must not install a competing Engine beside an active v8 Engine');\n\n    ext=(await browser.extensions()).get(initialId);\n    console.log('e2e-update:',JSON.stringify({id:initialId,workerVersion:'9.0.0',reportedVersion:ext?.version||null,dormantPageReloaded:false,activePageReloaded:false,dormantEngine:'9.0.0',activeEngine:'8.0.0'}));\n    console.log('e2e-update: PASS');\n    await dormantPage.close();\n    await activePage.close();")
+
+          # Deterministic contracts for the tightened profile and tri-state boundaries.
+          rep('tests/static-contract.mjs',
+              "assert.match(engine,/oneShotUnknown/);\nassert.match(engine,/kind: 'mixed'/);\nassert.match(engine,/bootstrapSeedRef/);",
+              "assert.match(engine,/oneShotUnknown/);\nassert.match(engine,/kind: 'mixed'/);\nassert.match(engine,/bootstrapSeedRef/);\nassert.equal(/origin:\\s*location\\.origin/.test(engine),false,'content tier must not self-report profile origin');\nassert.match(worker,/missing-profile-origin/);")
+          rep('tests/worker-contract.mjs',
+              "const profileResponse=await message({type:'AUTO_AGREE_PROFILE_GET',origin:'https://spoofed.example'},sender);\nassert.equal(profileResponse?.profile?.flows?.[0]?.fingerprint,'/login|form');\nconsole.log('worker-contract: PASS');",
+              "const profileResponse=await message({type:'AUTO_AGREE_PROFILE_GET',origin:'https://spoofed.example'},sender);\nassert.equal(profileResponse?.profile?.flows?.[0]?.fingerprint,'/login|form');\nlet missingOriginResponse;\nconst keepMissing=listener({type:'AUTO_AGREE_PROFILE_GET'},{...sender,origin:undefined,url:'about:blank'},response=>{missingOriginResponse=response;});\nassert.equal(keepMissing,false);\nassert.equal(missingOriginResponse?.ok,false);\nassert.equal(missingOriginResponse?.error,'missing-profile-origin');\nconsole.log('worker-contract: PASS');")
+
+          # Current docs are canonical and must describe v9 rather than merely relabel v8 evidence.
+          rep('README.md','- v7→v8 update/reload transition on an already-open test page;','- v8→v9 update/reload transition covering both dormant old Probe and already-active old Engine pages;')
+          rep('README.md','- native form-validity gating regression;','- native form-validity gating regression;\n- ARIA/data/native tri-state refusal and durable UNKNOWN-state one-shot regression;')
+          rep('extension/README.md',
+              '3. If Gate accepts, Worker schedules `risk-core.js` + `engine.js` with bounded global/per-tab concurrency, queue aging, stale eviction and Engine admission priority.',
+              '3. If Gate accepts, Worker refreshes `semantic-core.js` and schedules `risk-core.js` + `engine.js` with bounded global/per-tab concurrency, queue aging, stale eviction and Engine admission priority.')
+          rep('extension/README.md',
+              '4. Probe/Gate handoff is retryable across unexpected Worker termination; profile messages are idempotently retried.',
+              '4. Probe/Gate handoff is retryable across unexpected Worker termination; profile messages are idempotently retried and the Worker derives their storage origin from `MessageSender`, never from content-provided origin text.')
+          rep('docs/testing.md','- v7 → v8 unpacked reload/update transition without reloading the existing test page;','- v8 → v9 unpacked update with a dormant v8 Probe handing into v9 tiers and an already-active v8 Engine continuing as the sole click authority, without reloading either page;')
+          rep('docs/testing.md','- native validity causality (invalid email must not make a disabled Login action look agreement-gated);','- native validity causality (invalid email must not make a disabled Login action look agreement-gated);\n- ARIA/data/native mixed-or-indeterminate controls remain untouched;\n- classless UNKNOWN-state controls remain one-shot beyond the normal click cooldown;')
+          rep('docs/testing.md','An extension update can replace the Worker while already-open pages still exist. v8 therefore tests update rehydration explicitly. Existing old-generation page code may either finish safely or hand off to the new Worker; new code must not create a second blind toggler.','An extension update can replace the Worker while already-open pages still exist. v8 introduced update rehydration; v9 explicitly tests both safe modes: a dormant old Probe may hand off into current Gate/Engine dependencies, while an already-active old Engine remains the sole click authority until page replacement. New code must never create a competing blind toggler in the same document.')
+          rep('docs/architecture.md','      Worker->>Risk: lazy inject\n      Worker->>Engine: lazy inject','      Worker->>Core: refresh current dependency\n      Worker->>Risk: lazy inject\n      Worker->>Engine: lazy inject')
+          rep('docs/architecture.md','When an extension update/reload replaces the Worker, already-open pages are not assumed to have received a fresh static content script. v8 records a short-lived session rehydration marker, queries existing tabs, and schedules `bootstrap.js` into all accessible frames in small batches. A worker restart during this sweep sees the marker and resumes it.','When an extension update/reload replaces the Worker, already-open pages are not assumed to have received a fresh static content script. v8 introduced a short-lived session rehydration marker; v9 retains it, queries existing tabs, and schedules `bootstrap.js` into all accessible frames in small batches. A worker restart during this sweep sees the marker and resumes it.')
+          rep('docs/architecture.md','The bootstrap sentinel still prevents duplicate same-generation initialization, while old-generation page scripts remain safe because dynamic Gate/Engine injection is itself idempotent.','The bootstrap sentinel prevents a second Probe authority in the same document. A dormant old Probe can still talk to the new Worker; Engine activation refreshes the current semantic dependency before loading current Risk/Engine code. If an old Engine was already active before update, v9 deliberately does not install a competing Engine beside it; the old closure remains authoritative until page replacement.')
+          rep('docs/architecture.md','Probe/Gate handoff messages and profile writes are idempotently replayable after unexpected worker loss.','Probe/Gate handoff messages and profile writes are idempotently replayable after unexpected worker loss. Profile storage identity is derived from Chrome `MessageSender.origin`/`url`, not from message payload text.')
+          rep('docs/security-model.md','Service-worker globals are never correctness authority. Profile state and pending update-rehydration state are stored through `chrome.storage`; content-side handoffs are boundedly retryable after a worker disappears.','Service-worker globals are never correctness authority. Profile state and pending update-rehydration state are stored through `chrome.storage`; content-side handoffs are boundedly retryable after a worker disappears. Profile storage namespaces are derived from Chrome `MessageSender.origin`/`url`; a content tier cannot redirect learning by supplying an arbitrary origin string.')
+          rep('docs/security-model.md','On update/reload, the Worker rehydrates `bootstrap.js` into already-open tabs with bounded scheduling. The extension does not request the `tabs` permission: Chrome\'s Tabs API is available without it for basic tab operations, and the existing `<all_urls>` host permission supplies the host access needed for injection.','On update/reload, the Worker rehydrates `bootstrap.js` into already-open tabs with bounded scheduling. Dormant old Probes may hand off to current dependencies; already-active old Engines are left as the sole click authority rather than hot-installing a competing Engine. The extension does not request the `tabs` permission: Chrome\'s Tabs API is available without it for basic tab operations, and the existing `<all_urls>` host permission supplies the host access needed for injection.')
+          rep('docs/decision-model.md','5. active/not-disabled/not-already-checked state;','5. active/not-disabled/not-already-checked state, excluding native indeterminate and ARIA/data mixed states;')
+          rep('docs/decision-model.md','Unknown custom toggle state is one-shot and is never blindly toggled twice.','Unknown custom toggle state is one-shot for that unresolved DOM element and is never blindly toggled twice, even after the normal click cooldown expires. Native `indeterminate`, ARIA `mixed`, and data-state `indeterminate`/`mixed` are treated as tri-state ambiguity and are never auto-toggled.')
+
+          # Current-version text sanity: historical verification reports are intentionally excluded.
+          for path,forbidden in [
+              ('README.md','v7→v8'),
+              ('docs/testing.md','v7 → v8'),
+              ('tests/e2e-update.mjs','v7 extension missing'),
+              ('extension/engine.js','origin: location.origin')
+          ]:
+              if forbidden in load(path): raise SystemExit(f'stale current text in {path}: {forbidden}')
+          print('v9 final adversarial patch applied')
           PY
-          python .v9-bootstrap.py
-      - name: Align restart fixture with sender-bound profile identity
-        run: |
-          python - <<'PY'
-          from pathlib import Path
-          path=Path('tests/worker-restart.mjs')
-          text=path.read_text(encoding='utf-8')
-          replacements=[
-            ("vm.runInNewContext(source,{chrome,console,Promise,Map,Set,Date,Error,Number,String,Array,Object,JSON,Math,setTimeout,clearTimeout});","vm.runInNewContext(source,{chrome,console,Promise,Map,Set,Date,Error,Number,String,Array,Object,JSON,Math,URL,setTimeout,clearTimeout});"),
-            ("sender={tab:{id:1},frameId:0,documentId:'d',documentLifecycle:'active'}","sender={tab:{id:1},frameId:0,documentId:'d',documentLifecycle:'active',origin:'https://example.test',url:'https://example.test/login'}"),
-            ("version:'8.0.0'","version:'9.0.0'")
-          ]
-          for old,new in replacements:
-            if old not in text: raise SystemExit(f'missing restart fixture anchor: {old}')
-            text=text.replace(old,new)
-          path.write_text(text,encoding='utf-8')
-          PY
-      - name: Keep bootstrap push workflow-neutral
-        run: git checkout -- .github/workflows/ci.yml
-      - name: Remove bootstrap payload
-        run: rm .v9-bootstrap.py
       - name: Verify deterministic core
         run: npm test
       - name: Verify deterministic package
         run: python tools/package_extension.py --check
-      - name: Commit canonical candidate
+      - name: Commit final candidate patch
         run: |
           git config user.name github-actions[bot]
           git config user.email 41898282+github-actions[bot]@users.noreply.github.com
           git add -A
           git diff --cached --check
-          git commit -m "feat: recover AutoAgree v9 safety invariants"
+          git commit -m "test: harden v9 update and tri-state invariants"
           git push origin HEAD:agent/v9-invariant-hardening
