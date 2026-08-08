@@ -1,7 +1,7 @@
 (() => {
   'use strict';
   if (globalThis.__AUTO_AGREE_PROBE__) return;
-  globalThis.__AUTO_AGREE_PROBE__ = '5.0.0';
+  globalThis.__AUTO_AGREE_PROBE__ = '6.0.0';
 
   // This file is intentionally tiny and cheap: it only decides whether a frame deserves the
   // richer semantic gate. It never clicks, never interprets consent, and never scans unbounded DOM.
@@ -16,11 +16,58 @@
   let gateRequested = false;
   let drainScheduled = false;
   let eventsAttached = false;
+  let lifecycleAttached = false;
+  let paused = false;
+  let lifecycleEpoch = 0;
 
-  function norm(v, max = 480) {
-    if (!v) return '';
-    const s = String(v).replace(/\s+/gu, ' ').trim();
-    return s.length > max ? s.slice(0, max) : s;
+  function norm(value, max = 480) {
+    if (value == null || max <= 0) return '';
+    const raw = String(value);
+    const inspect = Math.max(256, max * 4 + 128);
+    const normalized = fragment => fragment.replace(/\s+/gu, ' ').trim();
+    const take = (fragment, budget, mode = 'head') => {
+      if (budget <= 0) return '';
+      const text = normalized(fragment);
+      if (text.length <= budget) return text;
+      if (mode === 'tail') return text.slice(-budget);
+      if (mode === 'center') {
+        const start = Math.max(0, Math.floor((text.length - budget) / 2));
+        return text.slice(start, start + budget);
+      }
+      return text.slice(0, budget);
+    };
+    if (raw.length <= inspect) return take(raw, max);
+    // Bounded semantic sampling: inspect fixed-size head/center/tail windows. This keeps CPU
+    // independent of pathological multi-MB strings while avoiding a systematic tail/middle blind spot.
+    const gap = ' zzsemanticgapzz ';
+    const gapCost = gap.length * 2;
+    const headBudget = Math.max(24, Math.floor((max - gapCost) / 3));
+    const middleBudget = Math.max(24, Math.floor((max - gapCost) / 3));
+    const tailBudget = Math.max(0, max - gapCost - headBudget - middleBudget);
+    const windowSize = Math.max(96, Math.max(headBudget, middleBudget, tailBudget) * 4);
+    const center = Math.floor(raw.length / 2);
+    const middleStart = Math.max(0, center - Math.floor(windowSize / 2));
+    const chunks = [
+      take(raw.slice(0, windowSize), headBudget, 'head'),
+      take(raw.slice(middleStart, middleStart + windowSize), middleBudget, 'center'),
+      take(raw.slice(Math.max(0, raw.length - windowSize)), tailBudget, 'tail')
+    ].filter(Boolean);
+    return take(chunks.join(gap), max);
+  }
+
+
+
+  function joinNorm(values, max = 480) {
+    let out = '';
+    for (const value of values) {
+      const left = max - out.length;
+      if (left <= 0) break;
+      const part = norm(value, left);
+      if (!part) continue;
+      out += (out ? ' ' : '') + part;
+      if (out.length > max) out = out.slice(0, max);
+    }
+    return out;
   }
 
   function rootConnected(root) {
@@ -50,13 +97,29 @@
   function directText(root, maxNodes = 42, maxChars = 520) {
     if (!root) return '';
     let out = '', count = 0;
+    const append = value => { out = joinNorm([out, value], maxChars); };
     const w = document.createTreeWalker(root, NodeFilter.SHOW_TEXT | NodeFilter.SHOW_ELEMENT);
     let n;
     while (count++ < maxNodes && out.length < maxChars && (n = w.nextNode())) {
-      if (n.nodeType === Node.TEXT_NODE) out += ' ' + (n.data || '');
-      else if (n instanceof Element) out += ' ' + (n.getAttribute('aria-label') || '') + ' ' + (n.getAttribute('placeholder') || '');
+      if (n.nodeType === Node.TEXT_NODE) append(n.data || '');
+      else if (n instanceof Element) {
+        append(n.getAttribute('aria-label'));
+        append(n.getAttribute('placeholder'));
+        if (n instanceof HTMLSlotElement) {
+          let assigned = [];
+          try { assigned = n.assignedNodes({ flatten: true }).slice(0, 12); } catch (_) {}
+          for (const a of assigned) {
+            if (out.length >= maxChars) break;
+            if (a.nodeType === Node.TEXT_NODE) append(a.data || '');
+            else if (a instanceof Element) {
+              append(a.getAttribute('aria-label'));
+              append(a.getAttribute('title'));
+            }
+          }
+        }
+      }
     }
-    return norm(out, maxChars);
+    return out;
   }
 
   function localScope(el) {
@@ -81,13 +144,13 @@
   function credentialInput(el) {
     if (!(el instanceof HTMLInputElement)) return false;
     const type = (el.type || 'text').toLowerCase();
-    const a = norm(`${el.name || ''} ${el.id || ''} ${el.placeholder || ''} ${el.autocomplete || ''}`, 300);
+    const a = joinNorm([el.name, el.id, el.placeholder, el.autocomplete], 300);
     return type === 'tel' || type === 'email' || /(?:phone|mobile|tel|email|username|user.?name|account|手机号|手機號|邮箱|郵箱|账号|帳號)/iu.test(a);
   }
 
   function ownHint(el) {
     if (!(el instanceof Element)) return '';
-    return norm(`${el.getAttribute('aria-label') || ''} ${el.getAttribute('title') || ''} ${el.getAttribute('name') || ''} ${el.getAttribute('placeholder') || ''} ${el.getAttribute('autocomplete') || ''} ${el.getAttribute('data-testid') || ''} ${el.id || ''}`, 520);
+    return joinNorm([el.getAttribute('aria-label'), el.getAttribute('title'), el.getAttribute('name'), el.getAttribute('placeholder'), el.getAttribute('autocomplete'), el.getAttribute('data-testid'), el.id], 520);
   }
 
   function suspicious(el) {
@@ -126,11 +189,12 @@
   }
 
   function requestGate(reason, seed) {
-    if (gateRequested) return;
+    if (gateRequested || paused) return;
     gateRequested = true;
     globalThis.__AUTO_AGREE_PROBE_CONTEXT__ = { reason, seed };
     observer?.disconnect();
     detachEvents();
+    detachLifecycle();
     // The semantic gate owns discovery from this point. Drop queued roots immediately so the
     // retired probe cannot retain transient DOM while its already-posted drain callback unwinds.
     for (const job of deep) releaseDeep(job);
@@ -138,14 +202,15 @@
     chrome.runtime.sendMessage({ type: 'AUTO_AGREE_GATE', reason }, response => {
       if (chrome.runtime.lastError || !response?.ok) {
         gateRequested = false;
-        attachEvents();
-        startObserver();
+        attachLifecycle();
+        if (document.visibilityState === 'hidden' || document.prerendering) paused = true;
+        else { paused = false; attachEvents(); startObserver(); }
       }
     });
   }
 
   function scan(root, maxNodes = 96, budgetMs = 0.75) {
-    if (!root) return false;
+    if (paused || !root) return false;
     if (root instanceof Element && suspicious(root)) { requestGate('element', root); return true; }
     const walker = document.createTreeWalker(root, NodeFilter.SHOW_ELEMENT | NodeFilter.SHOW_TEXT);
     const start = performance.now();
@@ -170,7 +235,7 @@
   }
 
   function queueDeep(root) {
-    if (gateRequested || !root || queued.has(root) || !rootConnected(root)) return;
+    if (gateRequested || paused || !root || queued.has(root) || !rootConnected(root)) return;
     queued.add(root);
     while (deep.length >= MAX_DEEP) releaseDeep(deep.shift());
     deep.push({ rootRef: new WeakRef(root), cursorRef: null, started: false, createdAt: performance.now() });
@@ -178,9 +243,14 @@
   }
 
   function scheduleDrain() {
-    if (drainScheduled || gateRequested) return;
+    if (drainScheduled || gateRequested || paused) return;
     drainScheduled = true;
+    const epoch = lifecycleEpoch;
     const run = () => {
+      if (paused || gateRequested || epoch !== lifecycleEpoch) {
+        if (epoch === lifecycleEpoch) drainScheduled = false;
+        return;
+      }
       drainScheduled = false;
       const start = performance.now();
       while (deep.length && performance.now() - start < 1.8 && !gateRequested) {
@@ -224,7 +294,7 @@
   }
 
   function eventProbe(event) {
-    if (gateRequested || eventShadow(event)) return;
+    if (gateRequested || paused || eventShadow(event)) return;
     const target = event.target instanceof Element ? event.target : null;
     if (!target) return;
     if (suspicious(target)) requestGate(event.type, target);
@@ -235,6 +305,7 @@
   }
 
   function onMutations(records) {
+    if (paused || gateRequested) return;
     const start = performance.now();
     for (const r of records) {
       if (gateRequested) return;
@@ -276,7 +347,7 @@
   }
 
   function startObserver() {
-    if (gateRequested) return;
+    if (gateRequested || paused) return;
     if (!observer) observer = new MutationObserver(onMutations);
     try { observer.observe(document, { subtree:true, childList:true, characterData:true, attributes:true, attributeFilter:['type','name','placeholder','autocomplete','role','aria-label','aria-checked'] }); } catch (_) {}
     if (document.documentElement) {
@@ -284,13 +355,74 @@
     }
   }
 
+  function clearProbeWork() {
+    for (const job of deep) releaseDeep(job);
+    deep.length = 0;
+    drainScheduled = false;
+  }
+
+  function pauseProbe() {
+    if (paused || gateRequested) return;
+    paused = true;
+    lifecycleEpoch++;
+    observer?.disconnect();
+    detachEvents();
+    clearProbeWork();
+  }
+
+  function resumeProbe() {
+    if (!paused || gateRequested || document.prerendering || document.visibilityState === 'hidden') return;
+    paused = false;
+    lifecycleEpoch++;
+    attachEvents();
+    startObserver();
+  }
+
+  function onVisibilityChange() {
+    if (document.visibilityState === 'hidden') pauseProbe();
+    else resumeProbe();
+  }
+
+  function onPageHide(event) {
+    if (event?.persisted) pauseProbe();
+    else { pauseProbe(); detachLifecycle(); }
+  }
+
+  function onPageShow(event) { if (event?.persisted) resumeProbe(); }
+  function onFreeze() { pauseProbe(); }
+  function onResume() { resumeProbe(); }
+
+  function attachLifecycle() {
+    if (lifecycleAttached) return;
+    lifecycleAttached = true;
+    addEventListener('pagehide', onPageHide, true);
+    addEventListener('pageshow', onPageShow, true);
+    document.addEventListener('freeze', onFreeze, true);
+    document.addEventListener('resume', onResume, true);
+    document.addEventListener('visibilitychange', onVisibilityChange, true);
+  }
+
+  function detachLifecycle() {
+    if (!lifecycleAttached) return;
+    lifecycleAttached = false;
+    removeEventListener('pagehide', onPageHide, true);
+    removeEventListener('pageshow', onPageShow, true);
+    document.removeEventListener('freeze', onFreeze, true);
+    document.removeEventListener('resume', onResume, true);
+    document.removeEventListener('visibilitychange', onVisibilityChange, true);
+  }
+
   function startActiveProbe() {
+    paused = false;
+    attachLifecycle();
+    if (document.visibilityState === 'hidden') { pauseProbe(); return; }
     attachEvents();
     startObserver();
   }
 
   // Never synthesize consent while Chrome is prerendering a page the user has not activated yet.
   // Chrome dispatches `prerenderingchange` on activation; discovery begins only then.
+  attachLifecycle();
   if (document.prerendering) document.addEventListener('prerenderingchange', startActiveProbe, { once: true });
   else startActiveProbe();
 })();

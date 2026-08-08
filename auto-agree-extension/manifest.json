@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Auto Agree Login Terms",
-  "version": "5.0.0",
+  "version": "6.0.0",
   "minimum_chrome_version": "120",
   "description": "Automatically accepts routine mandatory login/register Terms and Privacy agreements with evidence-gated lazy activation, bounded streaming DOM work, Shadow DOM support, hardened local learning, and hard exclusions for consequential consent.",
   "permissions": [

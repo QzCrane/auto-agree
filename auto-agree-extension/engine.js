@@ -1,9 +1,9 @@
 (() => {
   'use strict';
   if (globalThis.__AUTO_AGREE_ENGINE__) return;
-  globalThis.__AUTO_AGREE_ENGINE__ = '5.0.0';
+  globalThis.__AUTO_AGREE_ENGINE__ = '6.0.0';
 
-  const VERSION = '5.0.0';
+  const VERSION = '6.0.0';
   const MAX_ROW_TEXT = 1400;
   const MAX_CONTEXT_TEXT = 2200;
   const MAX_PENDING_VISIBILITY = 192;
@@ -49,13 +49,17 @@
   const CUSTOM_CHECK_TAGS = new Set(['sl-checkbox','ion-checkbox','md-checkbox','mat-checkbox','fluent-checkbox','vaadin-checkbox','ui5-checkbox','calcite-checkbox','lightning-input']);
   const KNOWN_CONTROL_SELECTOR = 'input[type="checkbox"],input[type="radio"],[role="checkbox"],[role="radio"],[role="switch"],[aria-checked],sl-checkbox,ion-checkbox,md-checkbox,mat-checkbox,fluent-checkbox,vaadin-checkbox,ui5-checkbox,calcite-checkbox,[class*="checkbox" i],[class*="check-box" i]';
 
-  const observedRoots = new WeakSet();
-  const observedContexts = new WeakSet();
+  let observedRoots = new WeakSet();
+  let observedContexts = new WeakSet();
   let observedContextCount = 0;
-  const probedShadowHosts = new WeakSet();
-  const candidateMemo = new WeakMap();
-  const clickMemo = new WeakMap();
+  let probedShadowHosts = new WeakSet();
+  const knownShadowHostEntries = new Set();
+  const knownShadowHostEntry = new WeakMap();
+  const slotHandlers = new WeakMap();
+  let candidateMemo = new WeakMap();
+  let clickMemo = new WeakMap();
   const clickVerifiers = new WeakMap();
+  const activeVerifiers = new Set();
   const deferredClicks = new WeakSet();
   // Hidden controls can outlive timers in background/frozen pages. The registry owns only
   // lightweight entry objects; both the pending control and its blocker are WeakRefs, so the
@@ -78,14 +82,19 @@
   const batchJobs = [];
   const walkGeneration = new WeakMap();
   const shadowGeneration = new WeakMap();
-  const queuedWalkRoots = new WeakSet();
-  const queuedShadowRoots = new WeakSet();
+  let queuedWalkRoots = new WeakSet();
+  let queuedShadowRoots = new WeakSet();
   let flushQueued = false;
   let backgroundQueued = false;
+  let backgroundEpoch = 0;
   let broadShadowEnabled = false;
   let meaningfulCandidateSeen = false;
   let initialRescueTimer = 0;
   let siteProfile = null;
+  let lifecyclePaused = false;
+  let lifecycleGeneration = 0;
+  let engineEventsAttached = false;
+  let lifecycleEventsAttached = false;
 
   const discoveryObserver = new MutationObserver(records => onMutations(records, false));
   const contextObserver = new MutationObserver(records => onMutations(records, true));
@@ -108,9 +117,52 @@
   }) : null;
 
   function normalize(value, max = MAX_ROW_TEXT) {
-    if (value == null) return '';
-    const s = String(value).replace(/\s+/gu, ' ').trim();
-    return s.length > max ? s.slice(0, max) : s;
+    if (value == null || max <= 0) return '';
+    const raw = String(value);
+    const inspect = Math.max(256, max * 4 + 128);
+    const normalized = fragment => fragment.replace(/\s+/gu, ' ').trim();
+    const take = (fragment, budget, mode = 'head') => {
+      if (budget <= 0) return '';
+      const text = normalized(fragment);
+      if (text.length <= budget) return text;
+      if (mode === 'tail') return text.slice(-budget);
+      if (mode === 'center') {
+        const start = Math.max(0, Math.floor((text.length - budget) / 2));
+        return text.slice(start, start + budget);
+      }
+      return text.slice(0, budget);
+    };
+    if (raw.length <= inspect) return take(raw, max);
+    // Bounded semantic sampling: inspect fixed-size head/center/tail windows. This keeps CPU
+    // independent of pathological multi-MB strings while avoiding a systematic tail/middle blind spot.
+    const gap = ' zzsemanticgapzz ';
+    const gapCost = gap.length * 2;
+    const headBudget = Math.max(24, Math.floor((max - gapCost) / 3));
+    const middleBudget = Math.max(24, Math.floor((max - gapCost) / 3));
+    const tailBudget = Math.max(0, max - gapCost - headBudget - middleBudget);
+    const windowSize = Math.max(96, Math.max(headBudget, middleBudget, tailBudget) * 4);
+    const center = Math.floor(raw.length / 2);
+    const middleStart = Math.max(0, center - Math.floor(windowSize / 2));
+    const chunks = [
+      take(raw.slice(0, windowSize), headBudget, 'head'),
+      take(raw.slice(middleStart, middleStart + windowSize), middleBudget, 'center'),
+      take(raw.slice(Math.max(0, raw.length - windowSize)), tailBudget, 'tail')
+    ].filter(Boolean);
+    return take(chunks.join(gap), max);
+  }
+
+
+  function joinNormalized(values, max = MAX_ROW_TEXT) {
+    let out = '';
+    for (const value of values) {
+      const left = max - out.length;
+      if (left <= 0) break;
+      const part = normalize(value, left);
+      if (!part) continue;
+      out += (out ? ' ' : '') + part;
+      if (out.length > max) out = out.slice(0, max);
+    }
+    return out;
   }
 
   function compactSemantic(value, max = MAX_ROW_TEXT) {
@@ -153,9 +205,12 @@
     const parts = [];
     const budget = { left: maxChars };
     const stack = [root];
+    const seen = new WeakSet();
     let nodes = 0;
     while (stack.length && nodes++ < maxNodes && budget.left > 0) {
       const node = stack.pop();
+      if (!(node instanceof Node) || seen.has(node)) continue;
+      seen.add(node);
       if (node.nodeType === Node.TEXT_NODE) {
         pushPart(parts, node.data, budget);
         continue;
@@ -169,6 +224,14 @@
         if (tag === 'input' || tag === 'button') {
           pushPart(parts, node.getAttribute('placeholder'), budget);
           if (tag === 'button') pushPart(parts, node.getAttribute('value'), budget);
+        }
+        if (node instanceof HTMLSlotElement) {
+          let assigned = [];
+          try { assigned = node.assignedNodes({ flatten: true }); } catch (_) {}
+          if (assigned.length) {
+            for (let i = Math.min(assigned.length, maxNodes) - 1; i >= 0 && stack.length < maxNodes * 2; i--) stack.push(assigned[i]);
+            continue;
+          }
         }
       }
       const children = node.childNodes;
@@ -402,7 +465,7 @@
     let hits = 0;
     boundedElementWalk(row, 120, node => {
       if (node.localName !== 'a') return;
-      const text = normalize(`${accessibleText(node, 220)} ${node.getAttribute('href') || ''}`, 420);
+      const text = joinNormalized([accessibleText(node, 220), node.getAttribute('href')], 420);
       if (LEGAL.test(text)) hits++;
       if (hits >= 2) return false;
     });
@@ -673,7 +736,7 @@
 
   function flowFingerprint(s) {
     const root = s?.context?.root;
-    const sig = root instanceof Element ? normalize(`${root.localName} ${root.id || ''} ${typeof root.className === 'string' ? root.className : ''} ${root.getAttribute('role') || ''}`, 220) : 'document';
+    const sig = root instanceof Element ? joinNormalized([root.localName, root.id, typeof root.className === 'string' ? root.className : '', root.getAttribute('role')], 220) : 'document';
     return `${normalizedPath()}|${sig}`;
   }
 
@@ -701,14 +764,29 @@
       flow = { fingerprint, locator, successes: 0, failures: 0, ts: 0 };
       flows.unshift(flow);
     }
+    const previousFailures = Number(flow.failures || 0);
     flow.successes = Math.min(100000, Number(flow.successes || 0) + 1);
     flow.failures = 0;
-    const shouldPersist = now - Number(flow.ts || 0) >= PROFILE_REFRESH_MS || profile.version !== VERSION;
+    const shouldPersist = previousFailures > 0 || now - Number(flow.ts || 0) >= PROFILE_REFRESH_MS || profile.version !== VERSION;
     flow.ts = now;
     profile.version = VERSION;
     profile.flows = flows.sort((a,b) => Number(b.ts || 0) - Number(a.ts || 0)).slice(0, PROFILE_MAX_FLOWS);
     siteProfile = profile;
     if (shouldPersist) profileMessage('AUTO_AGREE_PROFILE_PUT', profile);
+  }
+
+  function recordCacheFailure(flow) {
+    if (!flow || !siteProfile || !Array.isArray(siteProfile.flows)) return;
+    const now = Date.now();
+    flow.failures = Math.min(1000, Number(flow.failures || 0) + 1);
+    flow.ts = now;
+    siteProfile.version = VERSION;
+    if (flow.failures >= 3) {
+      siteProfile.flows = siteProfile.flows.filter(item => item !== flow);
+      void profileMessage('AUTO_AGREE_PROFILE_INVALIDATE', { fingerprint: flow.fingerprint, locator: flow.locator });
+    } else {
+      void profileMessage('AUTO_AGREE_PROFILE_PUT', siteProfile);
+    }
   }
 
   function readFreshState(s) {
@@ -719,6 +797,7 @@
     const old = clickVerifiers.get(control);
     if (!old) return;
     clickVerifiers.delete(control);
+    activeVerifiers.delete(old);
     try { old.observer?.disconnect(); } catch (_) {}
     for (const [target, type, fn] of old.listeners || []) {
       try { target.removeEventListener(type, fn, true); } catch (_) {}
@@ -728,8 +807,9 @@
 
   function armVerifier(s, before, attempt = 0) {
     stopVerifier(s.control);
-    const verifier = { observer: null, listeners: [], timer: 0, done: false };
+    const verifier = { observer: null, listeners: [], timer: 0, done: false, controlRef: new WeakRef(s.control), generation: lifecycleGeneration };
     clickVerifiers.set(s.control, verifier);
+    activeVerifiers.add(verifier);
 
     const succeed = () => {
       if (verifier.done) return true;
@@ -743,7 +823,11 @@
       return true;
     };
 
-    const check = () => { if (!verifier.done) succeed(); };
+    const check = () => {
+      if (verifier.done) return;
+      if (lifecyclePaused || verifier.generation !== lifecycleGeneration) { stopVerifier(s.control); return; }
+      succeed();
+    };
     const targets = [...new Set([s.control, s.row, s.input].filter(x => x instanceof Element))];
     try {
       verifier.observer = new MutationObserver(check);
@@ -760,6 +844,7 @@
     queueMicrotask(check);
     requestAnimationFrame?.(() => check());
     verifier.timer = setTimeout(() => {
+      if (lifecyclePaused || verifier.generation !== lifecycleGeneration) { stopVerifier(s.control); return; }
       if (succeed() || verifier.done) return;
       stopVerifier(s.control);
       const fresh = snapshotCandidate(s.control);
@@ -808,8 +893,10 @@
 
     if (deferredClicks.has(s.control)) return true;
     deferredClicks.add(s.control);
+    const generation = lifecycleGeneration;
     const run = () => {
       deferredClicks.delete(s.control);
+      if (lifecyclePaused || generation !== lifecycleGeneration) return;
       if (!(s.control instanceof Element) || !s.control.isConnected) return;
       const fresh = snapshotCandidate(s.control);
       const decision = decisionFor(fresh);
@@ -992,7 +1079,7 @@
 
   function ownHint(el) {
     if (!(el instanceof Element)) return '';
-    return normalize(`${el.getAttribute('aria-label') || ''} ${el.getAttribute('title') || ''} ${el.getAttribute('placeholder') || ''} ${el.getAttribute('name') || ''} ${el.id || ''} ${el.getAttribute('data-testid') || ''}`, 520);
+    return joinNormalized([el.getAttribute('aria-label'), el.getAttribute('title'), el.getAttribute('placeholder'), el.getAttribute('name'), el.id, el.getAttribute('data-testid')], 520);
   }
 
   function maybeFragmentedAgreement(el, urgent = false) {
@@ -1031,6 +1118,46 @@
     if (FAST_TEXT.test(data) && node.parentElement) processAgreementAnchor(node.parentElement, urgent);
   }
 
+  function rememberShadowHost(host) {
+    if (!(host instanceof HTMLElement) || knownShadowHostEntry.has(host)) return;
+    const entry = { ref: new WeakRef(host) };
+    knownShadowHostEntry.set(host, entry);
+    knownShadowHostEntries.add(entry);
+    if (knownShadowHostEntries.size > 256) {
+      for (const item of [...knownShadowHostEntries]) {
+        if (!item.ref.deref()) knownShadowHostEntries.delete(item);
+      }
+    }
+  }
+
+  function onSlotChange(event) {
+    if (lifecyclePaused) return;
+    const slot = event.target;
+    if (!(slot instanceof HTMLSlotElement)) return;
+    bumpContext(slot);
+    queueRoot(slot, true);
+    let assigned = [];
+    try { assigned = slot.assignedNodes({ flatten: true }).slice(0, 48); } catch (_) {}
+    for (const node of assigned) {
+      if (node.nodeType === Node.TEXT_NODE && node.parentElement) queueRoot(node.parentElement, true);
+      else if (node instanceof Element) queueRoot(node, true);
+    }
+  }
+
+  function attachSlotHandler(root) {
+    if (!(root instanceof ShadowRoot)) return;
+    let handler = slotHandlers.get(root);
+    if (!handler) { handler = onSlotChange; slotHandlers.set(root, handler); }
+    try { root.addEventListener('slotchange', handler, true); } catch (_) {}
+  }
+
+  function detachSlotHandler(root) {
+    if (!(root instanceof ShadowRoot)) return;
+    const handler = slotHandlers.get(root);
+    if (!handler) return;
+    try { root.removeEventListener('slotchange', handler, true); } catch (_) {}
+  }
+
   function probeShadow(host, broad = false) {
     if (!(host instanceof HTMLElement) || probedShadowHosts.has(host)) return;
     const tag = host.localName;
@@ -1040,7 +1167,7 @@
     if (!root && chrome.dom?.openOrClosedShadowRoot) {
       try { root = chrome.dom.openOrClosedShadowRoot(host); } catch (_) {}
     }
-    if (root instanceof ShadowRoot) observeRoot(root);
+    if (root instanceof ShadowRoot) { rememberShadowHost(host); observeRoot(root); }
   }
 
   function handleNode(node, urgent) {
@@ -1351,10 +1478,11 @@
     return new Promise(resolve => setTimeout(resolve, 0));
   }
 
-  async function drainBackground() {
+  async function drainBackground(generation = lifecycleGeneration) {
+    if (lifecyclePaused || generation !== lifecycleGeneration) { if (backgroundEpoch === generation) backgroundQueued = false; return; }
     try {
       let rounds = 0;
-      while ((rootBatches.length || walkJobs.length || batchJobs.length || shadowJobs.length) && rounds++ < 24) {
+      while (!lifecyclePaused && generation === lifecycleGeneration && (rootBatches.length || walkJobs.length || batchJobs.length || shadowJobs.length) && rounds++ < 24) {
         if (rootBatches.length) {
           const job = rootBatches[0];
           if (!runRootBatch(job, BACKGROUND_BUDGET_MS)) rootBatches.shift();
@@ -1373,28 +1501,33 @@
           if (!root || !rootConnected(root)) { if (root) queuedShadowRoots.delete(root); shadowJobs.shift(); }
           else if (!runShadowJob(job, BACKGROUND_BUDGET_MS)) { queuedShadowRoots.delete(root); shadowJobs.shift(); }
         }
-        if (rootBatches.length || walkJobs.length || batchJobs.length || shadowJobs.length) await yieldMain();
+        if (rootBatches.length || walkJobs.length || batchJobs.length || shadowJobs.length) {
+          await yieldMain();
+          if (lifecyclePaused || generation !== lifecycleGeneration) break;
+        }
       }
     } finally {
-      backgroundQueued = false;
-      if (rootBatches.length || walkJobs.length || batchJobs.length || shadowJobs.length) scheduleBackground();
+      if (backgroundEpoch === generation) backgroundQueued = false;
+      if (!lifecyclePaused && generation === lifecycleGeneration && (rootBatches.length || walkJobs.length || batchJobs.length || shadowJobs.length)) scheduleBackground();
     }
   }
 
   function scheduleBackground() {
-    if (backgroundQueued) return;
+    if (backgroundQueued || lifecyclePaused) return;
     backgroundQueued = true;
+    const generation = lifecycleGeneration;
+    backgroundEpoch = generation;
     if (globalThis.scheduler?.postTask) {
-      scheduler.postTask(drainBackground, { priority: 'background' }).catch(() => { backgroundQueued = false; setTimeout(scheduleBackground, 16); });
+      scheduler.postTask(() => drainBackground(generation), { priority: 'background' }).catch(() => { if (backgroundEpoch === generation) backgroundQueued = false; if (!lifecyclePaused && generation === lifecycleGeneration) setTimeout(scheduleBackground, 16); });
     } else if (typeof requestIdleCallback === 'function') {
-      requestIdleCallback(() => drainBackground(), { timeout: 400 });
+      requestIdleCallback(() => drainBackground(generation), { timeout: 400 });
     } else {
-      setTimeout(() => drainBackground(), 24);
+      setTimeout(() => drainBackground(generation), 24);
     }
   }
 
   function queueRoot(root, urgent = false) {
-    if (!root) return;
+    if (!root || lifecyclePaused) return;
     walkGeneration.set(root, currentWalkGeneration(root) + 1);
     (urgent ? urgentRoots : dirtyRoots).add(root);
     if (flushQueued) return;
@@ -1413,6 +1546,7 @@
 
   function flushRoots() {
     flushQueued = false;
+    if (lifecyclePaused) { urgentRoots.clear(); dirtyRoots.clear(); return; }
     const urgent = [...urgentRoots];
     const dirty = [...dirtyRoots];
     const urgentSet = new Set(urgent);
@@ -1460,6 +1594,7 @@
   }
 
   function onMutations(records, detailed = false) {
+    if (lifecyclePaused) return;
     const added = new Set();
     for (const record of records) {
       if (!detailed && observedContextCount && insideObservedContext(record.target)) continue;
@@ -1510,8 +1645,9 @@
   }
 
   function observeRoot(root) {
-    if (!root || observedRoots.has(root)) return;
+    if (!root || lifecyclePaused || observedRoots.has(root)) return;
     observedRoots.add(root);
+    if (root instanceof ShadowRoot) attachSlotHandler(root);
     try {
       discoveryObserver.observe(root, {
         subtree: true,
@@ -1525,6 +1661,7 @@
   }
 
   function recheckPending() {
+    if (lifecyclePaused) return;
     for (const entry of [...pendingVisibility]) {
       const el = entry?.targetRef?.deref?.();
       if (!(el instanceof Element) || !el.isConnected) { removePendingEntry(entry); continue; }
@@ -1563,6 +1700,7 @@
   }
 
   function preflight(event) {
+    if (lifecyclePaused) return;
     const root = eventContext(event);
     recheckPending();
     processIndexedContext(root);
@@ -1578,10 +1716,19 @@
     if (!profile || !Array.isArray(profile.flows)) return;
     siteProfile = profile;
     const now = Date.now();
-    for (const flow of [...profile.flows].sort((a,b) => Number(b?.ts || 0) - Number(a?.ts || 0)).slice(0, PROFILE_MAX_FLOWS)) {
+    const pathPrefix = `${normalizedPath()}|`;
+    const flows = [...profile.flows]
+      .filter(flow => typeof flow?.fingerprint === 'string' && flow.fingerprint.startsWith(pathPrefix))
+      .sort((a,b) => Number(b?.ts || 0) - Number(a?.ts || 0))
+      .slice(0, PROFILE_MAX_FLOWS);
+    for (const flow of flows) {
       if (!flow?.locator || now - Number(flow.ts || 0) > CACHE_TTL_MS) continue;
       const el = resolveLocator(flow.locator);
-      if (el instanceof Element && isCheckboxLike(el)) processCandidate(el, true);
+      if (!(el instanceof Element) || !isCheckboxLike(el)) continue;
+      const snap = snapshotCandidate(el);
+      const decision = decisionFor(snap);
+      if (decision.accept) processCandidate(el, true);
+      else recordCacheFailure(flow);
     }
   }
 
@@ -1596,15 +1743,215 @@
     }
   }
 
-  function bootstrapSeedRoot() {
+  function bootstrapSeedElement() {
     const seed = globalThis.__AUTO_AGREE_BOOTSTRAP_CONTEXT__?.seed;
     const el = seed instanceof Element ? seed : seed?.parentElement;
-    if (!(el instanceof Element) || !el.isConnected) return null;
+    return el instanceof Element && el.isConnected ? el : null;
+  }
+
+  function bootstrapSeedRoot() {
+    const el = bootstrapSeedElement();
+    if (!el) return null;
     return contextRoot(el) || el.closest?.('form,dialog,[role="dialog"],[aria-modal="true"]') || composedParent(el) || el;
   }
 
-  function boot() {
+  function observeBootstrapSeedShadow() {
+    const el = bootstrapSeedElement();
+    if (!el) return;
+    const root = el.getRootNode?.();
+    if (!(root instanceof ShadowRoot) || !(root.host instanceof HTMLElement)) return;
+    rememberShadowHost(root.host);
+    probedShadowHosts.add(root.host);
+    observeRoot(root);
+  }
+
+  function onKeyDown(event) { if (event.key === 'Enter') preflight(event); }
+
+  function onFocusIn(event) {
+    if (lifecyclePaused) return;
+    const target = event.target instanceof Element ? event.target : null;
+    if (!target) return;
+    const hint = joinNormalized([target.getAttribute('name'), target.getAttribute('type'), target.getAttribute('placeholder'), target.getAttribute('autocomplete')], 300);
+    if (CREDENTIAL.test(hint)) {
+      const root = bumpContext(target);
+      broadShadowEnabled = true;
+      queueShadowSweep(root instanceof Element ? root : document.documentElement);
+      processIndexedContext(root instanceof Element ? root : null);
+    }
+  }
+
+  function invalidateInputContext(event) {
+    if (lifecyclePaused) return;
+    const target = event.target instanceof Element ? event.target : null;
+    if (!target) return;
+    const root = bumpContext(target);
+    // Credential/value changes can flip a terse legal control from ambiguous to mandatory.
+    // Re-evaluate only the already indexed legal candidates for this context (O(K)), never
+    // rescan the whole form. This also keeps ContextSnapshot cache invalidation and action
+    // scheduling coupled, so a fresh epoch cannot sit unused until some unrelated mutation.
+    processIndexedContext(root instanceof Element ? root : null);
+  }
+
+  function onVisualTransition() { if (!lifecyclePaused && pendingVisibility.size) recheckPending(); }
+
+  function attachEngineEvents() {
+    if (engineEventsAttached) return;
+    engineEventsAttached = true;
+    addEventListener('pointerdown', preflight, true);
+    addEventListener('submit', preflight, true);
+    addEventListener('keydown', onKeyDown, true);
+    addEventListener('focusin', onFocusIn, true);
+    addEventListener('input', invalidateInputContext, true);
+    addEventListener('change', invalidateInputContext, true);
+    addEventListener('transitionend', onVisualTransition, true);
+    addEventListener('animationend', onVisualTransition, true);
+  }
+
+  function detachEngineEvents() {
+    if (!engineEventsAttached) return;
+    engineEventsAttached = false;
+    removeEventListener('pointerdown', preflight, true);
+    removeEventListener('submit', preflight, true);
+    removeEventListener('keydown', onKeyDown, true);
+    removeEventListener('focusin', onFocusIn, true);
+    removeEventListener('input', invalidateInputContext, true);
+    removeEventListener('change', invalidateInputContext, true);
+    removeEventListener('transitionend', onVisualTransition, true);
+    removeEventListener('animationend', onVisualTransition, true);
+  }
+
+  function stopAllVerifiers() {
+    for (const verifier of [...activeVerifiers]) {
+      verifier.done = true;
+      try { verifier.observer?.disconnect(); } catch (_) {}
+      for (const [target, type, fn] of verifier.listeners || []) {
+        try { target.removeEventListener(type, fn, true); } catch (_) {}
+      }
+      if (verifier.timer) clearTimeout(verifier.timer);
+      const control = verifier.controlRef?.deref?.();
+      if (control instanceof Element) clickVerifiers.delete(control);
+      activeVerifiers.delete(verifier);
+    }
+  }
+
+  function clearQueuedWork() {
+    dirtyRoots.clear();
+    urgentRoots.clear();
+    rootBatches.length = 0;
+    walkJobs.length = 0;
+    shadowJobs.length = 0;
+    batchJobs.length = 0;
+    queuedWalkRoots = new WeakSet();
+    queuedShadowRoots = new WeakSet();
+    flushQueued = false;
+    backgroundQueued = false;
+  }
+
+  function restoreKnownShadowRoots() {
+    for (const entry of [...knownShadowHostEntries]) {
+      const host = entry.ref?.deref?.();
+      if (!(host instanceof HTMLElement) || !host.isConnected) {
+        if (!host) knownShadowHostEntries.delete(entry);
+        continue;
+      }
+      let root = host.shadowRoot;
+      if (!root && chrome.dom?.openOrClosedShadowRoot) {
+        try { root = chrome.dom.openOrClosedShadowRoot(host); } catch (_) {}
+      }
+      if (root instanceof ShadowRoot) {
+        probedShadowHosts.add(host);
+        observeRoot(root);
+      }
+    }
+  }
+
+  function pauseEngine() {
+    if (lifecyclePaused) return;
+    lifecyclePaused = true;
+    lifecycleGeneration++;
+    discoveryObserver.disconnect();
+    contextObserver.disconnect();
+    resizeObserver?.disconnect();
+    detachEngineEvents();
+    for (const entry of [...knownShadowHostEntries]) {
+      const host = entry.ref?.deref?.();
+      if (!(host instanceof HTMLElement)) { if (!host) knownShadowHostEntries.delete(entry); continue; }
+      let root = host.shadowRoot;
+      if (!root && chrome.dom?.openOrClosedShadowRoot) { try { root = chrome.dom.openOrClosedShadowRoot(host); } catch (_) {} }
+      if (root instanceof ShadowRoot) detachSlotHandler(root);
+    }
+    if (pendingRescueTimer) clearTimeout(pendingRescueTimer);
+    pendingRescueTimer = 0;
+    pendingRescuePhase = 0;
+    if (initialRescueTimer) clearTimeout(initialRescueTimer);
+    initialRescueTimer = 0;
+    stopAllVerifiers();
+    clearQueuedWork();
+  }
+
+  function resumeEngine() {
+    if (!lifecyclePaused || document.prerendering || document.visibilityState === 'hidden') return;
+    lifecyclePaused = false;
+    lifecycleGeneration++;
+    candidateMemo = new WeakMap();
+    clickMemo = new WeakMap();
+    observedRoots = new WeakSet();
+    observedContexts = new WeakSet();
+    probedShadowHosts = new WeakSet();
+    observedContextCount = 0;
+    attachEngineEvents();
     observeRoot(document);
+    restoreKnownShadowRoots();
+    if (resizeObserver) {
+      for (const entry of [...pendingVisibility]) {
+        const blocker = entry?.blockerRef?.deref?.();
+        if (blocker instanceof Element && blocker.isConnected) { try { resizeObserver.observe(blocker); } catch (_) {} }
+      }
+    }
+    recheckPending();
+    processIndexedContext(null);
+    if (document.documentElement) queueRoot(document.documentElement, false);
+    void tryCacheFastPath();
+  }
+
+  function onVisibilityChange() {
+    if (document.visibilityState === 'hidden') pauseEngine();
+    else resumeEngine();
+  }
+  function onPageHide(event) {
+    pauseEngine();
+    if (!event?.persisted) detachLifecycleEvents();
+  }
+  function onPageShow(event) { if (event?.persisted) resumeEngine(); }
+  function onFreeze() { pauseEngine(); }
+  function onResume() { resumeEngine(); }
+
+  function attachLifecycleEvents() {
+    if (lifecycleEventsAttached) return;
+    lifecycleEventsAttached = true;
+    addEventListener('pagehide', onPageHide, true);
+    addEventListener('pageshow', onPageShow, true);
+    document.addEventListener('freeze', onFreeze, true);
+    document.addEventListener('resume', onResume, true);
+    document.addEventListener('visibilitychange', onVisibilityChange, true);
+    document.addEventListener('prerenderingchange', onResume, true);
+  }
+
+  function detachLifecycleEvents() {
+    if (!lifecycleEventsAttached) return;
+    lifecycleEventsAttached = false;
+    removeEventListener('pagehide', onPageHide, true);
+    removeEventListener('pageshow', onPageShow, true);
+    document.removeEventListener('freeze', onFreeze, true);
+    document.removeEventListener('resume', onResume, true);
+    document.removeEventListener('visibilitychange', onVisibilityChange, true);
+    document.removeEventListener('prerenderingchange', onResume, true);
+  }
+
+  function boot() {
+    attachEngineEvents();
+    observeRoot(document);
+    observeBootstrapSeedShadow();
     const seedRoot = bootstrapSeedRoot();
     if (seedRoot) queueRoot(seedRoot, true);
     else if (document.documentElement) queueRoot(document.documentElement, false);
@@ -1614,41 +1961,16 @@
     // UI shells. Existing far-away document content is not rescanned merely because a login form
     // has no Terms checkbox; later DOM insertions are already covered by discoveryObserver.
     if (seedRoot) {
+      const generation = lifecycleGeneration;
       initialRescueTimer = setTimeout(() => {
         initialRescueTimer = 0;
+        if (lifecyclePaused || generation !== lifecycleGeneration) return;
         if (!meaningfulCandidateSeen) queueSeedShells(seedRoot);
       }, 420);
     }
-
-    addEventListener('pointerdown', preflight, true);
-    addEventListener('submit', preflight, true);
-    addEventListener('keydown', event => { if (event.key === 'Enter') preflight(event); }, true);
-    addEventListener('focusin', event => {
-      const target = event.target instanceof Element ? event.target : null;
-      if (!target) return;
-      const hint = normalize(`${target.getAttribute('name') || ''} ${target.getAttribute('type') || ''} ${target.getAttribute('placeholder') || ''} ${target.getAttribute('autocomplete') || ''}`, 300);
-      if (CREDENTIAL.test(hint)) {
-        const root = bumpContext(target);
-        broadShadowEnabled = true;
-        queueShadowSweep(root instanceof Element ? root : document.documentElement);
-        processIndexedContext(root instanceof Element ? root : null);
-      }
-    }, true);
-    const invalidateInputContext = event => {
-      const target = event.target instanceof Element ? event.target : null;
-      if (!target) return;
-      const root = bumpContext(target);
-      // Credential/value changes can flip a terse legal control from ambiguous to mandatory.
-      // Re-evaluate only the already indexed legal candidates for this context (O(K)), never
-      // rescan the whole form. This also keeps ContextSnapshot cache invalidation and action
-      // scheduling coupled, so a fresh epoch cannot sit unused until some unrelated mutation.
-      processIndexedContext(root instanceof Element ? root : null);
-    };
-    addEventListener('input', invalidateInputContext, true);
-    addEventListener('change', invalidateInputContext, true);
-    addEventListener('transitionend', () => { if (pendingVisibility.size) recheckPending(); }, true);
-    addEventListener('animationend', () => { if (pendingVisibility.size) recheckPending(); }, true);
   }
 
-  boot();
+  attachLifecycleEvents();
+  if (document.visibilityState === 'hidden' || document.prerendering) lifecyclePaused = true;
+  else boot();
 })();

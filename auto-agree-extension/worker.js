@@ -4,12 +4,13 @@ const engineInflight = new Map();
 const gateInflight = new Map();
 const profileCache = new Map();
 const PROFILE_PREFIX = 'site:';
-const PROFILE_INDEX_KEY = '__auto_agree_profile_index_v5__';
+const PROFILE_INDEX_KEY = '__auto_agree_profile_index__';
+const LEGACY_PROFILE_INDEX_KEYS = ['__auto_agree_profile_index_v5__', '__auto_agree_profile_index_v4__', '__auto_agree_profile_index_v3__'];
 const PROFILE_CACHE_MAX = 32;
 const PROFILE_ORIGIN_MAX = 256;
 const PROFILE_FLOW_MAX = 8;
 const PROFILE_TTL_MS = 180 * 24 * 60 * 60 * 1000;
-const VERSION = '5.0.0';
+const VERSION = '6.0.0';
 let storageWriteChain = Promise.resolve();
 
 function cacheProfile(key, value) {
@@ -34,6 +35,21 @@ function targetFor(sender) {
   return { tabId };
 }
 
+function sanitizeLocator(locator) {
+  if (!locator || typeof locator !== 'object') return null;
+  const selector = typeof locator.selector === 'string' ? locator.selector.trim() : '';
+  if (!selector || selector.length > 420 || /[\u0000-\u001f]/.test(selector)) return null;
+  if (!Array.isArray(locator.hosts) || locator.hosts.length > 8) return null;
+  const hosts = [];
+  for (const raw of locator.hosts) {
+    if (typeof raw !== 'string') return null;
+    const value = raw.trim();
+    if (!value || value.length > 360 || /[\u0000-\u001f]/.test(value)) return null;
+    hosts.push(value);
+  }
+  return { hosts, selector };
+}
+
 function locatorKey(locator) {
   try { return JSON.stringify(locator || null); } catch (_) { return ''; }
 }
@@ -45,13 +61,16 @@ function sanitizeProfile(profile) {
   const map = new Map();
   for (const flow of input) {
     if (!flow?.locator || !flow?.fingerprint) continue;
+    const locator = sanitizeLocator(flow.locator);
+    if (!locator) continue;
     const ts = Number(flow.ts || 0);
     if (!Number.isFinite(ts) || now - ts > PROFILE_TTL_MS) continue;
-    const key = `${flow.fingerprint}|${locatorKey(flow.locator)}`;
+    const fingerprint = String(flow.fingerprint).slice(0, 520);
+    const key = `${fingerprint}|${locatorKey(locator)}`;
     const prev = map.get(key);
     const clean = {
-      fingerprint: String(flow.fingerprint).slice(0, 520),
-      locator: flow.locator,
+      fingerprint,
+      locator,
       successes: Math.max(0, Math.min(100000, Number(flow.successes || 0))),
       failures: Math.max(0, Math.min(1000, Number(flow.failures || 0))),
       ts
@@ -66,14 +85,24 @@ function mergeProfiles(current, incoming) {
   const all = [...(current?.flows || []), ...(incoming?.flows || [])];
   const map = new Map();
   for (const flow of all) {
-    if (!flow?.locator || !flow?.fingerprint) continue;
-    const key = `${flow.fingerprint}|${locatorKey(flow.locator)}`;
+    const locator = sanitizeLocator(flow?.locator);
+    if (!locator || !flow?.fingerprint) continue;
+    const fingerprint = String(flow.fingerprint).slice(0, 520);
+    const key = `${fingerprint}|${locatorKey(locator)}`;
+    const next = {
+      fingerprint,
+      locator,
+      successes: Math.max(0, Math.min(100000, Number(flow.successes || 0))),
+      failures: Math.max(0, Math.min(1000, Number(flow.failures || 0))),
+      ts: Number(flow.ts || 0)
+    };
     const prev = map.get(key);
-    if (!prev) map.set(key, { ...flow });
-    else {
-      prev.ts = Math.max(Number(prev.ts || 0), Number(flow.ts || 0));
-      prev.successes = Math.max(Number(prev.successes || 0), Number(flow.successes || 0));
-      prev.failures = Math.min(Number(prev.failures || 0), Number(flow.failures || 0));
+    if (!prev || next.ts > prev.ts) map.set(key, next);
+    else if (next.ts === prev.ts) {
+      prev.successes = Math.max(prev.successes, next.successes);
+      prev.failures = Math.max(prev.failures, next.failures);
+    } else {
+      prev.successes = Math.max(prev.successes, next.successes);
     }
   }
   return sanitizeProfile({ version: VERSION, flows: [...map.values()] });
@@ -102,7 +131,14 @@ async function getProfile(origin) {
 
 async function updateProfileIndex(origin) {
   let index = {};
-  try { index = (await chrome.storage.local.get(PROFILE_INDEX_KEY))?.[PROFILE_INDEX_KEY] || {}; } catch (_) {}
+  try {
+    const keys = [PROFILE_INDEX_KEY, ...LEGACY_PROFILE_INDEX_KEYS];
+    const stored = await chrome.storage.local.get(keys);
+    for (const key of keys) Object.assign(index, stored?.[key] || {});
+    if (LEGACY_PROFILE_INDEX_KEYS.some(key => stored?.[key])) {
+      try { await chrome.storage.local.remove(LEGACY_PROFILE_INDEX_KEYS); } catch (_) {}
+    }
+  } catch (_) {}
   const now = Date.now();
   index[origin] = now;
   const entries = Object.entries(index).filter(([,ts]) => Number.isFinite(Number(ts))).sort((a,b) => Number(b[1]) - Number(a[1]));
@@ -116,6 +152,46 @@ async function updateProfileIndex(origin) {
     try { await chrome.storage.session?.remove(keys); } catch (_) {}
     for (const key of keys) profileCache.delete(key);
   }
+}
+
+async function removeProfileIndexOrigin(origin) {
+  try {
+    const stored = await chrome.storage.local.get(PROFILE_INDEX_KEY);
+    const index = stored?.[PROFILE_INDEX_KEY] || {};
+    if (Object.prototype.hasOwnProperty.call(index, origin)) {
+      delete index[origin];
+      await chrome.storage.local.set({ [PROFILE_INDEX_KEY]: index });
+    }
+  } catch (_) {}
+}
+
+function invalidateProfileFlow(origin, payload) {
+  if (!origin || origin === 'null' || !payload?.fingerprint || !payload?.locator) return Promise.resolve(false);
+  const locator = sanitizeLocator(payload.locator);
+  if (!locator) return Promise.resolve(false);
+  const fingerprint = String(payload.fingerprint).slice(0, 520);
+  const targetKey = `${fingerprint}|${locatorKey(locator)}`;
+  const task = async () => {
+    const key = `${PROFILE_PREFIX}${origin}`;
+    const current = await getProfile(origin);
+    if (!current?.flows?.length) return false;
+    const flows = current.flows.filter(flow => `${flow.fingerprint}|${locatorKey(flow.locator)}` !== targetKey);
+    const next = sanitizeProfile({ version: VERSION, flows });
+    if (!next) {
+      cacheProfile(key, null);
+      try { await chrome.storage.session?.remove(key); } catch (_) {}
+      try { await chrome.storage.local.remove(key); } catch (_) {}
+      await removeProfileIndexOrigin(origin);
+      return true;
+    }
+    cacheProfile(key, next);
+    try { await chrome.storage.session?.set({ [key]: next }); } catch (_) {}
+    await chrome.storage.local.set({ [key]: next });
+    await updateProfileIndex(origin);
+    return true;
+  };
+  storageWriteChain = storageWriteChain.then(task, task);
+  return storageWriteChain;
 }
 
 function putProfile(origin, profile) {
@@ -148,6 +224,14 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
   if (message.type === 'AUTO_AGREE_PROFILE_PUT') {
     putProfile(message.origin, message.profile).then(
+      () => sendResponse({ ok: true }),
+      error => sendResponse({ ok: false, error: String(error?.message || error) })
+    );
+    return true;
+  }
+
+  if (message.type === 'AUTO_AGREE_PROFILE_INVALIDATE') {
+    invalidateProfileFlow(message.origin, message.profile).then(
       () => sendResponse({ ok: true }),
       error => sendResponse({ ok: false, error: String(error?.message || error) })
     );

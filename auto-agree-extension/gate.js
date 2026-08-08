@@ -1,7 +1,7 @@
 (() => {
   'use strict';
   if (globalThis.__AUTO_AGREE_GATE__) return;
-  globalThis.__AUTO_AGREE_GATE__ = '5.0.0';
+  globalThis.__AUTO_AGREE_GATE__ = '6.0.0';
 
   // v4 bootstrap is an evidence gate, not a keyword gate. Weak signals such as a footer
   // "Privacy Policy" link or a newsletter email field must never load the full engine alone.
@@ -28,16 +28,64 @@
   let requested = false;
   let observer = null;
   let backgroundRunning = false;
+  let backgroundEpoch = 0;
   let eventsAttached = false;
+  let lifecycleAttached = false;
+  let paused = false;
+  let lifecycleEpoch = 0;
   const batchJobs = [];
   const deepJobs = [];
   const deepQueued = new WeakSet();
-  const localChecked = new WeakSet();
+  let localChecked = new WeakSet();
 
   function norm(value, max = 1000) {
-    if (!value) return '';
-    const s = String(value).replace(/\s+/gu, ' ').trim();
-    return s.length > max ? s.slice(0, max) : s;
+    if (value == null || max <= 0) return '';
+    const raw = String(value);
+    const inspect = Math.max(256, max * 4 + 128);
+    const normalized = fragment => fragment.replace(/\s+/gu, ' ').trim();
+    const take = (fragment, budget, mode = 'head') => {
+      if (budget <= 0) return '';
+      const text = normalized(fragment);
+      if (text.length <= budget) return text;
+      if (mode === 'tail') return text.slice(-budget);
+      if (mode === 'center') {
+        const start = Math.max(0, Math.floor((text.length - budget) / 2));
+        return text.slice(start, start + budget);
+      }
+      return text.slice(0, budget);
+    };
+    if (raw.length <= inspect) return take(raw, max);
+    // Bounded semantic sampling: inspect fixed-size head/center/tail windows. This keeps CPU
+    // independent of pathological multi-MB strings while avoiding a systematic tail/middle blind spot.
+    const gap = ' zzsemanticgapzz ';
+    const gapCost = gap.length * 2;
+    const headBudget = Math.max(24, Math.floor((max - gapCost) / 3));
+    const middleBudget = Math.max(24, Math.floor((max - gapCost) / 3));
+    const tailBudget = Math.max(0, max - gapCost - headBudget - middleBudget);
+    const windowSize = Math.max(96, Math.max(headBudget, middleBudget, tailBudget) * 4);
+    const center = Math.floor(raw.length / 2);
+    const middleStart = Math.max(0, center - Math.floor(windowSize / 2));
+    const chunks = [
+      take(raw.slice(0, windowSize), headBudget, 'head'),
+      take(raw.slice(middleStart, middleStart + windowSize), middleBudget, 'center'),
+      take(raw.slice(Math.max(0, raw.length - windowSize)), tailBudget, 'tail')
+    ].filter(Boolean);
+    return take(chunks.join(gap), max);
+  }
+
+
+
+  function joinNorm(values, max = 1000) {
+    let out = '';
+    for (const value of values) {
+      const left = max - out.length;
+      if (left <= 0) break;
+      const part = norm(value, left);
+      if (!part) continue;
+      out += (out ? ' ' : '') + part;
+      if (out.length > max) out = out.slice(0, max);
+    }
+    return out;
   }
 
   function compactSemantic(value, max = 1400) {
@@ -80,8 +128,20 @@
         if (t) { parts.push(t); chars += t.length + 1; }
       } else if (node instanceof Element) {
         if (/^(?:script|style|noscript|template)$/i.test(node.localName)) continue;
-        const t = norm(`${node.getAttribute('aria-label') || ''} ${node.getAttribute('title') || ''}`, Math.min(220, maxChars - chars));
+        const t = joinNorm([node.getAttribute('aria-label'), node.getAttribute('title')], Math.min(220, maxChars - chars));
         if (t) { parts.push(t); chars += t.length + 1; }
+        if (node instanceof HTMLSlotElement) {
+          let assigned = [];
+          try { assigned = node.assignedNodes({ flatten: true }).slice(0, 18); } catch (_) {}
+          for (const a of assigned) {
+            if (chars >= maxChars) break;
+            let st = '';
+            if (a.nodeType === Node.TEXT_NODE) st = a.data || '';
+            else if (a instanceof Element) st = joinNorm([a.getAttribute('aria-label'), a.getAttribute('title'), a.getAttribute('data-testid')], Math.min(260, maxChars - chars));
+            st = norm(st, Math.min(260, maxChars - chars));
+            if (st) { parts.push(st); chars += st.length + 1; }
+          }
+        }
       }
     }
     return norm(parts.join(' '), maxChars);
@@ -118,7 +178,7 @@
       if (type === 'password' || ac.includes('current-password') || ac.includes('new-password') || ac === 'one-time-code' || ac.includes('otp')) f |= F.STRONG_AUTH;
       if (type === 'tel' || type === 'email' || ac.includes('tel') || ac.includes('email') || ac.includes('username')) f |= F.CREDENTIAL;
     }
-    const attrs = norm(`${el.getAttribute('aria-label') || ''} ${el.getAttribute('title') || ''} ${el.getAttribute('name') || ''} ${el.getAttribute('placeholder') || ''} ${el.getAttribute('autocomplete') || ''} ${el.getAttribute('data-testid') || ''} ${el.id || ''}`, 900);
+    const attrs = joinNorm([el.getAttribute('aria-label'), el.getAttribute('title'), el.getAttribute('name'), el.getAttribute('placeholder'), el.getAttribute('autocomplete'), el.getAttribute('data-testid'), el.id], 900);
     if (AUTH_ATTR.test(attrs)) f |= F.AUTH;
     if (CREDENTIAL_ATTR.test(attrs)) f |= F.CREDENTIAL;
     if (LEGAL_ATTR.test(attrs)) f |= F.LEGAL;
@@ -216,18 +276,20 @@
   }
 
   function activate(reason, seed = null) {
-    if (requested) return;
+    if (requested || paused) return;
     requested = true;
     globalThis.__AUTO_AGREE_BOOTSTRAP_CONTEXT__ = { reason, seed };
     observer?.disconnect();
     detachEvents();
+    detachLifecycle();
     batchJobs.length = 0;
     deepJobs.length = 0;
     chrome.runtime.sendMessage({ type: 'AUTO_AGREE_ACTIVATE', reason }, response => {
       if (chrome.runtime.lastError || !response?.ok) {
         requested = false;
-        attachEvents();
-        startObserver();
+        attachLifecycle();
+        if (document.visibilityState === 'hidden' || document.prerendering) paused = true;
+        else { paused = false; attachEvents(); startObserver(); }
       }
     });
   }
@@ -244,7 +306,7 @@
   }
 
   function queueDeep(root, allowComposite = true) {
-    if (requested || !root || deepQueued.has(root) || !rootConnected(root)) return;
+    if (requested || paused || !root || deepQueued.has(root) || !rootConnected(root)) return;
     deepQueued.add(root);
     while (deepJobs.length >= MAX_DEEP_JOBS) releaseDeep(deepJobs.shift());
     deepJobs.push({ rootRef: new WeakRef(root), cursorRef: null, started: false, flags: 0, allowComposite, createdAt: performance.now() });
@@ -312,10 +374,11 @@
     return { done: !node };
   }
 
-  async function drainBackground() {
+  async function drainBackground(epoch = lifecycleEpoch) {
+    if (paused || epoch !== lifecycleEpoch) { if (backgroundEpoch === epoch) backgroundRunning = false; return; }
     try {
       let rounds = 0;
-      while (!requested && (batchJobs.length || deepJobs.length) && rounds++ < 20) {
+      while (!requested && !paused && epoch === lifecycleEpoch && (batchJobs.length || deepJobs.length) && rounds++ < 20) {
         const start = performance.now();
         while (batchJobs.length && performance.now() - start < BACKGROUND_BUDGET_MS) {
           const job = batchJobs[0];
@@ -357,19 +420,21 @@
             if (out.done) releaseDeep(deepJobs.shift());
           }
         }
-        if ((batchJobs.length || deepJobs.length) && globalThis.scheduler?.yield) await scheduler.yield();
+        if ((batchJobs.length || deepJobs.length) && globalThis.scheduler?.yield) { await scheduler.yield(); if (paused || epoch !== lifecycleEpoch) break; }
         else break;
       }
     } finally {
-      backgroundRunning = false;
-      if (!requested && (batchJobs.length || deepJobs.length)) scheduleBackground();
+      if (backgroundEpoch === epoch) backgroundRunning = false;
+      if (!requested && !paused && epoch === lifecycleEpoch && (batchJobs.length || deepJobs.length)) scheduleBackground();
     }
   }
 
   function scheduleBackground() {
-    if (requested || backgroundRunning || (!batchJobs.length && !deepJobs.length)) return;
+    if (requested || paused || backgroundRunning || (!batchJobs.length && !deepJobs.length)) return;
     backgroundRunning = true;
-    postBackground(drainBackground);
+    const epoch = lifecycleEpoch;
+    backgroundEpoch = epoch;
+    postBackground(() => drainBackground(epoch));
   }
 
   function sampleLargeBatch(nodes) {
@@ -386,6 +451,7 @@
   }
 
   function onMutations(records) {
+    if (requested || paused) return;
     const start = performance.now();
     for (const record of records) {
       if (record.type === 'childList') {
@@ -444,7 +510,7 @@
   }
 
   function onFocus(event) {
-    if (requested || probeEventShadow(event)) return;
+    if (requested || paused || probeEventShadow(event)) return;
     const target = event.target instanceof Element ? event.target : null;
     if (!target) return;
     const ef = elementFlags(target);
@@ -457,7 +523,7 @@
   }
 
   function onPointer(event) {
-    if (requested || probeEventShadow(event)) return;
+    if (requested || paused || probeEventShadow(event)) return;
     const target = event.target instanceof Element ? event.target : null;
     if (!target) return;
     const scope = localScope(target);
@@ -485,7 +551,7 @@
   }
 
   function startObserver() {
-    if (requested) return;
+    if (requested || paused) return;
     if (!observer) observer = new MutationObserver(onMutations);
     try {
       observer.observe(document, {
@@ -526,6 +592,63 @@
     }
   }
 
-  attachEvents();
-  startObserver();
+  function clearGateWork() {
+    for (const job of deepJobs) releaseDeep(job);
+    deepJobs.length = 0;
+    batchJobs.length = 0;
+    backgroundRunning = false;
+  }
+
+  function pauseGate() {
+    if (paused || requested) return;
+    paused = true;
+    lifecycleEpoch++;
+    observer?.disconnect();
+    detachEvents();
+    clearGateWork();
+  }
+
+  function resumeGate() {
+    if (!paused || requested || document.prerendering || document.visibilityState === 'hidden') return;
+    paused = false;
+    lifecycleEpoch++;
+    localChecked = new WeakSet();
+    attachEvents();
+    startObserver();
+  }
+
+  function onVisibilityChange() {
+    if (document.visibilityState === 'hidden') pauseGate();
+    else resumeGate();
+  }
+  function onPageHide(event) {
+    if (event?.persisted) pauseGate();
+    else { pauseGate(); detachLifecycle(); }
+  }
+  function onPageShow(event) { if (event?.persisted) resumeGate(); }
+  function onFreeze() { pauseGate(); }
+  function onResume() { resumeGate(); }
+
+  function attachLifecycle() {
+    if (lifecycleAttached) return;
+    lifecycleAttached = true;
+    addEventListener('pagehide', onPageHide, true);
+    addEventListener('pageshow', onPageShow, true);
+    document.addEventListener('freeze', onFreeze, true);
+    document.addEventListener('resume', onResume, true);
+    document.addEventListener('visibilitychange', onVisibilityChange, true);
+  }
+  function detachLifecycle() {
+    if (!lifecycleAttached) return;
+    lifecycleAttached = false;
+    removeEventListener('pagehide', onPageHide, true);
+    removeEventListener('pageshow', onPageShow, true);
+    document.removeEventListener('freeze', onFreeze, true);
+    document.removeEventListener('resume', onResume, true);
+    document.removeEventListener('visibilitychange', onVisibilityChange, true);
+  }
+
+  attachLifecycle();
+  if (document.visibilityState === 'hidden') paused = true;
+  else { attachEvents(); startObserver(); }
 })();
