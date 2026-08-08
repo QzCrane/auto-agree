@@ -1,0 +1,45 @@
+name: Apply v8 E2E cleanup
+
+on:
+  push:
+    branches: [feat/v8-lifecycle-e2e-hardening]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: write
+
+concurrency:
+  group: apply-v8-e2e-cleanup
+  cancel-in-progress: false
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.head_ref || github.ref_name }}
+          fetch-depth: 0
+      - name: Apply exact cleanup
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo '5471cec9b8cbf04c2e9a4e4219a6760e159a56723c89b576427d8b826bee69ea  .v8cleanup/e2e-cleanup.patch' | sha256sum --check --strict
+          git apply --check .v8cleanup/e2e-cleanup.patch
+          git apply .v8cleanup/e2e-cleanup.patch
+          node --check tests/e2e-extension.mjs
+          npm test
+          python tools/package_extension.py --check
+      - name: Commit cleanup only
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add tests/e2e-extension.mjs
+          git diff --cached --check
+          git commit -m 'test: tighten E2E performance gate and remove duplicate update path'
+          target="${GITHUB_HEAD_REF:-${GITHUB_REF_NAME}}"
+          git push origin "HEAD:${target}"
