@@ -1,17 +1,23 @@
 {
   "manifest_version": 3,
   "name": "Auto Agree Login Terms",
-  "version": "2.0.0",
-  "minimum_chrome_version": "99",
-  "description": "Automatically detects and checks mandatory Terms/Privacy agreement controls with incremental scanning, iframe support, and Shadow DOM support.",
+  "version": "3.0.0",
+  "minimum_chrome_version": "120",
+  "description": "Automatically accepts routine mandatory login/register Terms and Privacy agreements with lazy per-frame activation, bounded DOM work, Shadow DOM support, and hard exclusions for consequential consent.",
+  "permissions": [
+    "scripting",
+    "storage"
+  ],
+  "host_permissions": [
+    "<all_urls>"
+  ],
+  "background": {
+    "service_worker": "worker.js"
+  },
   "content_scripts": [
     {
-      "matches": [
-        "<all_urls>"
-      ],
-      "js": [
-        "content.js"
-      ],
+      "matches": ["<all_urls>"],
+      "js": ["bootstrap.js"],
       "run_at": "document_start",
       "all_frames": true,
       "match_about_blank": true,

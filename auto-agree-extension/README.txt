@@ -1,38 +1,26 @@
-Auto Agree Login Terms v2.0.0
+Auto Agree Login Terms v3.0
 
-Runtime architecture
-- Manifest V3 static isolated content script.
-- No background/service worker.
-- No network requests. No telemetry. No storage.
-- No extra API permissions; only all-site content-script matching required for cross-site automation.
+Purpose
+- Automatically checks routine mandatory Terms of Service / Privacy / User Agreement controls used as prerequisites for login, registration, verification-code flows, and similar account-access flows.
+- Does NOT automatically confirm consequential actions or attestations: purchases/orders, payment or debit authorization, loans/credit, investment-risk or trading authorization, insurance application/purchase, medical informed consent, employment contracts, arbitration/rights waivers/class-action waivers, electronic signatures, biometric/facial-recognition consent, powers of attorney/guarantees, auto-renewal, age/identity/fact attestations, marketing, cookies, CAPTCHA, or "remember me".
+- Industry names alone are not blocked: an insurance, investment, or payment service can still have an ordinary login Terms/Privacy checkbox that is safe for this extension to handle.
 
-Coverage
-- Native checkbox and agreement radio controls.
-- ARIA checkbox/radio/switch controls.
-- Common checkbox Web Components and framework wrappers.
-- Dynamic SPA insertion and re-rendering.
-- Hidden controls that later appear.
-- Text split across spans and legal links.
-- Classless visual checkbox fallback using geometry only after strong legal semantics.
-- Open and closed Shadow DOM (closed roots via chrome.dom.openOrClosedShadowRoot).
-- All matching frames plus about/data/blob/filesystem related-frame fallback.
-- Multi-language legal/assent vocabulary across major Chinese, European, Asian and RTL languages.
+Architecture
+- bootstrap.js: lightweight all-frame detector. Generic checkboxes alone do not wake the full engine; authentication/legal signals do. Large or truncated subtrees are deep-scanned only in low-priority time slices.
+- worker.js: event-driven MV3 service worker that injects engine.js only into the triggering document/frame.
+- engine.js: bounded incremental semantic engine with single-pass candidate snapshots, WeakRef candidate indexing for preflight, accessibility-name resolution, time-budgeted queues, open/closed Shadow DOM support, precise hit-target geometry fallback, state-verified clicking, and locally verified selector acceleration.
 
-Precision exclusions
-- Marketing/promotions/newsletters.
-- Cookie consent.
-- Remember-me / keep-signed-in.
-- Auto-renew/subscription consent.
-- CAPTCHA/human verification.
-- Age/identity factual attestations.
-- Optional third-party sharing / personalized advertising.
+Privacy / networking
+- No fetch/XHR/WebSocket/telemetry/analytics.
+- No page content is uploaded anywhere.
+- chrome.storage.local stores only a local per-origin selector after a successfully verified agreement click. Cached selectors are acceleration hints only and always go through the full semantic/risk decision again before clicking.
 
-Performance
-- One MutationObserver shared across document and ShadowRoots.
-- Incremental subtree walking; no repeated full-document scan fallback.
-- Mutation batches deduplicated by ancestor.
-- Bounded synchronous work, remainder scheduled with requestIdleCallback.
-- No global class/style mutation observation.
-- Reliable checkbox paths avoid geometry/layout reads.
-- Geometry is reserved for classless visual-control fallback.
-- Unknown-state custom controls are never blindly double-clicked.
+Install
+1. Remove or disable older Auto Agree versions so two versions cannot toggle the same control.
+2. Open chrome://extensions
+3. Enable Developer mode.
+4. Load unpacked and choose this folder.
+5. Allow site access on all sites.
+
+Minimum Chrome: 120
+Version: 3.0.0
