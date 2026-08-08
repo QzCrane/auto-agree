@@ -65,7 +65,7 @@
 
   function isProceedAction(el) {
     if (!(el instanceof Element)) return false;
-    if (el.matches?.('button,a[href],[role="button"]')) return true;
+    try { if (el.matches('button,a[href],[role="button"]')) return true; } catch (_) {}
     if (el instanceof HTMLInputElement) return /^(?:button|submit|image|reset)$/i.test(el.type || '');
     return false;
   }
@@ -136,62 +136,73 @@
       authorized.add(node);
       lease.push(node);
     }
-    // Current Engine invokes HTMLElement.click() synchronously in this same isolated world. If no
-    // click reaches the guard, revoke the unused authorization at the next microtask checkpoint.
     queueMicrotask(() => {
       for (const leased of lease) authorized.delete(leased);
     });
   }
 
-  // Generic classless wrappers are allowed only when locality is physically small and bounded.
-  // Do not use querySelector here: a trusted event is a hot path, and an arbitrary ancestor may
-  // contain an unbounded subtree or an unrelated consent control far away from the clicked target.
-  function isSmallLocalControlWrapper(root) {
-    if (!(root instanceof Element) || WIDE_CONTAINER.test(root.localName) || isProceedAction(root)) return false;
+  // Return one exact delegated control only if the wrapper can be proven small and unambiguous.
+  // The traversal is bounded from the first direct child onward; no querySelector walks an
+  // arbitrary trusted-event ancestor subtree.
+  function boundedUniqueDelegatedControl(root) {
+    if (!(root instanceof Element) || WIDE_CONTAINER.test(root.localName) || isProceedAction(root)) return null;
     const stack = [];
-    for (let child = root.firstElementChild; child; child = child.nextElementSibling) stack.push({ node: child, depth: 1 });
+    for (let child = root.firstElementChild; child; child = child.nextElementSibling) {
+      if (stack.length >= MAX_LOCAL_WRAPPER_NODES) return null;
+      stack.push({ node: child, depth: 1 });
+    }
     let visited = 0;
-    let foundControl = false;
+    let found = null;
     while (stack.length) {
       const entry = stack.pop();
-      if (++visited > MAX_LOCAL_WRAPPER_NODES) return false;
+      if (++visited > MAX_LOCAL_WRAPPER_NODES) return null;
       const node = entry.node;
       if (!(node instanceof Element)) continue;
-      if (isControl(node)) foundControl = true;
+      if (isControl(node)) {
+        if (found && found !== node) return null;
+        found = node;
+      }
       if (entry.depth >= MAX_LOCAL_CONTROL_DEPTH) continue;
       for (let child = node.firstElementChild; child; child = child.nextElementSibling) {
-        if (stack.length + visited >= MAX_LOCAL_WRAPPER_NODES) return false;
+        if (stack.length + visited >= MAX_LOCAL_WRAPPER_NODES) return null;
         stack.push({ node: child, depth: entry.depth + 1 });
       }
     }
-    return foundControl;
+    return found;
   }
 
-  function localInteractionRoot(target) {
-    if (!(target instanceof Element)) return null;
+  function localDelegationTarget(target) {
+    if (!(target instanceof Element) || isProceedAction(target)) return null;
+
     const semanticWrapper = target.closest?.('label,[role="checkbox"],[role="radio"],[role="switch"]');
-    if (semanticWrapper instanceof Element) return semanticWrapper;
+    if (semanticWrapper instanceof HTMLLabelElement) {
+      const associated = semanticWrapper.control;
+      if (associated instanceof Element && isControl(associated)) return associated;
+      return boundedUniqueDelegatedControl(semanticWrapper);
+    }
+    if (semanticWrapper instanceof Element && isControl(semanticWrapper)) return semanticWrapper;
     if (isControl(target)) return target;
-    if (isProceedAction(target)) return null;
+
     let p = target;
     for (let depth = 0; depth <= MAX_LOCAL_WRAPPER_DEPTH && p instanceof Element; depth++, p = composedParent(p)) {
       if (WIDE_CONTAINER.test(p.localName) || isProceedAction(p)) continue;
-      if (isSmallLocalControlWrapper(p)) return p;
+      const delegated = boundedUniqueDelegatedControl(p);
+      if (delegated) return delegated;
     }
     return null;
   }
 
   function beginLocalLease(event) {
-    const root = localInteractionRoot(event.target instanceof Element ? event.target : null);
-    if (!root) return;
-    causalLocal.add(root);
-    localLeaseByEvent.set(event, root);
+    const delegated = localDelegationTarget(event.target instanceof Element ? event.target : null);
+    if (!delegated) return;
+    causalLocal.add(delegated);
+    localLeaseByEvent.set(event, delegated);
   }
 
   function finishLocalLease(event) {
-    const root = localLeaseByEvent.get(event);
-    if (!root) return;
-    causalLocal.delete(root);
+    const delegated = localLeaseByEvent.get(event);
+    if (!delegated) return;
+    causalLocal.delete(delegated);
     localLeaseByEvent.delete(event);
   }
 
@@ -204,9 +215,8 @@
     const nodes = candidateNodes(event);
     if (!nodes.length) return;
     if (consumeAuthorization(nodes)) {
-      // The current Engine's authorized outer click may synchronously enter MAIN-world component
-      // code that delegates to a hidden/native descendant via .click(). Keep one narrow local lease
-      // only until this outer event finishes bubbling; stale MutationObservers run after it expires.
+      // A current-authorized outer click may synchronously enter page component code that delegates
+      // to one exact descendant control. The causal lease expires when the outer event bubbles out.
       beginLocalLease(event);
       return;
     }
