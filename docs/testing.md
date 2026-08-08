@@ -14,13 +14,18 @@ Two different test layers are mandatory.
 - production semantic severity properties;
 - worker exact-document injection and `documentLifecycle` rejection;
 - scheduler global/per-tab bounds, priority admission, aging/fairness and stale eviction;
-- service-worker restart with persistent profile state and pending update rehydration.
+- service-worker restart with persistent profile state and pending update rehydration;
+- sender-bound profile identity;
+- update rehydration ordering (`handover-guard.js` before `bootstrap.js`);
+- direct current-Engine handover authorization;
+- microtask expiry of unused direct authorization;
+- event-propagation scoping of local causal delegation, with no timer-based authorization lease.
 
 `python tools/package_extension.py --check` verifies the deterministic extension artifact.
 
 ### 2. Real unpacked-extension E2E
 
-CI installs a pinned Puppeteer test tool and launches the runner's real Chrome with `extension/` as an unpacked extension. This is intentionally different from the older in-page Chrome-API shim tests.
+CI installs a pinned Puppeteer test tool and launches the runner's real Chrome with `extension/` as an unpacked extension. This is intentionally different from older in-page Chrome-API shim tests.
 
 `tests/e2e-extension.mjs` covers:
 
@@ -33,10 +38,21 @@ CI installs a pinned Puppeteer test tool and launches the runner's real Chrome w
 - real iframe/all-frame injection;
 - real closed ShadowRoot discovery through the extension API path;
 - repeated forced MV3 service-worker termination before dynamic evidence appears;
-- v8 → v9 unpacked update with a dormant v8 Probe handing into v9 tiers and an already-active v8 Engine world surviving beside v9, with the v9 handover firewall required to block legacy mixed-state clicks while allowing exactly one current-authorized routine click, without reloading either page;
 - a 5,000-unrelated-checkbox tail-login profile scenario.
 
-With `--profile`, the E2E test records a DevTools CPU profile summary and page metrics to `artifacts/e2e-profile.json`. The latency assertion is deliberately broad; the profile is the authority for deciding future micro-optimizations, not a fragile single-machine microbenchmark.
+`tests/e2e-update.mjs` separately keeps real pages alive across a v8 → v9 unpacked extension replacement and proves:
+
+- no page reload occurred;
+- a dormant v8 Probe can hand into current v9 tiers;
+- an already-active v8 Engine world can remain simultaneously observable with a current v9 Engine world;
+- the v9 handover guard is physically present before post-update behavior is exercised;
+- a current routine agreement receives exactly one authorized click;
+- a mixed-state agreement that v8 would click twice receives exactly zero stale-generation clicks;
+- a genuine trusted browser click on a small custom Terms wrapper may still synchronously delegate one page-owned synthetic descendant click.
+
+The last three assertions are deliberately behavioral. Engine version sentinels alone are not accepted as proof that one generation owns the action surface.
+
+With `--profile`, the real-extension E2E records a DevTools CPU profile summary and page metrics to `artifacts/e2e-profile.json`. The latency assertion is deliberately broad; the profile is the authority for deciding future micro-optimizations, not a fragile single-machine microbenchmark.
 
 ## Regression corpus
 
@@ -48,4 +64,12 @@ MV3 workers are expected to disappear. Tests must assume all worker globals can 
 
 ## Update-transition policy
 
-An extension update can replace the Worker while already-open pages still exist. v8 introduced update rehydration. Real v8→v9 testing proved that Chrome can retain an executable old Engine isolated world while creating the new generation. v9 therefore establishes a generation handover firewall first: trusted user clicks always pass, current Engine clicks require one-shot authorization, and stale-generation synthetic agreement clicks are blocked. The update gate uses a mixed-state discriminator that v8 would click and v9 must refuse, so sentinel coexistence cannot be mistaken for safety.
+An extension update can replace the Worker while already-open pages still exist. v8 introduced update rehydration. Real v8→v9 testing proved that Chrome can retain an executable old Engine isolated world while creating the new generation.
+
+The update gate therefore applies three independent tests:
+
+1. **Presence:** the current handover guard and Engine exist where expected.
+2. **Revocation:** a behavior that uniquely distinguishes stale v8 semantics (`aria-checked="mixed"`) must not produce a click after the guard is established.
+3. **Compatibility:** a real user-caused local wrapper delegation must still work exactly once.
+
+A trusted/local causal exception is confined to one DOM event propagation. Capture phase grants the narrow wrapper lease; bubble phase revokes it. Broad page/form containers are excluded, and no `setTimeout` lease is allowed. This rule exists because real Chrome disproved the simpler assumption that one isolated-world microtask lifetime necessarily spans the corresponding MAIN-world page handler.
