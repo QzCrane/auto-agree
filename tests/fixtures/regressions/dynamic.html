@@ -26,13 +26,15 @@ window.insertUserDelegatedTerms=()=>{
   });
 };
 window.insertExternalIdrefUnknown=()=>{
-  document.querySelector('#mount').innerHTML='<form><input type="email" value="user@example.com"><div id="external-unknown" role="checkbox" aria-labelledby="far-terms-label" data-clicks="0"></div><button type="button">Login</button></form>';
   document.querySelector('#external-filler')?.remove();
   document.querySelector('#far-terms-label')?.remove();
   const filler=document.createElement('div');filler.id='external-filler';
   for(let i=0;i<72;i++){const span=document.createElement('span');span.textContent='neutral '+i;filler.append(span);}
   document.body.append(filler);
   const label=document.createElement('div');label.id='far-terms-label';label.textContent='I agree to the Terms of Service';document.body.append(label);
+  // Build the accessibility target first. Both old and current Engines now observe a complete
+  // aria-labelledby graph from the moment the control itself enters the DOM.
+  document.querySelector('#mount').innerHTML='<form><input type="email" value="user@example.com"><div id="external-unknown" role="checkbox" aria-labelledby="far-terms-label" data-clicks="0"></div><button type="button">Login</button></form>';
   window.dynamicClicks=0;
   document.querySelector('#external-unknown').addEventListener('click',event=>{
     window.dynamicClicks++;
