@@ -185,9 +185,6 @@ await withServer(async base=>{
     const delegatedResult=await activePage.$eval('#delegated-input',el=>({checked:el.checked,windowClicks:Number(window.dynamicClicks||0)}));
     assert.deepEqual(delegatedResult,{checked:true,windowClicks:1},'trusted local wrapper delegation must remain functional under the update firewall');
 
-    // Directly exercise synthetic click authority from the surviving old v9 isolated world. The
-    // control is mixed so current v10 Engine will refuse it; any page click means the current guard
-    // failed to understand the external aria-labelledby legal relation and let stale authority pass.
     await activePage.evaluate(()=>{window.clearRoutineLogin();window.insertExternalIdrefUnknown();});
     await evaluateInExecutionContext(activePage,oldWorld.id,"document.querySelector('#external-unknown')?.click(); true");
     await new Promise(resolve=>setTimeout(resolve,250));
@@ -199,6 +196,22 @@ await withServer(async base=>{
     await new Promise(resolve=>setTimeout(resolve,350));
     const wideCausalClicks=await activePage.$eval('#wide-terms',el=>Number(el.dataset.clicks||0));
     assert.equal(wideCausalClicks,0,'unrelated trusted action must not authorize a distant sibling Terms synthetic click');
+
+    // A small generic wrapper containing multiple possible delegated controls is ambiguous. v10
+    // must not give the wrapper a regional capability that either control can consume.
+    await activePage.evaluate(()=>{window.clearRoutineLogin();window.insertAmbiguousCausalTrap();});
+    await activePage.click('#ambiguous-wrapper',{offset:{x:2,y:2}});
+    await new Promise(resolve=>setTimeout(resolve,350));
+    const ambiguousCausalClicks=await activePage.$eval('#ambiguous-terms',el=>Number(el.dataset.clicks||0));
+    assert.equal(ambiguousCausalClicks,0,'multi-control generic wrapper must fail closed instead of leasing a region');
+
+    // Action exclusion dominates semantic wrappers. A button nested inside a label cannot mint a
+    // causal lease for another control merely because label is on the composed path.
+    await activePage.evaluate(()=>{window.clearRoutineLogin();window.insertActionInsideLabelTrap();});
+    await activePage.click('#label-action');
+    await new Promise(resolve=>setTimeout(resolve,350));
+    const actionInsideLabelClicks=await activePage.$eval('#label-terms',el=>Number(el.dataset.clicks||0));
+    assert.equal(actionInsideLabelClicks,0,'proceed action inside label must not authorize label/sibling Terms click');
 
     ext=(await browser.extensions()).get(initialId);
     console.log('e2e-update:',JSON.stringify({
@@ -215,7 +228,9 @@ await withServer(async base=>{
       activeMixedClicks:0,
       trustedDelegatedClicks:1,
       externalIdrefClicks:0,
-      wideCausalClicks:0
+      wideCausalClicks:0,
+      ambiguousCausalClicks:0,
+      actionInsideLabelClicks:0
     }));
     console.log('e2e-update-worlds:',JSON.stringify(activeAfterMixed));
     console.log('e2e-update: PASS');
