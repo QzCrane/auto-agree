@@ -52,11 +52,15 @@ jobs:
             sudo apt-get install -y xvfb
           fi
           xvfb-run --help >/dev/null
-      - name: Run real headed unpacked-extension E2E and profile
+      - name: Run real headed unpacked-extension behavior E2E and profile
+        env:
+          AUTO_AGREE_HEADED: '1'
+        run: xvfb-run -a node tests/e2e-extension.mjs --profile
+      - name: Run real unpacked v7-to-v8 update transition
         env:
           AUTO_AGREE_PREVIOUS_REF: ${{ github.event.pull_request.base.sha || github.event.before }}
           AUTO_AGREE_HEADED: '1'
-        run: xvfb-run -a node tests/e2e-extension.mjs --profile
+        run: xvfb-run -a node tests/e2e-update.mjs
       - name: Print E2E profile evidence
         if: always()
         run: |
