@@ -41,3 +41,20 @@ export async function extensionWorldSentinels(page) {
     try { await session.detach(); } catch (_) {}
   }
 }
+
+export async function evaluateInExecutionContext(page, contextId, expression) {
+  const session = await page.createCDPSession();
+  try {
+    await session.send('Runtime.enable');
+    const {result, exceptionDetails} = await session.send('Runtime.evaluate', {
+      contextId,
+      returnByValue: true,
+      awaitPromise: true,
+      expression
+    });
+    if (exceptionDetails) throw new Error(exceptionDetails.text || 'execution-context evaluation failed');
+    return result?.value;
+  } finally {
+    try { await session.detach(); } catch (_) {}
+  }
+}
