@@ -345,7 +345,7 @@ function profileOriginForSender(sender) {
 
 async function protectAndRehydrateTab(tabId) {
   const target = { tabId, allFrames: true };
-  await scheduleInjection(target, ['semantic-core.js', 'handover-guard.js'], 4);
+  await scheduleInjection(target, ['generation-lease.js', 'semantic-core.js', 'handover-guard.js'], 4);
   await scheduleInjection(target, ['bootstrap.js'], 3);
 }
 
@@ -438,7 +438,9 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   const key = sender.documentId || `${target.tabId}:${sender.frameId ?? 0}`;
   const isGate = message.type === 'AUTO_AGREE_GATE';
   const map = isGate ? gateInflight : engineInflight;
-  const files = isGate ? ['semantic-core.js', 'gate.js'] : ['semantic-core.js', 'handover-guard.js', 'risk-core.js', 'engine.js'];
+  const files = isGate
+    ? ['generation-lease.js', 'semantic-core.js', 'gate.js']
+    : ['generation-lease.js', 'semantic-core.js', 'handover-guard.js', 'risk-core.js', 'engine.js'];
   let promise = map.get(key);
   if (!promise) {
     promise = scheduleInjection(target, files, isGate ? 1 : 2).finally(() => map.delete(key));
