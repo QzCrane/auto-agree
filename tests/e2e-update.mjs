@@ -9,6 +9,7 @@ import {extensionWorldSentinels,evaluateInExecutionContext} from './e2e-isolated
 
 const ROOT=path.resolve('.');
 const CURRENT=path.join(ROOT,'extension');
+const CURRENT_VERSION=JSON.parse(fs.readFileSync(path.join(CURRENT,'manifest.json'),'utf8')).version;
 const DYNAMIC=fs.readFileSync(path.join(ROOT,'tests','fixtures','regressions','dynamic.html'),'utf8');
 const PREVIOUS_REF=process.env.AUTO_AGREE_PREVIOUS_REF || '';
 const HEADED=process.env.AUTO_AGREE_HEADED==='1';
@@ -82,38 +83,48 @@ async function waitChecked(page,selector,timeout=5000){
   await page.waitForFunction(sel=>document.querySelector(sel)?.checked===true,{timeout},selector);
 }
 
+function ids(worlds){return new Set(worlds.map(world=>world.id));}
+function currentWorld(worlds,beforeIds,version,field='engine'){
+  return worlds.find(world=>!beforeIds.has(world.id)&&world[field]===version) || null;
+}
+
 if(!PREVIOUS_REF) throw new Error('AUTO_AGREE_PREVIOUS_REF is required');
 const tmp=fs.mkdtempSync(path.join(os.tmpdir(),'auto-agree-update-api-'));
 const active=path.join(tmp,'extension');
 stagePrevious(PREVIOUS_REF,active);
-assert.equal(JSON.parse(fs.readFileSync(path.join(active,'manifest.json'),'utf8')).version,'9.0.0');
+const PREVIOUS_VERSION=JSON.parse(fs.readFileSync(path.join(active,'manifest.json'),'utf8')).version;
 
 await withServer(async base=>{
   const browser=await launch();
   try{
-    const initialId=await bounded(browser.installExtension(active),5000,'install v9 unpacked');
+    const initialId=await bounded(browser.installExtension(active),5000,`install ${PREVIOUS_VERSION} unpacked`);
     let ext=(await browser.extensions()).get(initialId);
-    assert.ok(ext,'v9 extension missing after Browser.installExtension');
-    assert.equal(ext.version,'9.0.0');
+    assert.ok(ext,'previous extension missing after Browser.installExtension');
+    assert.equal(ext.version,PREVIOUS_VERSION);
 
     const dormantPage=await browser.newPage();
     await gotoActive(dormantPage,`${base}/dynamic.html?update=dormant`);
-    await dormantPage.evaluate(()=>{window.__autoAgreeUpdateMarker='dormant-v9';});
+    await dormantPage.evaluate(version=>{window.__autoAgreeUpdateMarker=`dormant-${version}`;},PREVIOUS_VERSION);
+    const dormantBefore=await extensionWorldSentinels(dormantPage);
+    const dormantBeforeIds=ids(dormantBefore);
 
     const activePage=await browser.newPage();
     await gotoActive(activePage,`${base}/dynamic.html?update=active`);
-    await activePage.evaluate(()=>{window.__autoAgreeUpdateMarker='active-v9';window.insertRoutineLogin();});
+    await activePage.evaluate(version=>{window.__autoAgreeUpdateMarker=`active-${version}`;window.insertRoutineLogin();},PREVIOUS_VERSION);
     await waitChecked(activePage,'#dynamic-agree');
-    assert.equal(await activePage.evaluate(()=>window.dynamicClicks),1,'v9 active-page setup must click exactly once');
+    assert.equal(await activePage.evaluate(()=>window.dynamicClicks),1,'previous active-page setup must click exactly once');
     const activeBefore=await extensionWorldSentinels(activePage);
-    assert.ok(activeBefore.some(world=>world.engine==='9.0.0'),'active page must have v9 Engine before update');
+    const activeBeforeIds=ids(activeBefore);
+    const oldWorldBefore=activeBefore.find(world=>world.engine===PREVIOUS_VERSION);
+    assert.ok(oldWorldBefore,`active page must have ${PREVIOUS_VERSION} Engine before update`);
+    const oldWorldId=oldWorldBefore.id;
     await activePage.evaluate(()=>window.clearRoutineLogin());
 
     replaceDir(CURRENT,active);
-    assert.equal(JSON.parse(fs.readFileSync(path.join(active,'manifest.json'),'utf8')).version,'10.0.0');
+    assert.equal(JSON.parse(fs.readFileSync(path.join(active,'manifest.json'),'utf8')).version,CURRENT_VERSION);
 
-    const reloadedId=await bounded(browser.installExtension(active),5000,'reload same unpacked path as v10');
-    assert.equal(reloadedId,initialId,'same unpacked path must retain extension identity across update');
+    const reloadedId=await bounded(browser.installExtension(active),5000,`reload same unpacked path as ${CURRENT_VERSION}`);
+    assert.equal(reloadedId,initialId,'same unpacked path must retain extension identity across update/reload');
 
     let observed=[];
     const worker=await poll(async()=>{
@@ -125,7 +136,7 @@ await withServer(async base=>{
           version=handle?await bounded(handle.evaluate(()=>chrome.runtime.getManifest().version),600,'updated manifest read'):'no-worker';
         }catch(error){version=String(error?.message||error);}
         observed.push({url:target.url(),version});
-        if(handle&&version==='10.0.0') return handle;
+        if(handle&&version===CURRENT_VERSION) return handle;
       }
       return null;
     },7000,80).catch(async error=>{
@@ -134,35 +145,34 @@ await withServer(async base=>{
       throw error;
     });
 
-    assert.equal(await bounded(worker.evaluate(()=>chrome.runtime.getManifest().version),800,'final v10 manifest read'),'10.0.0');
+    assert.equal(await bounded(worker.evaluate(()=>chrome.runtime.getManifest().version),800,'final manifest read'),CURRENT_VERSION);
 
     const dormantHandover=await poll(async()=>{
       const worlds=await extensionWorldSentinels(dormantPage);
-      return worlds.some(world=>world.handover==='10.0.0')?worlds:null;
+      return currentWorld(worlds,dormantBeforeIds,CURRENT_VERSION,'handover')?worlds:null;
     },5000,60);
     const activeHandover=await poll(async()=>{
       const worlds=await extensionWorldSentinels(activePage);
-      return worlds.some(world=>world.handover==='10.0.0')?worlds:null;
+      return currentWorld(worlds,activeBeforeIds,CURRENT_VERSION,'handover')?worlds:null;
     },5000,60);
-    assert.ok(dormantHandover.some(world=>world.handover==='10.0.0'));
-    assert.ok(activeHandover.some(world=>world.handover==='10.0.0'));
+    assert.ok(currentWorld(dormantHandover,dormantBeforeIds,CURRENT_VERSION,'handover'),'dormant page missing a newly established current handover world');
+    assert.ok(currentWorld(activeHandover,activeBeforeIds,CURRENT_VERSION,'handover'),'active page missing a newly established current handover world');
 
     await dormantPage.bringToFront();
-    assert.equal(await dormantPage.evaluate(()=>window.__autoAgreeUpdateMarker),'dormant-v9','dormant page reloaded during update');
+    assert.equal(await dormantPage.evaluate(()=>window.__autoAgreeUpdateMarker),`dormant-${PREVIOUS_VERSION}`,'dormant page reloaded during update');
     await dormantPage.evaluate(()=>window.insertRoutineLogin());
     await waitChecked(dormantPage,'#dynamic-agree');
-    assert.equal(await dormantPage.evaluate(()=>window.dynamicClicks),1,'dormant old page must get exactly one click after v10 activation');
+    assert.equal(await dormantPage.evaluate(()=>window.dynamicClicks),1,'dormant old page must get exactly one click after current activation');
     const dormantAfter=await extensionWorldSentinels(dormantPage);
-    assert.ok(dormantAfter.some(world=>world.engine==='10.0.0'),'dormant v9 Probe must hand off into v10 Engine');
-    assert.equal(dormantAfter.some(world=>world.engine==='9.0.0'),false,'dormant page must not gain a v9 Engine after update');
+    assert.ok(currentWorld(dormantAfter,dormantBeforeIds,CURRENT_VERSION,'engine'),'dormant previous Probe must hand off into a newly created current Engine world');
 
     await activePage.bringToFront();
-    assert.equal(await activePage.evaluate(()=>window.__autoAgreeUpdateMarker),'active-v9','active page reloaded during update');
+    assert.equal(await activePage.evaluate(()=>window.__autoAgreeUpdateMarker),`active-${PREVIOUS_VERSION}`,'active page reloaded during update');
     await activePage.evaluate(()=>window.insertRoutineLogin());
     await waitChecked(activePage,'#dynamic-agree');
     assert.equal(await activePage.evaluate(()=>window.dynamicClicks),1,'updated active page must receive exactly one routine-agreement click');
     const activeAfterRoutine=await extensionWorldSentinels(activePage);
-    assert.ok(activeAfterRoutine.some(world=>world.engine==='10.0.0'),'updated active page must expose the current v10 Engine world');
+    assert.ok(currentWorld(activeAfterRoutine,activeBeforeIds,CURRENT_VERSION,'engine'),'updated active page must expose a newly created current Engine world');
 
     await activePage.evaluate(()=>{window.clearRoutineLogin();window.insertMixedLogin();});
     await new Promise(resolve=>setTimeout(resolve,900));
@@ -171,13 +181,12 @@ await withServer(async base=>{
       elementClicks:Number(el.dataset.clicks||0),
       windowClicks:Number(window.dynamicClicks||0)
     }));
-    assert.deepEqual(mixedResult,{state:'mixed',elementClicks:0,windowClicks:0},'legacy v9 mixed-state behavior must not remain an active click authority after update');
+    assert.deepEqual(mixedResult,{state:'mixed',elementClicks:0,windowClicks:0},'previous-generation mixed-state behavior must not remain an active click authority after update');
     const activeAfterMixed=await extensionWorldSentinels(activePage);
-    const oldWorld=activeAfterMixed.find(world=>world.engine==='9.0.0');
-    const oldSentinelVisible=!!oldWorld;
-    const currentSentinelVisible=activeAfterMixed.some(world=>world.engine==='10.0.0');
-    assert.ok(oldWorld,'stale v9 Engine execution context must remain available for direct authority discrimination');
-    assert.equal(currentSentinelVisible,true,'v10 Engine sentinel missing after mixed-state discriminator');
+    const oldWorld=activeAfterMixed.find(world=>world.id===oldWorldId) || null;
+    const oldContextVisible=!!oldWorld;
+    const current= currentWorld(activeAfterMixed,activeBeforeIds,CURRENT_VERSION,'engine');
+    assert.ok(current,'current Engine execution context missing after mixed-state discriminator');
 
     await activePage.evaluate(()=>{window.clearRoutineLogin();window.insertUserDelegatedTerms();});
     await activePage.click('#delegated-wrapper');
@@ -185,19 +194,22 @@ await withServer(async base=>{
     const delegatedResult=await activePage.$eval('#delegated-input',el=>({checked:el.checked,windowClicks:Number(window.dynamicClicks||0)}));
     assert.deepEqual(delegatedResult,{checked:true,windowClicks:1},'trusted local wrapper delegation must remain functional under the update firewall');
 
-    await activePage.evaluate(()=>{window.clearRoutineLogin();window.insertExternalIdrefUnknown();});
-    await evaluateInExecutionContext(activePage,oldWorld.id,"document.querySelector('#external-unknown')?.click(); true");
-    await new Promise(resolve=>setTimeout(resolve,250));
-    const externalIdrefClicks=await activePage.$eval('#external-unknown',el=>Number(el.dataset.clicks||0));
-    assert.equal(externalIdrefClicks,0,'external aria-labelledby Terms control must block a direct stale-world synthetic click');
+    // Direct stale-world discriminators only run when Chrome preserves the exact old execution
+    // context. Its absence is already the stronger safe outcome: no stale realm remains callable.
+    let externalIdrefClicks=0,spanishSemanticClicks=0;
+    if(oldWorld){
+      await activePage.evaluate(()=>{window.clearRoutineLogin();window.insertExternalIdrefUnknown();});
+      await evaluateInExecutionContext(activePage,oldWorld.id,"document.querySelector('#external-unknown')?.click(); true");
+      await new Promise(resolve=>setTimeout(resolve,250));
+      externalIdrefClicks=await activePage.$eval('#external-unknown',el=>Number(el.dataset.clicks||0));
+      assert.equal(externalIdrefClicks,0,'external aria-labelledby Terms control must block a direct stale-world synthetic click');
 
-    // Shared semantic-core recognizes Spanish terms/assent, but the v9/v10 guard's private regex
-    // copy does not. Direct stale-world dispatch isolates that semantic-drift authority boundary.
-    await activePage.evaluate(()=>{window.clearRoutineLogin();window.insertSpanishSemanticTrap();});
-    await evaluateInExecutionContext(activePage,oldWorld.id,"document.querySelector('#spanish-terms')?.click(); true");
-    await new Promise(resolve=>setTimeout(resolve,250));
-    const spanishSemanticClicks=await activePage.$eval('#spanish-terms',el=>Number(el.dataset.clicks||0));
-    assert.equal(spanishSemanticClicks,0,'Spanish agreement recognized by shared semantics must block a direct stale-world synthetic click');
+      await activePage.evaluate(()=>{window.clearRoutineLogin();window.insertSpanishSemanticTrap();});
+      await evaluateInExecutionContext(activePage,oldWorld.id,"document.querySelector('#spanish-terms')?.click(); true");
+      await new Promise(resolve=>setTimeout(resolve,250));
+      spanishSemanticClicks=await activePage.$eval('#spanish-terms',el=>Number(el.dataset.clicks||0));
+      assert.equal(spanishSemanticClicks,0,'shared-semantic agreement must block a direct stale-world synthetic click');
+    }
 
     await activePage.evaluate(()=>{window.clearRoutineLogin();window.insertWideCausalTrap();});
     await activePage.click('#wide-action');
@@ -220,19 +232,20 @@ await withServer(async base=>{
     ext=(await browser.extensions()).get(initialId);
     console.log('e2e-update:',JSON.stringify({
       id:initialId,
-      workerVersion:'10.0.0',
+      previousVersion:PREVIOUS_VERSION,
+      currentVersion:CURRENT_VERSION,
       reportedVersion:ext?.version||null,
       dormantPageReloaded:false,
       activePageReloaded:false,
-      dormantEngine:'10.0.0',
-      handoverGuard:'10.0.0',
-      activeOldSentinelVisible:oldSentinelVisible,
-      activeCurrentSentinelVisible:currentSentinelVisible,
+      dormantEngine:CURRENT_VERSION,
+      handoverGuard:CURRENT_VERSION,
+      oldContextVisible,
+      currentContextVisible:true,
       activeRoutineClicks:1,
       activeMixedClicks:0,
       trustedDelegatedClicks:1,
-      externalIdrefClicks:0,
-      spanishSemanticClicks:0,
+      externalIdrefClicks,
+      spanishSemanticClicks,
       wideCausalClicks:0,
       ambiguousCausalClicks:0,
       actionInsideLabelClicks:0

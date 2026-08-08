@@ -23,8 +23,9 @@ Two different test layers are mandatory.
 - shared-semantic handover classification including explicit ARIA IDREFs and native external labels;
 - direct current-Engine handover authorization;
 - microtask expiry of unused direct authorization;
-- event-propagation scoping of local causal delegation, bounded/unique delegated-control discovery, action-root exclusion and no timer-based authorization lease;
-- release-transition CI lifecycle: the version-specific previous→current browser test is PR-scoped and stages the PR base, never arbitrary `push` history.
+- local causal delegation stores the exact source `Event` and accepts a nested synthetic click only while `sourceEvent.eventPhase != Event.NONE`;
+- bounded/unique delegated-control discovery, action-root exclusion and no timer-based authorization lease;
+- release-transition CI lifecycle: the previous→current browser test is PR-scoped, stages the PR base, derives versions from manifests, and identifies old/current worlds by execution-context identity rather than one hardcoded release pair.
 
 `python tools/package_extension.py --check` verifies the deterministic extension artifact. The packager derives its executable set from the complete production `extension/*.js` closure; a new runtime module therefore cannot be silently omitted merely because a second static package list was not updated.
 
@@ -43,6 +44,9 @@ CI installs a pinned Puppeteer test tool and launches the runner's real Chrome w
 - real iframe/all-frame injection;
 - real closed ShadowRoot discovery through the extension API path;
 - repeated forced MV3 service-worker termination before dynamic evidence appears;
+- stopped-propagation causal delegation with two required branches:
+  - synchronous descendant `click()` during the exact trusted source event -> one click;
+  - descendant `click()` in a later task after source dispatch ended -> zero clicks;
 - a 5,000-unrelated-checkbox tail-login profile scenario.
 
 `tests/e2e-generation-lease.mjs` is a reusable future-generation probe. It:
@@ -57,11 +61,13 @@ CI installs a pinned Puppeteer test tool and launches the runner's real Chrome w
 
 This distinguishes a JavaScript execution context remaining observable from that context retaining extension action authority.
 
-`tests/e2e-update.mjs` separately keeps real pages alive across the release's previous → current unpacked-extension replacement and proves:
+`tests/e2e-update.mjs` separately keeps real pages alive across the PR base → current unpacked-extension replacement and proves:
 
+- `previousVersion` is read from the staged PR-base manifest and `currentVersion` from the candidate manifest;
 - no page reload occurred;
 - a dormant old Probe can hand into current tiers;
 - an already-active old Engine world can remain simultaneously observable with a current Engine world;
+- old/current worlds are distinguished by execution-context IDs even if both report the same manifest version;
 - the current lease/semantic/guard protection closure is physically present before post-update behavior is exercised;
 - a current routine agreement receives exactly one authorized click;
 - a mixed-state agreement that historical semantics would toggle receives zero stale-generation clicks;
@@ -73,13 +79,15 @@ This distinguishes a JavaScript execution context remaining observable from that
 
 These assertions are deliberately behavioral. Engine version sentinels alone are not accepted as proof that one generation owns the action surface.
 
-The version-transition step runs only for `pull_request`, using `github.event.pull_request.base.sha` as `AUTO_AGREE_PREVIOUS_REF`. Main pushes still run deterministic core plus current-version real Chrome E2E/profile and cooperative generation probe, but do **not** replay an arbitrary historical version-specific transition. Each future release PR deliberately advances its transition from the actual PR base.
+The transition step runs only for `pull_request`, using `github.event.pull_request.base.sha` as `AUTO_AGREE_PREVIOUS_REF`. Main pushes still run deterministic core plus current-version real Chrome E2E/profile and cooperative generation probe, but do **not** replay arbitrary push history. The harness itself is version-agnostic: major releases, patch releases and same-version hotfix/reload candidates use the same state-transition machinery.
 
 With `--profile`, the real-extension E2E records a DevTools CPU profile summary and page metrics to `artifacts/e2e-profile.json`. The latency assertion is deliberately broad; the profile is the authority for deciding future micro-optimizations, not a fragile single-machine microbenchmark.
 
 ## Regression corpus
 
 `tests/fixtures/regressions/` is the canonical privacy-safe structural corpus. A real-world miss or false positive must be reduced to a minimal fixture before the fix is considered closed. Do not copy credentials, session identifiers, private URLs, or unnecessary proprietary page markup into fixtures.
+
+`causal-propagation.html` is a permanent authority-lifetime fixture, not merely a one-off reproduction. It ensures page-controlled propagation stopping cannot turn a same-event exception into future asynchronous authority.
 
 ## Service-worker termination policy
 
@@ -89,16 +97,18 @@ The profile-governance test intentionally treats cache/storage policy as a long-
 
 ## Update-transition policy
 
-An extension update can replace the Worker while already-open pages still exist. v8 introduced update rehydration; v9 proved non-cooperative old/new Engine coexistence; v10 adds prior-generation cooperation for future transitions.
+An extension update can replace the Worker while already-open pages still exist. v8 introduced update rehydration; v9 proved non-cooperative old/new Engine coexistence; v10 adds prior-generation cooperation for future transitions and post-merge hardening binds local delegated authority to a live source Event.
 
 The update gate therefore applies four independent tests:
 
 1. **Presence:** the current lease, shared semantics, handover guard and Engine exist where expected.
 2. **Historical revocation:** behaviors that distinguish stale prior semantics must not produce a click after the current firewall is established.
 3. **Cooperative revocation:** a current generation that later becomes stale must lose its own isolated-world `.click()` authority when its Runtime is invalidated or version-mismatched.
-4. **Compatibility:** real trusted user interaction and legitimate one-event local wrapper delegation must still work exactly once.
+4. **Compatibility without authority leakage:** trusted user interaction and legitimate one-event local wrapper delegation work exactly once, while stopped propagation cannot preserve a causal token beyond source-event dispatch.
 
-A trusted/local causal exception is confined to one DOM event propagation. Capture phase grants the narrow wrapper lease; bubble phase revokes it. Broad page/form containers and proceed actions are excluded, ambiguous wrappers fail closed, and no `setTimeout` lease is allowed.
+A trusted/local causal exception is confined to one **live source Event dispatch**. The delegated control maps to that exact source Event; nested use is allowed only while `eventPhase != NONE` and is one-shot. Bubble cleanup is an eager cleanup path, not the security boundary. Broad page/form containers and proceed actions are excluded, ambiguous wrappers fail closed, and no `setTimeout` lease is allowed.
+
+The transition harness must not hardcode a release pair. It derives base/current versions from manifests and uses execution-context IDs as the primary old/current identity. This permits the same gate to test a v10→v11 release and a v10.0.0→v10.0.0 hotfix/reload without confusing equal version text for one generation.
 
 ## Packaging policy
 

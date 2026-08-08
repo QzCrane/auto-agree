@@ -23,7 +23,7 @@ async function withServer(fn){
     const route=(req.url||'/').split('?')[0];
     let body='';
     const table={
-      '/positive-login.html':'positive-login.html','/terse-validity.html':'terse-validity.html','/marketing-negative.html':'marketing-negative.html','/fragmented-risk.html':'fragmented-risk.html','/footer-noise.html':'footer-noise.html','/trae-classless.html':'trae-classless.html','/mixed-control.html':'mixed-control.html','/classless-unknown-one-shot.html':'classless-unknown-one-shot.html','/dynamic.html':'dynamic.html','/iframe-parent.html':'iframe-parent.html','/iframe-child.html':'iframe-child.html','/closed-shadow.html':'closed-shadow.html'
+      '/positive-login.html':'positive-login.html','/terse-validity.html':'terse-validity.html','/marketing-negative.html':'marketing-negative.html','/fragmented-risk.html':'fragmented-risk.html','/footer-noise.html':'footer-noise.html','/trae-classless.html':'trae-classless.html','/mixed-control.html':'mixed-control.html','/classless-unknown-one-shot.html':'classless-unknown-one-shot.html','/causal-propagation.html':'causal-propagation.html','/dynamic.html':'dynamic.html','/iframe-parent.html':'iframe-parent.html','/iframe-child.html':'iframe-child.html','/closed-shadow.html':'closed-shadow.html'
     };
     if(route==='/performance-tail.html') body=perfTail(); else if(table[route]) body=fixture(table[route]); else {res.statusCode=404; body='not found';}
     res.setHeader('content-type','text/html; charset=utf-8'); res.end(body);
@@ -139,6 +139,21 @@ async function basicMatrix(base,browser){
 
   await gotoActive(page,`${base}/closed-shadow.html`);
   await page.$eval('#host',host=>host.focusInside()); await page.waitForFunction(()=>document.querySelector('#host')?.isChecked()===true,{timeout:3000});
+
+  // A local causal lease is supposed to exist only during the trusted source event's propagation.
+  // stopPropagation() prevents the guard's window-bubble cleanup, so this fixture distinguishes a
+  // true event-scoped authority model from a leaked WeakSet token that survives into a later task.
+  await gotoActive(page,`${base}/causal-propagation.html`);
+  await poll(async()=>{
+    const worlds=await extensionWorldSentinels(page);
+    return worlds.some(world=>world.handover==='10.0.0'&&world.engine==='10.0.0');
+  },3000,60);
+  await page.click('#sync-visual');
+  await new Promise(resolve=>setTimeout(resolve,100));
+  assert.deepEqual(await page.evaluate(()=>({checked:document.querySelector('#sync-input').checked,clicks:window.syncClicks})),{checked:true,clicks:1},'same-event synchronous page-owned delegation must remain allowed even when propagation is stopped');
+  await page.click('#async-visual');
+  await new Promise(resolve=>setTimeout(resolve,180));
+  assert.deepEqual(await page.evaluate(()=>({checked:document.querySelector('#async-input').checked,clicks:window.asyncClicks})),{checked:false,clicks:0},'stopped source-event propagation must not leak causal authority into a later task');
   await page.close();
 }
 

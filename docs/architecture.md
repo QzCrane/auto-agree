@@ -156,12 +156,18 @@ Real Chrome testing showed two distinct update facts:
 
 v10 exploits the second fact through the cooperative generation lease. A v10→future stale realm self-revokes its ordinary Auto Agree `.click()` primitive synchronously, before DOM dispatch. v9→v10 still requires the handover firewall because v9 never shipped that cooperative mechanism.
 
-The guard uses two deliberately different lease scopes:
+The guard uses two deliberately different authority scopes:
 
 1. **Direct current-Engine authorization.** Immediately before `.click()`, current Engine authorizes the exact target/ancestor chain in the new isolated world. The click consumes that one-shot authorization. If no click event appears, unused authorization expires at the next microtask checkpoint.
-2. **Local causal delegation.** A trusted user event or an already-authorized current Engine click may enter a small checkbox/control wrapper whose page handler synchronously delegates to a descendant with `.click()`. The guard grants one descendant causal lease only for that same DOM event propagation. Bubble phase revokes it before later MutationObserver work. Broad form/dialog/page containers and proceed actions are never causal roots; ambiguous wrappers with multiple candidate controls fail closed.
+2. **Local causal delegation.** A trusted user event or an already-authorized current Engine click may enter a small checkbox/control wrapper whose page handler synchronously delegates to a descendant with `.click()`. The guard maps the exact delegated control to the **exact authorizing source `Event`**. A nested synthetic click is accepted only while that source event is still in browser dispatch (`sourceEvent.eventPhase != Event.NONE`) and consumes the mapping once. Bubble cleanup remains an eager release optimization, but correctness does not depend on bubble propagation reaching the guard. Therefore `stopPropagation()` cannot extend authority into a later task. Broad form/dialog/page containers and proceed actions are never causal roots; ambiguous wrappers with multiple candidate controls fail closed.
 
 The guard's semantic inspection is bounded and resolves explicit `aria-labelledby` / `aria-describedby` references and native external labels. It cannot use an unbounded generic descendant-control query to mint authority.
+
+## Release-transition identity
+
+The real-browser update harness stages the exact PR base and reads both `previousVersion` and `currentVersion` from their manifests. It does **not** encode a specific historical version pair.
+
+Old/current isolated worlds are distinguished primarily by **execution-context identity**, not version text. This is required for same-version hotfix/reload testing, where two valid contexts may both report `10.0.0` while only one belongs to the post-rehydration generation.
 
 ## Lifecycle and ownership
 
