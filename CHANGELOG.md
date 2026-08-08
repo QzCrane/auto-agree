@@ -1,5 +1,19 @@
 # Changelog
 
+## 10.0.0 — 2026-08-09
+
+- Added a **cooperative generation lease** to every static/dynamic Auto Agree execution world. The lease is isolated-world local and revokes that generation's `HTMLElement.prototype.click()` when `chrome.runtime.getManifest()` is invalidated or no longer matches the compiled generation.
+- Added a real Chrome 10→11 manifest-generation probe proving that the old v10 Engine world remains JavaScript-executable while its extension Runtime becomes stale; stale automation and direct stale-world `.click()` both produce zero clicks, while trusted browser input still succeeds once.
+- Retained the v9 generation handover firewall for non-cooperative historical generations and made stale guards passive toward future legitimate generations after their own Runtime is invalidated.
+- Converged handover semantics on the shared bounded `semantic-core.js`; added explicit `aria-labelledby` / `aria-describedby` and native external-label resolution so the update firewall does not maintain a narrower private Terms vocabulary.
+- Replaced generic descendant `querySelector(CONTROL)` causal discovery with hard-bounded, exact local-wrapper traversal. Broad containers, proceed actions and ambiguous multi-control wrappers cannot mint sibling-control authority.
+- Restored the v6 bounded-string invariant inside handover semantics so a pathological multi-megabyte attribute/text value is sampled before normalization rather than scanned in full.
+- Re-audited a handover-focused Worker rewrite and rejected its unrelated regressions. v10 preserves the verified learning governance: 256 origins, 8 flows/origin, 180-day TTL, 32-entry hot LRU, `storage.session` + `storage.local`, fingerprint+locator identity, strict sanitization and propagated persistence errors.
+- Added profile-governance regression tests for 64 concurrent flow writes, precise same-fingerprint/different-locator identity, 300-origin bounded persistence and storage-failure propagation.
+- Fixed deterministic packaging to derive its runtime JavaScript closure from `extension/*.js`. The audit found that the previous hand-maintained package list could pass ZIP verification while omitting newly introduced runtime modules such as the generation handover guard.
+- Expanded real update E2E with external-IDREF semantics, non-English shared semantics, broad-wrapper causal negatives, ambiguous controls and action-inside-label negatives.
+- Kept permissions unchanged: `scripting`, `storage`, `<all_urls>`; no debugger, telemetry, network client or remote code.
+
 ## 9.0.0 — 2026-08-08
 
 - Restored the historical UNKNOWN-state invariant: a classless control with no observable checked contract is one-shot for that DOM element, even after the normal click cooldown expires.
@@ -22,7 +36,7 @@
 - Converted Probe→Gate and Gate→Engine seed handoff to WeakRef ownership with backward-compatible v7 seed reading and consumption cleanup.
 - Added a sanitized real-world-derived regression corpus (TRAE classless, fragmented consequential language, closed Shadow, iframe, dynamic SPA, native-validity gating).
 - Real unpacked E2E exposed and fixed a classless reverse-discovery `ReferenceError` caused by stale pre-`risk-core.js` private identifiers; a static contract now prevents that module-boundary regression.
-- Used the real 5,000-checkbox CPU profile to remove broad nearby-text extraction from ordinary checkbox Probe paths. The profiled workload moved from ~330.9 ms / 0.3056 s TaskDuration to ~286.1 ms / 0.2662 s, and Probe text-scan functions dropped out of the top sampled hotspots.
+- Used the real 5,000-checkbox CPU profile to remove broad nearby-text extraction from ordinary checkbox Probe paths. The profiled workload moved from ~330.9 ms / 0.3056 s TaskDuration to ~286.1 ms / ~0.2662 s, and Probe text-scan functions dropped out of the top sampled hotspots.
 - Tightened the real-extension performance gate to `<1000 ms` wall latency and `<0.8 s` TaskDuration while keeping the independent v7→v8 update-transition gate.
 
 ## 7.0.0 — 2026-08-08

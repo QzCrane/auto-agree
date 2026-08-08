@@ -21,7 +21,7 @@ const injectionActiveByTab = new Map();
 let injectionActive = 0;
 let injectionSeq = 0;
 let lastScheduledTab = -1;
-const VERSION = '9.0.0';
+const VERSION = '10.0.0';
 let storageWriteChain = Promise.resolve();
 let rehydratePromise = null;
 
@@ -343,6 +343,12 @@ function profileOriginForSender(sender) {
   return null;
 }
 
+async function protectAndRehydrateTab(tabId) {
+  const target = { tabId, allFrames: true };
+  await scheduleInjection(target, ['generation-lease.js', 'semantic-core.js', 'handover-guard.js'], 4);
+  await scheduleInjection(target, ['bootstrap.js'], 3);
+}
+
 async function rehydrateExistingTabs() {
   if (!chrome.tabs?.query) return;
   let tabs = [];
@@ -352,9 +358,7 @@ async function rehydrateExistingTabs() {
     const retry = [];
     for (let i = 0; i < pending.length; i += 12) {
       const ids = pending.slice(i, i + 12);
-      const results = await Promise.allSettled(ids.map(tabId =>
-        scheduleInjection({ tabId, allFrames: true }, ['handover-guard.js', 'bootstrap.js'], 3)
-      ));
+      const results = await Promise.allSettled(ids.map(tabId => protectAndRehydrateTab(tabId)));
       for (let j = 0; j < results.length; j++) if (results[j].status === 'rejected') retry.push(ids[j]);
     }
     pending = retry;
@@ -434,7 +438,9 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   const key = sender.documentId || `${target.tabId}:${sender.frameId ?? 0}`;
   const isGate = message.type === 'AUTO_AGREE_GATE';
   const map = isGate ? gateInflight : engineInflight;
-  const files = isGate ? ['semantic-core.js', 'gate.js'] : ['semantic-core.js', 'risk-core.js', 'engine.js'];
+  const files = isGate
+    ? ['generation-lease.js', 'semantic-core.js', 'gate.js']
+    : ['generation-lease.js', 'semantic-core.js', 'handover-guard.js', 'risk-core.js', 'engine.js'];
   let promise = map.get(key);
   if (!promise) {
     promise = scheduleInjection(target, files, isGate ? 1 : 2).finally(() => map.delete(key));

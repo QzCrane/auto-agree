@@ -20,27 +20,31 @@ The decision is based on **what action the user would authorize**, not what indu
 
 ```mermaid
 flowchart LR
-  P[Micro Probe\nall matching frames] -->|co-occurring auth/legal evidence| G[Semantic Gate]
+  L[Generation lease\nall AutoAgree worlds] --> P[Micro Probe\nall matching frames]
+  P -->|co-occurring auth/legal evidence| G[Semantic Gate]
   G -->|evidence accepted| R[Risk Core]
   R --> E[Decision Engine]
   E --> S[Semantic Graph + Severity]
   S -->|routine / privacy| C[Verified click]
   S -->|optional / consequential / attestation| B[Block]
-  E --> L[Local behavioral learning]
+  E --> V[Local behavioral learning]
   W[MV3 Worker] --> G
   W --> R
   W --> E
-  W --> L
-  U[Update rehydration] --> H[Generation handover guard]
+  W --> V
+  U[Update rehydration] --> H[Historical-generation handover guard]
   H --> P
-  E -. one-shot current-generation authorization .-> H
+  E -. one-shot current authorization .-> H
+  E -. synchronous generation check .-> L
 ```
 
-The always-present probe is deliberately small and never clicks. Richer code is injected only into the exact document/frame that earns it. Gate and Engine share one semantic base; high-consequence rules are deferred to an engine-only risk core.
+The always-present Probe is deliberately small and never decides consent. Richer code is injected only into the exact document/frame that earns it. Gate and Engine share one semantic base; high-consequence rules are deferred to an engine-only risk core.
 
-A page that survives an extension update receives a separate generation handover guard before rehydrated Probe work. Real Chrome testing proved that old and new isolated-world Engines can coexist and both remain executable after an update. The guard therefore treats version sentinels as diagnostics—not authority—and blocks stale-generation synthetic agreement clicks unless the current Engine issues a one-shot authorization. Trusted user clicks bypass this firewall.
+v10 adds a separate **cooperative generation lease** in Auto Agree's isolated world. Real Chrome testing showed that after a same-path extension update, an old Engine JavaScript context can remain executable while its extension Runtime is invalidated. The lease therefore checks the current manifest generation at the programmatic click primitive and makes stale Auto Agree `.click()` calls no-ops before DOM dispatch. It does not patch the page MAIN world; trusted browser input remains normal.
 
-See [Architecture](docs/architecture.md), [Decision model](docs/decision-model.md), [Security model](docs/security-model.md), and [ADR 0009](docs/decisions/0009-generation-handover-firewall.md).
+The v9 handover firewall remains necessary for older non-cooperative generations that never shipped this lease. It is injected before Probe rehydration and blocks stale agreement-like synthetic clicks while preserving tightly bounded same-event delegation used by real custom controls.
+
+See [Architecture](docs/architecture.md), [Decision model](docs/decision-model.md), [Security model](docs/security-model.md), [ADR 0009](docs/decisions/0009-generation-handover-firewall.md), and [ADR 0010](docs/decisions/0010-cooperative-generation-lease.md).
 
 ## Install
 
@@ -51,22 +55,23 @@ See [Architecture](docs/architecture.md), [Decision model](docs/decision-model.m
 5. Select the [`extension/`](extension/) directory.
 6. Keep site access enabled for all sites if arbitrary-site coverage is desired.
 
-Do not run multiple Auto Agree versions simultaneously: two independent auto-clickers can toggle the same control twice.
+Do not run multiple independent Auto Agree installs/versions simultaneously: separate extension instances can still act on the same DOM independently.
 
 ## Repository layout
 
 ```text
 extension/              load-unpacked production extension
   manifest.json
+  generation-lease.js   realm-local cooperative generation click authority
   bootstrap.js          always-present micro-probe
-  handover-guard.js     update-only cross-generation click firewall
+  handover-guard.js     update-time firewall for non-cooperative old generations
   semantic-core.js      shared bounded legal/assent semantics
   risk-core.js          engine-only consent severity/risk semantics
   gate.js               semantic activation gate
   engine.js             decision, verification, Shadow DOM, learning
   worker.js             fair injection scheduler + restart/update persistence
 
-tests/                  dependency-free contract/property tests
+tests/                  deterministic contracts + real-browser harnesses/fixtures
 tools/                  deterministic packaging utility
 docs/
   architecture.md
@@ -75,11 +80,11 @@ docs/
   security-model.md
   testing.md
   decisions/            architecture decision records
-  verification/         immutable historical verification reports
+  verification/         version-by-version engineering evidence
 .github/workflows/ci.yml
 ```
 
-The old `auto-agree-extension/content.js` implementation is intentionally removed from the live tree. Git history preserves it; keeping dead executable-looking files in the production directory only creates ambiguity.
+The old `auto-agree-extension/content.js` implementation is intentionally removed from the live tree. Git history preserves obsolete source; the production directory is not a historical museum.
 
 ## Verification
 
@@ -87,25 +92,29 @@ Run:
 
 ```bash
 npm test
-python tools/package_extension.py
+python tools/package_extension.py --check
 ```
 
-v9 verification includes:
+v10 verification includes:
 
-- dependency-free syntax, permission, semantic-property and Worker scheduler/restart contracts;
+- dependency-free syntax, permission, semantic-property, generation-lease, Worker scheduler/restart and profile-governance contracts;
 - 10,020 semantic severity/property assertions;
-- real unpacked-extension Puppeteer E2E in Chrome;
-- forced MV3 service-worker termination/restart;
-- v8→v9 update transition on non-reloaded dormant and already-active pages;
-- behavioral proof that simultaneous v8/v9 Engine worlds do not restore stale v8 click authority after the handover guard is installed;
-- exactly one current-authorized routine click and zero legacy mixed-state clicks in the active update page;
+- real unpacked-extension Puppeteer E2E in Chrome for Testing;
+- repeated forced MV3 service-worker termination/restart;
+- real v9→v10 transition on non-reloaded dormant and already-active pages;
+- simultaneous v9/v10 Engine-world diagnostics;
+- exactly one current routine update click and zero stale mixed/IDREF/non-English/over-broad causal clicks;
+- real 10→11 manifest-generation probe proving stale v10 automatic and direct isolated-world `.click()` calls are revoked while trusted input still works;
 - real iframe and closed-Shadow regression fixtures;
-- native form-validity gating regression;
-- ARIA/data/native tri-state refusal and durable UNKNOWN-state one-shot regression;
-- 5,000-checkbox E2E DevTools CPU profile capture;
-- deterministic ZIP integrity verification.
+- native form-validity gating, tri-state refusal and durable UNKNOWN-state one-shot regressions;
+- 5,000-checkbox DevTools CPU profile capture;
+- deterministic package verification from the full production JavaScript closure.
 
-Detailed evidence: [v9 verification report](docs/verification/v9.md).
+Detailed evidence: [v10 verification report](docs/verification/v10.md).
+
+## Site learning
+
+Successful structure can accelerate later discovery, but cache is never click authority. The Worker preserves bounded governance: at most 256 origins, 8 flows/origin, 180-day TTL, 32 hot entries, `storage.session` + persistent `storage.local`, exact fingerprint+locator identity and serialized writes.
 
 ## Permissions
 
@@ -115,7 +124,7 @@ Only:
 - `storage`
 - `<all_urls>` host access
 
-No `debugger`, cookies, history, `webRequest`, downloads, proxy, clipboard, `nativeMessaging`, or remote-code path is used.
+No `debugger`, cookies, history, `webRequest`, downloads, proxy, clipboard, `nativeMessaging`, telemetry, remote model, network client or remote-code path is used.
 
 `<all_urls>` is the unavoidable host scope for a tool whose stated job is to operate on arbitrary websites; rich scripts are still lazy-injected only after evidence gating.
 
@@ -127,6 +136,7 @@ No `debugger`, cookies, history, `webRequest`, downloads, proxy, clipboard, `nat
 4. Background/frozen/BFCache pages quiesce.
 5. No unbounded subtree stringification, wildcard page scan, polling loop, remote model, or telemetry.
 6. A proposed optimization is rejected when profiling or safety evidence does not justify its added complexity/permission surface.
-7. A sentinel, version string, or loaded module proves presence—not exclusive authority. Cross-generation safety must be behaviorally verified.
+7. A sentinel, version string, loaded module or green narrow test proves presence—not exclusive authority or preservation of unrelated historical invariants.
+8. The packaged ZIP must contain the same production runtime closure as the canonical `extension/` load-unpacked root.
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) and [CHANGELOG.md](CHANGELOG.md).

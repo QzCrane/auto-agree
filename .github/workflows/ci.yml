@@ -56,6 +56,10 @@ jobs:
         env:
           AUTO_AGREE_HEADED: '1'
         run: xvfb-run -a node tests/e2e-extension.mjs --profile
+      - name: Prove cooperative stale-world generation revocation
+        env:
+          AUTO_AGREE_HEADED: '1'
+        run: xvfb-run -a node tests/e2e-generation-lease.mjs
       - name: Run release update transition against PR base
         if: github.event_name == 'pull_request'
         env:

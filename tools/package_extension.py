@@ -2,7 +2,10 @@
 import argparse, hashlib, json, pathlib, sys, zipfile
 ROOT=pathlib.Path(__file__).resolve().parents[1]
 EXT=ROOT/'extension'
-FILES=['manifest.json','bootstrap.js','semantic-core.js','gate.js','risk-core.js','engine.js','worker.js','README.md']
+
+# The extension root is the canonical production runtime. Derive the executable closure instead of
+# maintaining a second hand-written JS allowlist that can silently omit a newly referenced module.
+FILES=['manifest.json', *sorted(p.name for p in EXT.glob('*.js')), 'README.md']
 
 def build(out):
     out.parent.mkdir(parents=True,exist_ok=True)

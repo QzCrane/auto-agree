@@ -1,20 +1,34 @@
 (() => {
   'use strict';
-  const VERSION = '9.0.0';
+  const VERSION = '10.0.0';
   if (globalThis.__AUTO_AGREE_HANDOVER_GUARD__?.version === VERSION) return;
 
-  // This guard exists only on pages that survive an extension update. Old isolated worlds can
-  // remain observable and executable after the new extension generation is installed. Current
-  // Engine clicks receive a synchronous one-shot authorization; stale generations do not.
+  const CORE = globalThis.__AUTO_AGREE_SEMANTIC__;
+  if (!CORE || CORE.version !== VERSION || typeof CORE.assessText !== 'function') {
+    throw new Error(`Auto Agree handover semantic dependency unavailable for ${VERSION}`);
+  }
+  const { normalize, joinNormalized, assessText } = CORE;
+
   const authorized = new WeakSet();
+  const rejected = new WeakSet();
   const causalLocal = new WeakSet();
   const localLeaseByEvent = new WeakMap();
-  const LEGAL = /(?:terms?(?:\s+of\s+(?:service|use))?|privacy|agreement|eula|协议|協議|条款|條款|隐私|隱私|利用規約|プライバシー|약관|개인정보|услов|конфиденц|الشروط|الخصوصية)/iu;
-  const ASSENT = /(?:agree|accept|consent|同意|接受|동의|同意する|соглас|أوافق)/iu;
-  const REQUIRED = /(?:required|mandatory|must\s+(?:agree|accept)|please\s+(?:agree|accept)|必须|必須|需(?:要)?同意|请先(?:阅读|閱讀)?(?:并|並)?同意)/iu;
   const CONTROL = 'input[type="checkbox"],input[type="radio"],[role="checkbox"],[role="radio"],[role="switch"],[aria-checked]';
   const CUSTOM = new Set(['sl-checkbox','ion-checkbox','md-checkbox','mat-checkbox','fluent-checkbox','vaadin-checkbox','ui5-checkbox','calcite-checkbox','lightning-input']);
-  const WIDE_CONTAINER = /^(?:html|body|form|dialog|main|section|article)$/i;
+  const WIDE_CONTAINER = /^(?:html|body|form|dialog|main|section|article|aside|nav|header|footer)$/i;
+  const MAX_LOCAL_WRAPPER_DEPTH = 2;
+  const MAX_LOCAL_WRAPPER_NODES = 64;
+  const MAX_LOCAL_CONTROL_DEPTH = 3;
+  let runtimeRevoked = false;
+
+  function runtimeCurrent() {
+    if (runtimeRevoked) return false;
+    try {
+      if (chrome.runtime?.getManifest?.()?.version === VERSION) return true;
+    } catch (_) {}
+    runtimeRevoked = true;
+    return false;
+  }
 
   function composedParent(el) {
     if (!(el instanceof Element)) return null;
@@ -25,31 +39,75 @@
   }
 
   function boundedText(root, maxNodes = 48, maxChars = 900) {
-    if (!root) return '';
+    if (!root || maxNodes <= 0 || maxChars <= 0) return '';
     const parts = [];
     let chars = 0, nodes = 0;
+    const append = value => {
+      const left = maxChars - chars;
+      if (left <= 0 || value == null) return;
+      const part = normalize(value, left);
+      if (!part) return;
+      parts.push(part);
+      chars += Math.min(left, part.length + 1);
+    };
     const walker = document.createTreeWalker(root, NodeFilter.SHOW_ELEMENT | NodeFilter.SHOW_TEXT);
     let node;
     while (nodes++ < maxNodes && chars < maxChars && (node = walker.nextNode())) {
-      let value = '';
-      if (node.nodeType === Node.TEXT_NODE) value = node.data || '';
+      if (node.nodeType === Node.TEXT_NODE) append(node.data || '');
       else if (node instanceof Element) {
         if (/^(?:script|style|noscript|template)$/i.test(node.localName)) continue;
-        value = `${node.getAttribute('aria-label') || ''} ${node.getAttribute('title') || ''}`;
+        append(node.getAttribute('aria-label'));
+        append(node.getAttribute('title'));
       }
-      value = String(value).replace(/\s+/gu, ' ').trim();
-      if (!value) continue;
-      const left = maxChars - chars;
-      const part = value.slice(0, left);
-      parts.push(part);
-      chars += part.length + 1;
     }
-    return parts.join(' ').slice(0, maxChars);
+    return joinNormalized(parts, maxChars);
   }
 
   function ownText(el) {
     if (!(el instanceof Element)) return '';
-    return `${el.getAttribute('aria-label') || ''} ${el.getAttribute('title') || ''} ${el.getAttribute('name') || ''}`.slice(0, 360);
+    return joinNormalized([
+      el.getAttribute('aria-label'),
+      el.getAttribute('title'),
+      el.getAttribute('name'),
+      el.getAttribute('placeholder'),
+      el.getAttribute('data-testid'),
+      el.id
+    ], 360);
+  }
+
+  function rootQueryById(el, id) {
+    if (!(el instanceof Element) || !id) return null;
+    const root = el.getRootNode?.() || document;
+    try {
+      if (root instanceof Document) return root.getElementById(id);
+      return root.querySelector?.(`#${CSS.escape(id)}`) || null;
+    } catch (_) { return null; }
+  }
+
+  function referencedText(el, maxChars = 480) {
+    if (!(el instanceof Element)) return '';
+    const parts = [];
+    for (const attr of ['aria-labelledby', 'aria-describedby']) {
+      const value = normalize(el.getAttribute(attr), 260);
+      if (!value) continue;
+      const ids = value.split(/\s+/).filter(id => id && id !== 'zzsemanticgapzz').slice(0, 6);
+      for (const id of ids) {
+        const ref = rootQueryById(el, id);
+        if (ref instanceof Element) parts.push(boundedText(ref, 18, 260));
+      }
+    }
+    return joinNormalized(parts, maxChars);
+  }
+
+  function associatedLabelText(el, maxChars = 420) {
+    if (!(el instanceof HTMLInputElement)) return '';
+    const parts = [];
+    try {
+      for (const label of Array.from(el.labels || []).slice(0, 2)) {
+        if (label instanceof Element) parts.push(boundedText(label, 24, 300));
+      }
+    } catch (_) {}
+    return joinNormalized(parts, maxChars);
   }
 
   function isControl(el) {
@@ -58,6 +116,13 @@
     if (CUSTOM.has(el.localName)) return true;
     const cls = typeof el.className === 'string' ? el.className : el.getAttribute('class') || '';
     return cls.length <= 500 && /(?:checkbox|check-box|form-check-input|check_control|check-control)/i.test(cls);
+  }
+
+  function isProceedAction(el) {
+    if (!(el instanceof Element)) return false;
+    try { if (el.matches('button,a[href],[role="button"]')) return true; } catch (_) {}
+    if (el instanceof HTMLInputElement) return /^(?:button|submit|image|reset)$/i.test(el.type || '');
+    return false;
   }
 
   function shadowText(host) {
@@ -69,35 +134,48 @@
     return root instanceof ShadowRoot ? boundedText(root, 40, 640) : '';
   }
 
-  function candidateNodes(event) {
+  function eventElements(event, limit = 10) {
     const out = [];
     const seen = new WeakSet();
     const add = node => {
-      if (!(node instanceof Element) || seen.has(node)) return;
+      if (!(node instanceof Element) || seen.has(node) || out.length >= limit) return;
       seen.add(node);
       out.push(node);
     };
     const path = typeof event.composedPath === 'function' ? event.composedPath() : [];
-    for (const node of path.slice(0, 10)) add(node);
-    let p = out[0] || (event.target instanceof Element ? event.target : null);
-    for (let i = 0; i < 7 && p instanceof Element; i++, p = composedParent(p)) add(p);
+    for (const node of path) {
+      add(node);
+      if (out.length >= limit) break;
+    }
+    if (!out.length) {
+      let p = event.target instanceof Element ? event.target : null;
+      for (let i = 0; i < limit && p instanceof Element; i++, p = composedParent(p)) add(p);
+    }
     return out;
   }
 
-  function consumeAuthorization(nodes) {
+  function candidateNodes(event) {
+    const out = eventElements(event, 10);
+    const seen = new WeakSet(out);
+    let p = out[0] || (event.target instanceof Element ? event.target : null);
+    for (let i = 0; i < 7 && p instanceof Element && out.length < 10; i++, p = composedParent(p)) {
+      if (!seen.has(p)) { seen.add(p); out.push(p); }
+    }
+    return out;
+  }
+
+  function consume(set, nodes) {
     let allowed = false;
-    for (const node of nodes) if (authorized.has(node)) allowed = true;
+    for (const node of nodes) if (set.has(node)) allowed = true;
     if (!allowed) return false;
-    for (const node of nodes) authorized.delete(node);
+    for (const node of nodes) set.delete(node);
     return true;
   }
 
-  function consumeCausalLocal(nodes) {
-    let allowed = false;
-    for (const node of nodes) if (causalLocal.has(node)) allowed = true;
-    if (!allowed) return false;
-    for (const node of nodes) causalLocal.delete(node);
-    return true;
+  function block(event) {
+    event.preventDefault();
+    event.stopImmediatePropagation();
+    event.stopPropagation();
   }
 
   function agreementLike(nodes) {
@@ -106,80 +184,137 @@
     let chars = 0;
     for (const node of nodes.slice(0, 10)) {
       hasControl ||= isControl(node);
-      const values = [ownText(node), boundedText(node, 18, 260), shadowText(node)];
+      const values = [ownText(node), referencedText(node), associatedLabelText(node), boundedText(node, 18, 260), shadowText(node)];
       for (const value of values) {
-        if (!value || chars >= 1200) continue;
-        const part = value.slice(0, 1200 - chars);
+        if (!value || chars >= 1400) continue;
+        const part = normalize(value, 1400 - chars);
+        if (!part) continue;
         parts.push(part);
-        chars += part.length + 1;
+        chars += Math.min(1400 - chars, part.length + 1);
       }
-      if (chars >= 1200) break;
+      if (chars >= 1400) break;
     }
-    const text = parts.join(' ');
-    return LEGAL.test(text) && (hasControl || ASSENT.test(text) || REQUIRED.test(text));
+    const assessment = assessText(joinNormalized(parts, 1400));
+    return !!assessment?.legal && (hasControl || !!assessment.assent || !!assessment.required || !!assessment.validation);
+  }
+
+  function markRejected(el) {
+    const lease = [];
+    let node = el;
+    for (let i = 0; i < 10 && node instanceof Element; i++, node = composedParent(node)) {
+      rejected.add(node);
+      lease.push(node);
+    }
+    queueMicrotask(() => {
+      for (const leased of lease) rejected.delete(leased);
+    });
   }
 
   function authorize(el) {
+    if (!(el instanceof Element)) return false;
+    if (!runtimeCurrent()) {
+      markRejected(el);
+      return false;
+    }
     const lease = [];
     let node = el;
     for (let i = 0; i < 10 && node instanceof Element; i++, node = composedParent(node)) {
       authorized.add(node);
       lease.push(node);
     }
-    // Current Engine invokes HTMLElement.click() synchronously in this same isolated world. If no
-    // click reaches the guard, revoke the unused authorization at the next microtask checkpoint.
     queueMicrotask(() => {
       for (const leased of lease) authorized.delete(leased);
     });
+    return true;
   }
 
-  function localInteractionRoot(target) {
-    if (!(target instanceof Element)) return null;
-    const semanticWrapper = target.closest?.('label,[role="checkbox"],[role="radio"],[role="switch"]');
-    if (semanticWrapper instanceof Element) return semanticWrapper;
-    if (isControl(target)) return target;
-    let p = target;
-    for (let depth = 0; depth < 3 && p instanceof Element; depth++, p = composedParent(p)) {
-      if (WIDE_CONTAINER.test(p.localName)) continue;
-      try { if (p.querySelector?.(CONTROL)) return p; } catch (_) {}
+  function boundedUniqueDelegatedControl(root) {
+    if (!(root instanceof Element) || WIDE_CONTAINER.test(root.localName) || isProceedAction(root)) return null;
+    const stack = [];
+    for (let child = root.firstElementChild; child; child = child.nextElementSibling) {
+      if (stack.length >= MAX_LOCAL_WRAPPER_NODES) return null;
+      stack.push({ node: child, depth: 1 });
+    }
+    let visited = 0;
+    let found = null;
+    while (stack.length) {
+      const entry = stack.pop();
+      if (++visited > MAX_LOCAL_WRAPPER_NODES) return null;
+      const node = entry.node;
+      if (!(node instanceof Element)) continue;
+      if (isControl(node)) {
+        if (found && found !== node) return null;
+        found = node;
+      }
+      if (entry.depth >= MAX_LOCAL_CONTROL_DEPTH) continue;
+      for (let child = node.firstElementChild; child; child = child.nextElementSibling) {
+        if (stack.length + visited >= MAX_LOCAL_WRAPPER_NODES) return null;
+        stack.push({ node: child, depth: entry.depth + 1 });
+      }
+    }
+    return found;
+  }
+
+  function labelDelegationTarget(label) {
+    if (!(label instanceof HTMLLabelElement)) return null;
+    const associated = label.control;
+    if (associated instanceof Element && isControl(associated)) return associated;
+    return boundedUniqueDelegatedControl(label);
+  }
+
+  function localDelegationTarget(event) {
+    const path = eventElements(event, 8);
+    if (!path.length) return null;
+    for (const node of path) {
+      if (isProceedAction(node)) return null;
+      if (node instanceof HTMLLabelElement) return labelDelegationTarget(node);
+      if (isControl(node)) return node;
+      if (WIDE_CONTAINER.test(node.localName)) break;
+    }
+    for (let i = 0; i < path.length && i <= MAX_LOCAL_WRAPPER_DEPTH; i++) {
+      const node = path[i];
+      if (!(node instanceof Element) || WIDE_CONTAINER.test(node.localName) || isProceedAction(node)) continue;
+      const delegated = boundedUniqueDelegatedControl(node);
+      if (delegated) return delegated;
     }
     return null;
   }
 
   function beginLocalLease(event) {
-    const root = localInteractionRoot(event.target instanceof Element ? event.target : null);
-    if (!root) return;
-    causalLocal.add(root);
-    localLeaseByEvent.set(event, root);
+    const delegated = localDelegationTarget(event);
+    if (!delegated) return;
+    causalLocal.add(delegated);
+    localLeaseByEvent.set(event, delegated);
   }
 
   function finishLocalLease(event) {
-    const root = localLeaseByEvent.get(event);
-    if (!root) return;
-    causalLocal.delete(root);
+    const delegated = localLeaseByEvent.get(event);
+    if (!delegated) return;
+    causalLocal.delete(delegated);
     localLeaseByEvent.delete(event);
   }
 
   function onTrustedCapture(event) {
-    if (event.isTrusted) beginLocalLease(event);
+    if (event.isTrusted && !runtimeRevoked) beginLocalLease(event);
   }
 
   function onClick(event) {
-    if (event.isTrusted) { beginLocalLease(event); return; }
     const nodes = candidateNodes(event);
     if (!nodes.length) return;
-    if (consumeAuthorization(nodes)) {
-      // The current Engine's authorized outer click may synchronously enter MAIN-world component
-      // code that delegates to a hidden/native descendant via .click(). Keep one narrow local lease
-      // only until this outer event finishes bubbling; stale MutationObservers run after it expires.
+
+    if (!event.isTrusted && !runtimeCurrent()) {
+      if (consume(rejected, nodes)) block(event);
+      return;
+    }
+
+    if (event.isTrusted) { beginLocalLease(event); return; }
+    if (consume(authorized, nodes)) {
       beginLocalLease(event);
       return;
     }
-    if (consumeCausalLocal(nodes)) return;
+    if (consume(causalLocal, nodes)) return;
     if (!agreementLike(nodes)) return;
-    event.preventDefault();
-    event.stopImmediatePropagation();
-    event.stopPropagation();
+    block(event);
   }
 
   addEventListener('pointerdown', onTrustedCapture, true);
@@ -188,5 +323,5 @@
   addEventListener('keydown', finishLocalLease, false);
   addEventListener('click', onClick, true);
   addEventListener('click', finishLocalLease, false);
-  globalThis.__AUTO_AGREE_HANDOVER_GUARD__ = Object.freeze({ version: VERSION, authorize });
+  globalThis.__AUTO_AGREE_HANDOVER_GUARD__ = Object.freeze({ version: VERSION, authorize, runtimeCurrent });
 })();
