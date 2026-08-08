@@ -1,9 +1,9 @@
 (() => {
   'use strict';
   if (globalThis.__AUTO_AGREE_ENGINE__) return;
-  globalThis.__AUTO_AGREE_ENGINE__ = '4.0.0';
+  globalThis.__AUTO_AGREE_ENGINE__ = '5.0.0';
 
-  const VERSION = '4.0.0';
+  const VERSION = '5.0.0';
   const MAX_ROW_TEXT = 1400;
   const MAX_CONTEXT_TEXT = 2200;
   const MAX_PENDING_VISIBILITY = 192;
@@ -34,6 +34,16 @@
   const PROCEED = /(?:登录|登入|登陆|注册|註冊|继续|繼續|下一步|下一頁|提交|确认|確認|完成|获取验证码|獲取驗證碼|发送验证码|發送驗證碼|login|log\s*in|sign\s*in|sign\s*up|register|continue|next|submit|confirm|verify|get\s+code|send\s+code)/iu;
   const FAST_TEXT = /(?:同意|接受|协议|協議|条款|條款|隐私|隱私|terms?|privacy|agreement|eula|利用規約|プライバシー|동의|약관|개인정보|соглас|услов|конфиденц|أوافق|الشروط|الخصوصية|voorwaarden|privacybeleid|warunki|prywatności|kullanım|gizlilik|đồng\s+ý|điều\s+khoản|setuju|syarat|ยอมรับ|ข้อกำหนด|सहमत|गोपनीयता|συμφωνώ|όροι|מסכים|תנאי|villkor|vilkår|betingelser)/iu;
   const CREDENTIAL = /(?:phone|mobile|tel|otp|code|verification|验证码|驗證碼|手机号|手機號|email|password|用户名|用戶名|账号|帳號)/iu;
+  // DOM frameworks sometimes split a single semantic word across inline elements (e.g.
+  // `facial reco` + `<span>gnition</span>`). Keep normal whitespace-preserving text as the
+  // primary representation, but use a punctuation/whitespace-stripped companion only for a
+  // narrow set of high-value legal/risk tokens. This avoids both missed risk blocks and global
+  // "remove all spaces" false positives.
+  const COMPACT_LEGAL = /(?:termsof(?:service|use)|privacypolicy|privacyagreement|useragreement|licenseagreement|eula)/i;
+  const COMPACT_ASSENT = /(?:i(?:have)?(?:read(?:and)?)?(?:agree|accept)(?:to)?|iconsentto)/i;
+  const COMPACT_RISK = /(?:(?:consent|authori[sz](?:e|ation)?).{0,36}(?:facialrecognition|biometric)|(?:facialrecognition|biometric).{0,36}(?:consent|authori[sz](?:e|ation)?)|authori[sz](?:e|ation)?.{0,32}(?:payment|debit|charge|trading|trade|investment)|(?:loan|credit)agreement|investmentrisk|insurance(?:application|purchase)|medicalconsent|informedconsent|employment(?:agreement|contract)|electronicsignature|arbitration|classaction|powerofattorney|autorenew|subscriptionplan)/i;
+  const COMPACT_NEGATIVE = /(?:donotagree|dontagree|rememberme|keepmesignedin|newsletter|marketing|promotion|autorenew|subscription|captcha|recaptcha|hcaptcha|turnstile|thirdpartyshare|sharethirdparty|donation|warranty|cookie|cookies)/i;
+  const COMPACT_ATTESTATION = /(?:over18|18years?old|legalage|icertify|iconfirmthat|ideclare|information(?:is|are)(?:true|accurate))/i;
   const CLASS_CHECK = /(?:checkbox|check-box|form-check-input|check_control|check-control)/i;
   const CHECKED_CLASS = /(?:^|\s)(?:is-checked|checked|checkbox-checked|semi-checkbox-checked|ant-checkbox-checked|ant-checkbox-wrapper-checked|arco-checkbox-checked|n-checkbox--checked|Mui-checked|p-highlight)(?:\s|$)/i;
   const CUSTOM_CHECK_TAGS = new Set(['sl-checkbox','ion-checkbox','md-checkbox','mat-checkbox','fluent-checkbox','vaadin-checkbox','ui5-checkbox','calcite-checkbox','lightning-input']);
@@ -47,13 +57,17 @@
   const clickMemo = new WeakMap();
   const clickVerifiers = new WeakMap();
   const deferredClicks = new WeakSet();
+  // Hidden controls can outlive timers in background/frozen pages. The registry owns only
+  // lightweight entry objects; both the pending control and its blocker are WeakRefs, so the
+  // extension never keeps detached UI alive merely because a rescue timer has not fired yet.
   const pendingVisibility = new Set();
-  const blockerTargets = new WeakMap();
+  const pendingEntryByElement = new WeakMap();
   let pendingRescueTimer = 0;
   let pendingRescuePhase = 0;
   const contextIndex = new WeakMap();
   const indexedRefs = new WeakMap();
   const relevantControls = new WeakSet();
+  const fragmentRowsSeen = new WeakSet();
   const contextCache = new WeakMap();
   const contextEpoch = new WeakMap();
   const dirtyRoots = new Set();
@@ -76,16 +90,17 @@
   const discoveryObserver = new MutationObserver(records => onMutations(records, false));
   const contextObserver = new MutationObserver(records => onMutations(records, true));
   const resizeObserver = typeof ResizeObserver === 'function' ? new ResizeObserver(entries => {
-    for (const entry of entries) {
-      const blocker = entry.target;
-      const targets = blockerTargets.get(blocker);
-      if (!targets) continue;
-      if (!(entry.contentRect.width > 0 || entry.contentRect.height > 0)) continue;
-      try { resizeObserver.unobserve(blocker); } catch (_) {}
-      blockerTargets.delete(blocker);
-      for (const el of [...targets]) {
-        if (!(el instanceof Element) || !el.isConnected) { pendingVisibility.delete(el); continue; }
-        pendingVisibility.delete(el);
+    for (const resizeEntry of entries) {
+      const blocker = resizeEntry.target;
+      if (!(resizeEntry.contentRect.width > 0 || resizeEntry.contentRect.height > 0)) continue;
+      const targets = [];
+      for (const pending of [...pendingVisibility]) {
+        if (pending?.blockerRef?.deref?.() !== blocker) continue;
+        const el = pending?.targetRef?.deref?.();
+        removePendingEntry(pending);
+        if (el instanceof Element && el.isConnected) targets.push(el);
+      }
+      for (const el of targets) {
         processElement(el, true);
         processAgreementAnchor(el, true);
       }
@@ -96,6 +111,33 @@
     if (value == null) return '';
     const s = String(value).replace(/\s+/gu, ' ').trim();
     return s.length > max ? s.slice(0, max) : s;
+  }
+
+  function compactSemantic(value, max = MAX_ROW_TEXT) {
+    const t = normalize(value, max).toLowerCase();
+    // Keep letters/digits and CJK/major non-Latin scripts; remove only separators introduced by
+    // markup or punctuation. The result is never displayed or used as sole click authority.
+    return t.replace(/[\s\p{P}\p{S}\u200b-\u200d\ufeff]+/gu, '').slice(0, max);
+  }
+
+  function hasNonLatin(value) {
+    return /[^\u0000-\u024f]/u.test(value || '');
+  }
+
+  function containsNegative(value) {
+    const t = normalize(value);
+    if (!t) return false;
+    if (NEGATIVE.test(t)) return true;
+    const compact = compactSemantic(t);
+    return COMPACT_NEGATIVE.test(compact) || (hasNonLatin(t) && NEGATIVE.test(compact));
+  }
+
+  function containsAttestation(value) {
+    const t = normalize(value);
+    if (!t) return false;
+    if (ATTESTATION.test(t)) return true;
+    const compact = compactSemantic(t);
+    return COMPACT_ATTESTATION.test(compact) || (hasNonLatin(t) && ATTESTATION.test(compact));
   }
 
   function pushPart(parts, value, budget) {
@@ -199,9 +241,11 @@
   function assessText(text) {
     const t = normalize(text);
     if (!t) return { eligible: false, score: -100, text: t };
-    if (NEGATIVE.test(t) || ATTESTATION.test(t)) return { eligible: false, blocked: true, score: -100, text: t };
-    const legal = LEGAL.test(t);
-    const assent = ASSENT.test(t);
+    if (containsNegative(t) || containsAttestation(t)) return { eligible: false, blocked: true, score: -100, text: t };
+    const compact = compactSemantic(t);
+    const nonLatin = hasNonLatin(t);
+    const legal = LEGAL.test(t) || COMPACT_LEGAL.test(compact) || (nonLatin && LEGAL.test(compact));
+    const assent = ASSENT.test(t) || COMPACT_ASSENT.test(compact) || (nonLatin && ASSENT.test(compact));
     const required = REQUIRED.test(t);
     const validation = VALIDATION.test(t);
     const read = READ_WORD.test(t);
@@ -213,6 +257,15 @@
     if (required) score += 4;
     if (validation) score += 6;
     return { eligible: (legal && assent) || (legal && (required || validation)), legal, assent, required, validation, read, score, text: t };
+  }
+
+  function fastSemantic(text) {
+    if (!text) return false;
+    if (FAST_TEXT.test(text)) return true;
+    const compact = compactSemantic(text, 900);
+    const nonLatin = hasNonLatin(text);
+    return COMPACT_LEGAL.test(compact) || COMPACT_ASSENT.test(compact) || COMPACT_RISK.test(compact) ||
+      (nonLatin && (LEGAL.test(compact) || ASSENT.test(compact)));
   }
 
   function isCheckboxLike(el) {
@@ -428,20 +481,51 @@
     }, delays[phase]);
   }
 
+  function blockerStillUsed(blocker, except = null) {
+    if (!(blocker instanceof Element)) return false;
+    for (const pending of pendingVisibility) {
+      if (pending === except) continue;
+      const target = pending?.targetRef?.deref?.();
+      if (!(target instanceof Element)) continue;
+      if (pending?.blockerRef?.deref?.() === blocker) return true;
+    }
+    return false;
+  }
+
+  function removePendingEntry(entry) {
+    if (!entry || !pendingVisibility.delete(entry)) return;
+    const el = entry.targetRef?.deref?.();
+    if (el instanceof Element) pendingEntryByElement.delete(el);
+    const blocker = entry.blockerRef?.deref?.();
+    if (blocker instanceof Element && !blockerStillUsed(blocker)) {
+      try { resizeObserver?.unobserve(blocker); } catch (_) {}
+    }
+    if (!pendingVisibility.size) pendingRescuePhase = 0;
+  }
+
+  function sweepPendingVisibility() {
+    for (const entry of [...pendingVisibility]) {
+      const el = entry?.targetRef?.deref?.();
+      if (!(el instanceof Element) || !el.isConnected) removePendingEntry(entry);
+    }
+  }
+
   function pend(el, blocker = el) {
-    if (!(el instanceof Element) || pendingVisibility.has(el) || pendingVisibility.size >= MAX_PENDING_VISIBILITY) return;
-    pendingVisibility.add(el);
+    if (!(el instanceof Element) || pendingEntryByElement.has(el)) return;
+    if (pendingVisibility.size >= MAX_PENDING_VISIBILITY) sweepPendingVisibility();
+    if (pendingVisibility.size >= MAX_PENDING_VISIBILITY) return;
     const observed = blocker instanceof Element ? blocker : el;
-    let targets = blockerTargets.get(observed);
-    if (!targets) { targets = new Set(); blockerTargets.set(observed, targets); }
-    targets.add(el);
+    const entry = { targetRef: new WeakRef(el), blockerRef: new WeakRef(observed) };
+    pendingVisibility.add(entry);
+    pendingEntryByElement.set(el, entry);
     try { resizeObserver?.observe(observed); } catch (_) {}
     schedulePendingRescue();
   }
 
   function unpend(el) {
-    pendingVisibility.delete(el);
-    if (!pendingVisibility.size) pendingRescuePhase = 0;
+    if (!(el instanceof Element)) return;
+    const entry = pendingEntryByElement.get(el);
+    if (entry) removePendingEntry(entry);
   }
 
   function controlConfidence(el, input) {
@@ -455,7 +539,10 @@
   }
 
   function consequentialRisk(localText, context) {
-    return CONSEQUENTIAL_LOCAL.test(localText) || !!context?.transaction;
+    const text = normalize(localText);
+    const compact = compactSemantic(text);
+    return CONSEQUENTIAL_LOCAL.test(text) || COMPACT_RISK.test(compact) ||
+      (hasNonLatin(text) && CONSEQUENTIAL_LOCAL.test(compact)) || !!context?.transaction;
   }
 
   function snapshotCandidate(el) {
@@ -475,7 +562,7 @@
   }
 
   function decisionFor(s) {
-    if (s.disabled || s.risky || s.assessment.blocked || NEGATIVE.test(s.text) || ATTESTATION.test(s.text)) return { accept: false, score: -100 };
+    if (s.disabled || s.risky || s.assessment.blocked || containsNegative(s.text) || containsAttestation(s.text)) return { accept: false, score: -100 };
     const a = s.assessment;
     let score = a.score + s.links + s.context.gatingScore + (s.context.auth ? 2 : 0) + Math.min(s.confidence, 5);
     if (s.required) score += 4;
@@ -740,7 +827,7 @@
     if (!(el instanceof Element) || !isCheckboxLike(el)) return false;
     if (relevantControls.has(el) || el.hasAttribute('required') || el.getAttribute('aria-required') === 'true') return true;
     const own = ownHint(el);
-    if (own && (FAST_TEXT.test(own) || REQUIRED.test(own) || ASSENT.test(own))) return true;
+    if (own && (fastSemantic(own) || REQUIRED.test(own) || ASSENT.test(own))) return true;
     // Do not resolve every native input's HTMLLabelElement during broad discovery. On large
     // settings pages, `input.labels`/label lookup dominates CPU. Legal label text is discovered
     // independently by the bounded text walker and marks its linked control relevant before the
@@ -749,10 +836,10 @@
     if (el instanceof HTMLInputElement) {
       if (!el.hasAttribute('aria-labelledby') && !el.hasAttribute('aria-describedby')) return false;
       const text = accessibleText(el, 460);
-      return FAST_TEXT.test(text) || REQUIRED.test(text) || ASSENT.test(text);
+      return fastSemantic(text) || REQUIRED.test(text) || ASSENT.test(text);
     }
     const text = accessibleText(el, 460);
-    return FAST_TEXT.test(text) || REQUIRED.test(text) || ASSENT.test(text);
+    return fastSemantic(text) || REQUIRED.test(text) || ASSENT.test(text);
   }
 
   function processCandidate(el, urgent = false) {
@@ -774,7 +861,7 @@
     let depth = 0;
     for (const p of ancestorList(anchor, 8)) {
       const text = accessibleText(p, MAX_ROW_TEXT);
-      if (!FAST_TEXT.test(text)) { depth++; continue; }
+      if (!fastSemantic(text)) { depth++; continue; }
       const a = assessText(text);
       const risk = CONSEQUENTIAL_LOCAL.test(text);
       const rank = a.score - depth * 0.4;
@@ -859,7 +946,7 @@
     const info = findAgreementRow(anchor);
     if (!info?.row) return;
     const context = contextSnapshot(info.row);
-    if (consequentialRisk(info.text, context) || NEGATIVE.test(info.text) || ATTESTATION.test(info.text)) return;
+    if (consequentialRisk(info.text, context) || containsNegative(info.text) || containsAttestation(info.text)) return;
     if (info.assessment.legal || context.auth) {
       broadShadowEnabled = broadShadowEnabled || context.auth;
       if (broadShadowEnabled) queueShadowSweep(info.row);
@@ -908,11 +995,32 @@
     return normalize(`${el.getAttribute('aria-label') || ''} ${el.getAttribute('title') || ''} ${el.getAttribute('placeholder') || ''} ${el.getAttribute('name') || ''} ${el.id || ''} ${el.getAttribute('data-testid') || ''}`, 520);
   }
 
+  function maybeFragmentedAgreement(el, urgent = false) {
+    if (!(el instanceof Element)) return;
+    const label = el.localName === 'label' ? el : el.closest?.('label');
+    if (!(label instanceof HTMLLabelElement) || fragmentRowsSeen.has(label)) return;
+
+    // Broad settings pages commonly use <label><input>single text/span</label>. Do not aggregate
+    // those. Only the structural signature of multiple inline text elements unlocks this fallback.
+    let fragments = 0;
+    for (const child of label.children) {
+      if (isCheckboxLike(child)) continue;
+      if (++fragments >= 2) break;
+      // A single wrapper can itself contain multiple fragments.
+      if (child.children?.length >= 2) { fragments = 2; break; }
+    }
+    if (fragments < 2) return;
+    fragmentRowsSeen.add(label);
+    const text = accessibleText(label, MAX_ROW_TEXT);
+    if (fastSemantic(text)) processAgreementAnchor(label, urgent);
+  }
+
   function processElement(el, urgent = false) {
     if (!(el instanceof Element)) return;
     if (isCheckboxLike(el)) processCandidate(el, urgent);
+    maybeFragmentedAgreement(el, urgent);
     const hint = ownHint(el);
-    if (hint && FAST_TEXT.test(hint)) processAgreementAnchor(el, urgent);
+    if (hint && fastSemantic(hint)) processAgreementAnchor(el, urgent);
     if (AUTH.test(hint)) { broadShadowEnabled = true; queueShadowSweep(contextRoot(el) || el.closest?.('form,dialog,[role="dialog"]') || composedParent(el) || el); }
   }
 
@@ -945,11 +1053,48 @@
 
   function currentWalkGeneration(root) { return walkGeneration.get(root) || 0; }
 
+  function rootConnected(root) {
+    if (!root) return false;
+    if (root instanceof Document) return root === document;
+    if (root instanceof ShadowRoot) return root.host?.isConnected === true;
+    if (root instanceof Element) return root.isConnected;
+    if (root instanceof DocumentFragment) return true;
+    return false;
+  }
+
+  function firstNodeInRoot(root, includeRoot) {
+    if (includeRoot && root instanceof Element) return root;
+    return root?.firstChild || null;
+  }
+
+  function nextNodeInRoot(node, root) {
+    if (!(node instanceof Node) || !(root instanceof Node)) return null;
+    if (node.firstChild) return node.firstChild;
+    let p = node;
+    while (p && p !== root) {
+      if (p.nextSibling) return p.nextSibling;
+      p = p.parentNode;
+    }
+    return null;
+  }
+
+  function nodeWithinRoot(node, root) {
+    if (!(node instanceof Node) || !(root instanceof Node)) return false;
+    return node === root || root.contains(node);
+  }
+
+  function resetWeakCursorJob(job, root) {
+    job.started = false;
+    job.cursorRef = null;
+    job.generation = currentWalkGeneration(root);
+  }
+
   function makeWalkJob(root, urgent) {
-    if (!root || (root instanceof Element && !root.isConnected)) return null;
+    if (!root || !rootConnected(root)) return null;
     return {
-      root,
-      walker: document.createTreeWalker(root, NodeFilter.SHOW_ELEMENT | NodeFilter.SHOW_TEXT),
+      rootRef: new WeakRef(root),
+      cursorRef: null,
+      started: false,
       urgent,
       generation: currentWalkGeneration(root),
       includeRoot: root instanceof Element
@@ -957,25 +1102,43 @@
   }
 
   function runWalkJob(job, budgetMs) {
-    if (job.generation !== currentWalkGeneration(job.root)) return false;
+    const root = job?.rootRef?.deref?.();
+    if (!root || !rootConnected(root)) return false;
+    if (job.generation !== currentWalkGeneration(root)) resetWeakCursorJob(job, root);
     const start = performance.now();
-    if (job.includeRoot) {
-      job.includeRoot = false;
-      handleNode(job.root, job.urgent);
-      if (performance.now() - start >= budgetMs) return true;
-    }
     let node;
-    let checked = 0;
-    while ((node = job.walker.nextNode())) {
-      if (job.generation !== currentWalkGeneration(job.root)) return false;
-      handleNode(node, job.urgent);
-      if ((++checked & 3) === 0 && performance.now() - start >= budgetMs) return true;
+    if (!job.started) {
+      job.started = true;
+      node = firstNodeInRoot(root, job.includeRoot);
+    } else {
+      node = job.cursorRef?.deref?.() || null;
+      if (node && !nodeWithinRoot(node, root)) {
+        // The cursor was moved/removed between slices. Restarting is bounded by generation/click
+        // memoization and is safer than silently skipping a newly restructured subtree.
+        resetWeakCursorJob(job, root);
+        job.started = true;
+        node = firstNodeInRoot(root, job.includeRoot);
+      }
     }
+    let checked = 0;
+    while (node) {
+      if (job.generation !== currentWalkGeneration(root)) {
+        resetWeakCursorJob(job, root);
+        return true;
+      }
+      const next = nextNodeInRoot(node, root);
+      job.cursorRef = next instanceof Node ? new WeakRef(next) : null;
+      handleNode(node, job.urgent);
+      if ((++checked & 3) === 0 && performance.now() - start >= budgetMs) return !!next;
+      node = next;
+    }
+    job.cursorRef = null;
     return false;
   }
 
   function releaseWalkJob(job) {
-    if (job?.root) queuedWalkRoots.delete(job.root);
+    const root = job?.rootRef?.deref?.();
+    if (root) queuedWalkRoots.delete(root);
   }
 
   function processSubtree(root, urgent = false, syncBudget = null) {
@@ -1008,83 +1171,170 @@
   function enqueueRootBatch(roots, index, urgent) {
     if (!roots || index >= roots.length) return;
     while (rootBatches.length >= MAX_ROOT_BATCHES) rootBatches.shift();
-    rootBatches.push({ roots, index, urgent, createdAt: performance.now() });
+    const refs = roots.map(root => root && typeof root === 'object' ? new WeakRef(root) : null);
+    rootBatches.push({ refs, index, urgent, createdAt: performance.now() });
     scheduleBackground();
   }
 
   function runRootBatch(job, budgetMs) {
-    if (performance.now() - job.createdAt > ROOT_BATCH_TTL_MS) {
-      if (document.documentElement) queueRoot(document.documentElement, false);
-      return false;
-    }
+    if (performance.now() - job.createdAt > ROOT_BATCH_TTL_MS) return false;
     const start = performance.now();
-    while (job.index < job.roots.length && performance.now() - start < budgetMs) {
-      const root = job.roots[job.index++];
+    while (job.index < job.refs.length && performance.now() - start < budgetMs) {
+      const root = job.refs[job.index++]?.deref?.();
       if (!root || (root instanceof Element && !root.isConnected)) continue;
       const remaining = Math.max(0.25, budgetMs - (performance.now() - start));
       processSubtree(root, job.urgent, Math.min(0.8, remaining));
     }
-    return job.index < job.roots.length;
+    return job.index < job.refs.length;
   }
 
   function currentShadowGeneration(root) { return shadowGeneration.get(root) || 0; }
 
   function queueShadowSweep(root) {
-    if (!broadShadowEnabled || !root) return;
+    if (!broadShadowEnabled || !root || !rootConnected(root)) return;
     shadowGeneration.set(root, currentShadowGeneration(root) + 1);
     if (queuedShadowRoots.has(root)) return;
     queuedShadowRoots.add(root);
     while (shadowJobs.length >= MAX_SHADOW_JOBS) {
       const old = shadowJobs.shift();
-      if (old?.root) queuedShadowRoots.delete(old.root);
+      const oldRoot = old?.rootRef?.deref?.();
+      if (oldRoot) queuedShadowRoots.delete(oldRoot);
     }
-    shadowJobs.push({ root, walker: document.createTreeWalker(root, NodeFilter.SHOW_ELEMENT), generation: currentShadowGeneration(root), includeRoot: root instanceof HTMLElement });
+    shadowJobs.push({
+      rootRef: new WeakRef(root),
+      cursorRef: null,
+      started: false,
+      generation: currentShadowGeneration(root),
+      includeRoot: root instanceof HTMLElement
+    });
     scheduleBackground();
   }
 
   function runShadowJob(job, budgetMs) {
-    if (job.generation !== currentShadowGeneration(job.root)) {
-      job.walker = document.createTreeWalker(job.root, NodeFilter.SHOW_ELEMENT);
-      job.generation = currentShadowGeneration(job.root);
-      job.includeRoot = job.root instanceof HTMLElement;
+    const root = job?.rootRef?.deref?.();
+    if (!root || !rootConnected(root)) return false;
+    if (job.generation !== currentShadowGeneration(root)) {
+      job.started = false;
+      job.cursorRef = null;
+      job.generation = currentShadowGeneration(root);
     }
     const start = performance.now();
-    if (job.includeRoot) { job.includeRoot = false; probeShadow(job.root, true); }
     let node;
-    let checked = 0;
-    while ((node = job.walker.nextNode())) {
-      if (job.generation !== currentShadowGeneration(job.root)) return true;
-      if (node instanceof HTMLElement) probeShadow(node, true);
-      if ((++checked & 31) === 0 && performance.now() - start >= budgetMs) return true;
+    if (!job.started) {
+      job.started = true;
+      node = firstNodeInRoot(root, job.includeRoot);
+    } else {
+      node = job.cursorRef?.deref?.() || null;
+      if (node && !nodeWithinRoot(node, root)) {
+        job.started = true;
+        job.cursorRef = null;
+        node = firstNodeInRoot(root, job.includeRoot);
+      }
     }
+    let checked = 0;
+    while (node) {
+      if (job.generation !== currentShadowGeneration(root)) {
+        job.started = false;
+        job.cursorRef = null;
+        job.generation = currentShadowGeneration(root);
+        return true;
+      }
+      const next = nextNodeInRoot(node, root);
+      job.cursorRef = next instanceof Node ? new WeakRef(next) : null;
+      if (node instanceof HTMLElement) probeShadow(node, true);
+      if ((++checked & 31) === 0 && performance.now() - start >= budgetMs) return !!next;
+      node = next;
+    }
+    job.cursorRef = null;
     return false;
+  }
+
+  function batchOwner(job) {
+    return job?.owner instanceof Element ? job.owner : job?.ownerRef?.deref?.();
   }
 
   function enqueueBatchJob(job) {
     while (batchJobs.length >= MAX_BATCH_JOBS) {
       const dropped = batchJobs.shift();
-      const owner = dropped?.owner;
+      const owner = batchOwner(dropped);
       if (owner instanceof Element && owner.isConnected) queueRoot(owner, false);
     }
     batchJobs.push(job);
     scheduleBackground();
   }
 
+  function enqueueSiblingRange(nodes, owner) {
+    if (!nodes?.length) return;
+    const first = nodes[0];
+    const last = nodes[nodes.length - 1];
+    if (!(first instanceof Node) || !(last instanceof Node)) {
+      if (owner instanceof Element && owner.isConnected) queueRoot(owner, false);
+      return;
+    }
+    // A MutationRecord NodeList retains every inserted subtree while queued. For huge batches,
+    // retain only weak range boundaries and advance through live siblings one at a time.
+    enqueueBatchJob({
+      mode: 'sibling-range',
+      ownerRef: owner instanceof Element ? new WeakRef(owner) : null,
+      currentRef: new WeakRef(first),
+      lastRef: new WeakRef(last),
+      reachedLast: false,
+      afterCurrentDone: false,
+      subjob: null,
+      createdAt: performance.now()
+    });
+  }
+
+  function startBatchNode(job, node) {
+    if (node?.nodeType === Node.TEXT_NODE) processTextNode(node, false);
+    else if (node?.nodeType === Node.ELEMENT_NODE || node?.nodeType === Node.DOCUMENT_FRAGMENT_NODE) job.subjob = makeWalkJob(node, false);
+  }
+
   function runBatchJob(job, budgetMs) {
     const now = performance.now();
-    if (now - job.createdAt > BATCH_JOB_TTL_MS || (job.owner instanceof Element && !job.owner.isConnected)) {
-      if (job.owner instanceof Element && job.owner.isConnected) queueRoot(job.owner, false);
+    const owner = batchOwner(job);
+    if (now - job.createdAt > BATCH_JOB_TTL_MS || ((job.owner || job.ownerRef) && !(owner instanceof Element))) return false;
+    if (owner instanceof Element && !owner.isConnected) return false;
+    const start = now;
+
+    if (job.mode === 'sibling-range') {
+      while (job.subjob || job.currentRef) {
+        if (!job.subjob) {
+          const node = job.currentRef?.deref?.();
+          const last = job.lastRef?.deref?.();
+          if (!(node instanceof Node)) {
+            if (!job.reachedLast && owner instanceof Element && owner.isConnected) queueRoot(owner, false);
+            return false;
+          }
+          const isLast = node === last;
+          const next = node.nextSibling;
+          job.currentRef = next instanceof Node ? new WeakRef(next) : null;
+          job.afterCurrentDone = isLast;
+          if (isLast) job.reachedLast = true;
+          if (!node.isConnected) {
+            if (isLast) return false;
+            if (!job.currentRef && !job.reachedLast && owner instanceof Element && owner.isConnected) queueRoot(owner, false);
+            continue;
+          }
+          startBatchNode(job, node);
+        }
+        if (job.subjob) {
+          const remaining = Math.max(0.35, budgetMs - (performance.now() - start));
+          if (runWalkJob(job.subjob, remaining)) return true;
+          job.subjob = null;
+        }
+        if (job.afterCurrentDone) return false;
+        if (performance.now() - start >= budgetMs) return !!job.currentRef;
+      }
+      if (!job.reachedLast && owner instanceof Element && owner.isConnected) queueRoot(owner, false);
       return false;
     }
-    const start = now;
+
     while (job.index < job.nodes.length || job.subjob) {
       if (!job.subjob) {
         const node = job.nodes[job.index++];
         if (node && 'isConnected' in node && !node.isConnected) continue;
-        if (node?.nodeType === Node.TEXT_NODE) { processTextNode(node, false); }
-        else if (node?.nodeType === Node.ELEMENT_NODE || node?.nodeType === Node.DOCUMENT_FRAGMENT_NODE) {
-          job.subjob = makeWalkJob(node, false);
-        }
+        startBatchNode(job, node);
       }
       if (job.subjob) {
         const remaining = Math.max(0.35, budgetMs - (performance.now() - start));
@@ -1110,16 +1360,18 @@
           if (!runRootBatch(job, BACKGROUND_BUDGET_MS)) rootBatches.shift();
         } else if (walkJobs.length) {
           const job = walkJobs[0];
-          if (!job.root.isConnected && !(job.root instanceof Document || job.root instanceof ShadowRoot)) { releaseWalkJob(job); walkJobs.shift(); }
-          else if (job.generation !== currentWalkGeneration(job.root)) { releaseWalkJob(job); walkJobs.shift(); queueRoot(job.root, job.urgent); }
+          const root = job?.rootRef?.deref?.();
+          if (!root || !rootConnected(root)) { releaseWalkJob(job); walkJobs.shift(); }
+          else if (job.generation !== currentWalkGeneration(root)) { releaseWalkJob(job); walkJobs.shift(); queueRoot(root, job.urgent); }
           else if (!runWalkJob(job, BACKGROUND_BUDGET_MS)) { releaseWalkJob(job); walkJobs.shift(); }
         } else if (batchJobs.length) {
           const job = batchJobs[0];
           if (!runBatchJob(job, BACKGROUND_BUDGET_MS)) batchJobs.shift();
         } else if (shadowJobs.length) {
           const job = shadowJobs[0];
-          if (!job.root.isConnected && !(job.root instanceof Document || job.root instanceof ShadowRoot)) { queuedShadowRoots.delete(job.root); shadowJobs.shift(); }
-          else if (!runShadowJob(job, BACKGROUND_BUDGET_MS)) { queuedShadowRoots.delete(job.root); shadowJobs.shift(); }
+          const root = job?.rootRef?.deref?.();
+          if (!root || !rootConnected(root)) { if (root) queuedShadowRoots.delete(root); shadowJobs.shift(); }
+          else if (!runShadowJob(job, BACKGROUND_BUDGET_MS)) { queuedShadowRoots.delete(root); shadowJobs.shift(); }
         }
         if (rootBatches.length || walkJobs.length || batchJobs.length || shadowJobs.length) await yieldMain();
       }
@@ -1229,7 +1481,7 @@
               const data = node.data; if (data && data.length <= 1400 && (FAST_TEXT.test(data) || AUTH.test(data)) && node.parentElement) queueRoot(node.parentElement, false);
             } else if (node?.nodeType === Node.ELEMENT_NODE || node?.nodeType === Node.DOCUMENT_FRAGMENT_NODE) queueRoot(node, false);
           }
-          enqueueBatchJob({ nodes, index: 0, subjob: null, owner: record.target, createdAt: performance.now() });
+          enqueueSiblingRange(nodes, record.target);
           continue;
         }
         for (const node of nodes) {
@@ -1273,9 +1525,10 @@
   }
 
   function recheckPending() {
-    for (const el of [...pendingVisibility]) {
-      if (!(el instanceof Element) || !el.isConnected) { unpend(el); continue; }
-      if (cheapActive(el) && visuallyActive(el)) { unpend(el); processElement(el, true); processAgreementAnchor(el, true); }
+    for (const entry of [...pendingVisibility]) {
+      const el = entry?.targetRef?.deref?.();
+      if (!(el instanceof Element) || !el.isConnected) { removePendingEntry(entry); continue; }
+      if (cheapActive(el) && visuallyActive(el)) { removePendingEntry(entry); processElement(el, true); processAgreementAnchor(el, true); }
     }
   }
 
@@ -1332,6 +1585,17 @@
     }
   }
 
+  function queueSeedShells(seedRoot) {
+    if (!(seedRoot instanceof Element)) return;
+    let p = composedParent(seedRoot);
+    let depth = 0;
+    while (p instanceof Element && depth++ < 5) {
+      if (p === document.documentElement || p === document.body) break;
+      queueRoot(p, false);
+      p = composedParent(p);
+    }
+  }
+
   function bootstrapSeedRoot() {
     const seed = globalThis.__AUTO_AGREE_BOOTSTRAP_CONTEXT__?.seed;
     const el = seed instanceof Element ? seed : seed?.parentElement;
@@ -1346,14 +1610,14 @@
     else if (document.documentElement) queueRoot(document.documentElement, false);
     void tryCacheFastPath();
 
-    // If a tightly-scoped bootstrap seed did not expose any legal candidate, perform one
-    // delayed, time-budgeted whole-document rescue. This protects unusual DOM layouts while
-    // keeping the normal login-modal path local.
-    if (seedRoot && document.documentElement) {
+    // If the bootstrap seed itself has no agreement, expand only through a few surrounding
+    // UI shells. Existing far-away document content is not rescanned merely because a login form
+    // has no Terms checkbox; later DOM insertions are already covered by discoveryObserver.
+    if (seedRoot) {
       initialRescueTimer = setTimeout(() => {
         initialRescueTimer = 0;
-        if (!meaningfulCandidateSeen) queueRoot(document.documentElement, false);
-      }, 700);
+        if (!meaningfulCandidateSeen) queueSeedShells(seedRoot);
+      }, 420);
     }
 
     addEventListener('pointerdown', preflight, true);

@@ -1,9 +1,9 @@
 {
   "manifest_version": 3,
   "name": "Auto Agree Login Terms",
-  "version": "4.0.0",
+  "version": "5.0.0",
   "minimum_chrome_version": "120",
-  "description": "Automatically accepts routine mandatory login/register Terms and Privacy agreements with lazy per-frame activation, bounded DOM work, Shadow DOM support, and hard exclusions for consequential consent.",
+  "description": "Automatically accepts routine mandatory login/register Terms and Privacy agreements with evidence-gated lazy activation, bounded streaming DOM work, Shadow DOM support, hardened local learning, and hard exclusions for consequential consent.",
   "permissions": [
     "scripting",
     "storage"
@@ -16,8 +16,12 @@
   },
   "content_scripts": [
     {
-      "matches": ["<all_urls>"],
-      "js": ["bootstrap.js"],
+      "matches": [
+        "<all_urls>"
+      ],
+      "js": [
+        "bootstrap.js"
+      ],
       "run_at": "document_start",
       "all_frames": true,
       "match_about_blank": true,
