@@ -57,6 +57,7 @@
   const indexedRefs = new WeakMap();
   const relevantControls = new WeakSet();
   const fragmentRowsSeen = new WeakSet();
+  const parserDeferredAnchors = new WeakSet();
   const contextCache = new WeakMap();
   const contextEpoch = new WeakMap();
   const contextTxnRefs = new Set();
@@ -1050,6 +1051,23 @@
     if (!enough || !cheapActive(activeRow) || !vs.visible) { if (enough) pend(activeRow, vs.blocker || activeRow); return; }
     const visual = preciseGeometryTarget(activeRow, anchor);
     if (!visual) return;
+
+    // A classless control has no observable checked contract, so it is intentionally one-shot.
+    // During HTML parsing, however, the page's own trailing scripts may not have attached the
+    // click handler yet. Do not spend the one allowed click before DOMContentLoaded; defer the
+    // decision (not the click result) and re-evaluate once the parser has finished.
+    if (document.readyState === 'loading') {
+      if (!parserDeferredAnchors.has(anchor)) {
+        parserDeferredAnchors.add(anchor);
+        const ref = typeof WeakRef === 'function' ? new WeakRef(anchor) : null;
+        addEventListener('DOMContentLoaded', () => {
+          const current = ref?.deref?.();
+          if (current instanceof Element) parserDeferredAnchors.delete(current);
+          if (!lifecyclePaused && current instanceof Element && current.isConnected) processAgreementAnchor(current, true);
+        }, { once: true });
+      }
+      return;
+    }
 
     // Treat classless visual controls as one-shot unknown-state controls; never click the whole agreement row.
     const pseudo = {
