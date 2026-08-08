@@ -13,11 +13,17 @@ const PROFILE_TTL_MS = 180 * 24 * 60 * 60 * 1000;
 const INJECTION_MAX_GLOBAL = 4;
 const INJECTION_MAX_PER_TAB = 2;
 const INJECTION_QUEUE_MAX = 64;
+const INJECTION_AGING_MS = 1200;
+const INJECTION_STALE_MS = 15000;
+const REHYDRATE_KEY = '__auto_agree_update_rehydrate__';
 const injectionQueue = [];
 const injectionActiveByTab = new Map();
 let injectionActive = 0;
-const VERSION = '7.0.0';
+let injectionSeq = 0;
+let lastScheduledTab = -1;
+const VERSION = '8.0.0';
 let storageWriteChain = Promise.resolve();
+let rehydratePromise = null;
 
 function cacheProfile(key, value) {
   if (profileCache.has(key)) profileCache.delete(key);
@@ -234,37 +240,146 @@ function putProfile(origin, profile) {
   return storageWriteChain;
 }
 
-function drainInjectionQueue() {
-  if (injectionActive >= INJECTION_MAX_GLOBAL || !injectionQueue.length) return;
-  for (let i = 0; i < injectionQueue.length && injectionActive < INJECTION_MAX_GLOBAL; ) {
+function effectivePriority(job, now = Date.now()) {
+  const age = Math.max(0, now - job.queuedAt);
+  const boost = Math.min(3, Math.floor(age / INJECTION_AGING_MS));
+  return job.priority + boost;
+}
+
+function pruneStaleInjectionJobs(now = Date.now()) {
+  for (let i = injectionQueue.length - 1; i >= 0; i--) {
     const job = injectionQueue[i];
-    const tabActive = injectionActiveByTab.get(job.target.tabId) || 0;
-    if (tabActive >= INJECTION_MAX_PER_TAB) { i++; continue; }
+    if (now - job.queuedAt <= INJECTION_STALE_MS) continue;
     injectionQueue.splice(i, 1);
-    injectionActive++;
-    injectionActiveByTab.set(job.target.tabId, tabActive + 1);
-    chrome.scripting.executeScript({ target: job.target, files: job.files, world: 'ISOLATED', injectImmediately: true })
-      .then(job.resolve, job.reject)
-      .finally(() => {
-        injectionActive = Math.max(0, injectionActive - 1);
-        const next = Math.max(0, (injectionActiveByTab.get(job.target.tabId) || 1) - 1);
-        if (next) injectionActiveByTab.set(job.target.tabId, next); else injectionActiveByTab.delete(job.target.tabId);
-        drainInjectionQueue();
-      });
+    try { job.reject(new Error('injection-stale')); } catch (_) {}
   }
 }
 
+function pickNextInjectionIndex(now = Date.now()) {
+  pruneStaleInjectionJobs(now);
+  let best = -1;
+  let bestScore = -Infinity;
+  for (let i = 0; i < injectionQueue.length; i++) {
+    const job = injectionQueue[i];
+    const tabId = job.target.tabId;
+    if ((injectionActiveByTab.get(tabId) || 0) >= INJECTION_MAX_PER_TAB) continue;
+    const score = effectivePriority(job, now);
+    if (score > bestScore) { best = i; bestScore = score; continue; }
+    if (score < bestScore || best < 0) continue;
+    const prior = injectionQueue[best];
+    const jobRotates = tabId !== lastScheduledTab;
+    const priorRotates = prior.target.tabId !== lastScheduledTab;
+    if (jobRotates !== priorRotates) { if (jobRotates) best = i; continue; }
+    if (job.queuedAt < prior.queuedAt || (job.queuedAt === prior.queuedAt && job.seq < prior.seq)) best = i;
+  }
+  return best;
+}
+
+function finishInjection(job) {
+  injectionActive = Math.max(0, injectionActive - 1);
+  const tabId = job.target.tabId;
+  const next = Math.max(0, (injectionActiveByTab.get(tabId) || 1) - 1);
+  if (next) injectionActiveByTab.set(tabId, next); else injectionActiveByTab.delete(tabId);
+  drainInjectionQueue();
+}
+
+function drainInjectionQueue() {
+  while (injectionActive < INJECTION_MAX_GLOBAL && injectionQueue.length) {
+    const index = pickNextInjectionIndex();
+    if (index < 0) return;
+    const [job] = injectionQueue.splice(index, 1);
+    const tabId = job.target.tabId;
+    lastScheduledTab = tabId;
+    injectionActive++;
+    injectionActiveByTab.set(tabId, (injectionActiveByTab.get(tabId) || 0) + 1);
+    chrome.scripting.executeScript({ target: job.target, files: job.files, world: 'ISOLATED', injectImmediately: true })
+      .then(job.resolve, job.reject)
+      .finally(() => finishInjection(job));
+  }
+}
+
+function makeQueueRoom(priority, now = Date.now()) {
+  pruneStaleInjectionJobs(now);
+  if (injectionQueue.length < INJECTION_QUEUE_MAX) return true;
+  if (priority <= 1) return false;
+  let victim = -1;
+  for (let i = 0; i < injectionQueue.length; i++) {
+    const job = injectionQueue[i];
+    if (job.priority >= priority) continue;
+    if (victim < 0) { victim = i; continue; }
+    const current = injectionQueue[victim];
+    const jobScore = effectivePriority(job, now);
+    const currentScore = effectivePriority(current, now);
+    if (jobScore < currentScore || (jobScore === currentScore && job.queuedAt > current.queuedAt)) victim = i;
+  }
+  if (victim < 0) return false;
+  const [dropped] = injectionQueue.splice(victim, 1);
+  try { dropped.reject(new Error('injection-preempted')); } catch (_) {}
+  return true;
+}
+
 function scheduleInjection(target, files, priority) {
-  if (injectionQueue.length >= INJECTION_QUEUE_MAX) return Promise.reject(new Error('injection-queue-full'));
+  const now = Date.now();
+  if (!makeQueueRoom(priority, now)) return Promise.reject(new Error('injection-queue-full'));
   return new Promise((resolve, reject) => {
-    injectionQueue.push({ target, files, priority, resolve, reject, queuedAt: Date.now() });
-    injectionQueue.sort((a,b) => b.priority - a.priority || a.queuedAt - b.queuedAt);
+    injectionQueue.push({ target, files, priority, resolve, reject, queuedAt: now, seq: injectionSeq++ });
     drainInjectionQueue();
   });
 }
 
+function senderLifecycleAllowed(sender) {
+  const state = sender?.documentLifecycle;
+  return !state || state === 'active';
+}
+
+async function rehydrateExistingTabs() {
+  if (!chrome.tabs?.query) return;
+  let tabs = [];
+  try { tabs = await chrome.tabs.query({}); } catch (_) { return; }
+  let pending = [...new Set(tabs.map(tab => tab?.id).filter(Number.isInteger))];
+  for (let pass = 0; pass < 2 && pending.length; pass++) {
+    const retry = [];
+    for (let i = 0; i < pending.length; i += 12) {
+      const ids = pending.slice(i, i + 12);
+      const results = await Promise.allSettled(ids.map(tabId =>
+        scheduleInjection({ tabId, allFrames: true }, ['bootstrap.js'], 0)
+      ));
+      for (let j = 0; j < results.length; j++) if (results[j].status === 'rejected') retry.push(ids[j]);
+    }
+    pending = retry;
+    if (pending.length && pass === 0) await new Promise(resolve => setTimeout(resolve, 180));
+  }
+}
+
+async function startUpdateRehydrate() {
+  const marker = { version: VERSION, ts: Date.now() };
+  try { await chrome.storage.session?.set({ [REHYDRATE_KEY]: marker }); } catch (_) {}
+  try { await rehydrateExistingTabs(); }
+  finally { try { await chrome.storage.session?.remove(REHYDRATE_KEY); } catch (_) {} }
+}
+
+function requestUpdateRehydrate() {
+  if (!rehydratePromise) rehydratePromise = startUpdateRehydrate().finally(() => { rehydratePromise = null; });
+  return rehydratePromise;
+}
+
+chrome.runtime.onInstalled?.addListener?.(details => {
+  if (details?.reason === 'update') void requestUpdateRehydrate();
+});
+
+void (async () => {
+  try {
+    const stored = await chrome.storage.session?.get(REHYDRATE_KEY);
+    if (stored?.[REHYDRATE_KEY]?.version === VERSION) await requestUpdateRehydrate();
+  } catch (_) {}
+})();
+
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (!message || typeof message.type !== 'string') return false;
+  if (!senderLifecycleAllowed(sender)) {
+    sendResponse({ ok: false, error: `inactive-document:${sender.documentLifecycle}` });
+    return false;
+  }
 
   if (message.type === 'AUTO_AGREE_PROFILE_GET') {
     getProfile(message.origin).then(

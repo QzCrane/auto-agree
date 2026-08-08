@@ -1,10 +1,10 @@
 (() => {
   'use strict';
   if (globalThis.__AUTO_AGREE_GATE__) return;
-  globalThis.__AUTO_AGREE_GATE__ = '7.0.0';
+  globalThis.__AUTO_AGREE_GATE__ = '8.0.0';
 
 
-  const VERSION = '7.0.0';
+  const VERSION = '8.0.0';
   const CORE = globalThis.__AUTO_AGREE_SEMANTIC__;
   if (!CORE || CORE.version !== VERSION) return;
   const { normalize: norm, joinNormalized: joinNorm, compactSemantic, hasNonLatin } = CORE;
@@ -28,6 +28,8 @@
   const JOB_TTL_MS = 2400;
 
   let requested = false;
+  let handoffRetry = 0;
+  const HANDOFF_RETRY_DELAYS = [40, 160, 640];
   let observer = null;
   let backgroundRunning = false;
   let backgroundEpoch = 0;
@@ -223,19 +225,24 @@
   function activate(reason, seed = null) {
     if (requested || paused) return;
     requested = true;
-    globalThis.__AUTO_AGREE_BOOTSTRAP_CONTEXT__ = { reason, seed };
+    globalThis.__AUTO_AGREE_BOOTSTRAP_CONTEXT__ = { reason, seedRef: seed instanceof Element && typeof WeakRef === 'function' ? new WeakRef(seed) : null };
     observer?.disconnect();
     detachEvents();
     detachLifecycle();
     batchJobs.length = 0;
     deepJobs.length = 0;
     chrome.runtime.sendMessage({ type: 'AUTO_AGREE_ACTIVATE', reason }, response => {
-      if (chrome.runtime.lastError || !response?.ok) {
-        requested = false;
-        attachLifecycle();
-        if (document.visibilityState === 'hidden' || document.prerendering) paused = true;
-        else { paused = false; attachEvents(); startObserver(); }
-      }
+      if (!chrome.runtime.lastError && response?.ok) { handoffRetry = 0; return; }
+      requested = false;
+      attachLifecycle();
+      if (document.visibilityState === 'hidden' || document.prerendering) paused = true;
+      else { paused = false; attachEvents(); startObserver(); }
+      const delay = HANDOFF_RETRY_DELAYS[handoffRetry++];
+      if (delay == null) return;
+      const retrySeed = seed instanceof Element && seed.isConnected ? seed : null;
+      setTimeout(() => {
+        if (!paused && !requested) activate('worker-restart-retry', retrySeed);
+      }, delay);
     });
   }
 
@@ -509,7 +516,9 @@
     } catch (_) {}
 
     if (document.documentElement) {
-      const probeSeed = globalThis.__AUTO_AGREE_PROBE_CONTEXT__?.seed;
+      const probeContext = globalThis.__AUTO_AGREE_PROBE_CONTEXT__;
+      const probeSeed = probeContext?.seedRef?.deref?.() || probeContext?.seed || null;
+      try { delete globalThis.__AUTO_AGREE_PROBE_CONTEXT__; } catch (_) { globalThis.__AUTO_AGREE_PROBE_CONTEXT__ = null; }
       const seedEl = probeSeed instanceof Element ? probeSeed : probeSeed?.parentElement;
       if (seedEl instanceof Element && seedEl.isConnected) {
         let seedShadow = seedEl.shadowRoot;

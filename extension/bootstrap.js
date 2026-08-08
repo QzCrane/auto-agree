@@ -1,7 +1,7 @@
 (() => {
   'use strict';
   if (globalThis.__AUTO_AGREE_PROBE__) return;
-  globalThis.__AUTO_AGREE_PROBE__ = '7.0.0';
+  globalThis.__AUTO_AGREE_PROBE__ = '8.0.0';
 
   // This file is intentionally tiny and cheap: it only decides whether a frame deserves the
   // richer semantic gate. It never clicks, never interprets consent, and never scans unbounded DOM.
@@ -14,6 +14,8 @@
   const queued = new WeakSet();
   let observer = null;
   let gateRequested = false;
+  let handoffRetry = 0;
+  const HANDOFF_RETRY_DELAYS = [40, 160, 640];
   let drainScheduled = false;
   let eventsAttached = false;
   let lifecycleAttached = false;
@@ -191,7 +193,7 @@
   function requestGate(reason, seed) {
     if (gateRequested || paused) return;
     gateRequested = true;
-    globalThis.__AUTO_AGREE_PROBE_CONTEXT__ = { reason, seed };
+    globalThis.__AUTO_AGREE_PROBE_CONTEXT__ = { reason, seedRef: seed instanceof Element && typeof WeakRef === 'function' ? new WeakRef(seed) : null };
     observer?.disconnect();
     detachEvents();
     detachLifecycle();
@@ -200,12 +202,17 @@
     for (const job of deep) releaseDeep(job);
     deep.length = 0;
     chrome.runtime.sendMessage({ type: 'AUTO_AGREE_GATE', reason }, response => {
-      if (chrome.runtime.lastError || !response?.ok) {
-        gateRequested = false;
-        attachLifecycle();
-        if (document.visibilityState === 'hidden' || document.prerendering) paused = true;
-        else { paused = false; attachEvents(); startObserver(); }
-      }
+      if (!chrome.runtime.lastError && response?.ok) { handoffRetry = 0; return; }
+      gateRequested = false;
+      attachLifecycle();
+      if (document.visibilityState === 'hidden' || document.prerendering) paused = true;
+      else { paused = false; attachEvents(); startObserver(); }
+      const delay = HANDOFF_RETRY_DELAYS[handoffRetry++];
+      if (delay == null) return;
+      const retrySeed = seed instanceof Element && seed.isConnected ? seed : null;
+      setTimeout(() => {
+        if (!paused && !gateRequested) requestGate('worker-restart-retry', retrySeed);
+      }, delay);
     });
   }
 

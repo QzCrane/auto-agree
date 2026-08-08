@@ -29,3 +29,15 @@ Unknown custom toggle state is one-shot and is never blindly toggled twice.
 ## Cache rule
 
 Historical success can answer only “where should I look first?”. It cannot answer “may I click this now?”. Every cache hit is reclassified from current DOM, current context and current risk semantics.
+
+## Disabled-action causality
+
+A disabled Login/Continue action is only weak evidence that an agreement is the blocker. v8 explicitly checks native credential validity (`willValidate` / `ValidityState.valid`) as well as emptiness. A syntactically invalid but non-empty email, pattern mismatch, too-short value, or other native validity failure suppresses the action-gating bonus.
+
+This prevents the inference:
+
+```text
+Login disabled + Terms checkbox => Terms caused disabled
+```
+
+when the actual blocker is invalid credential state. No `checkValidity()` call is used, so the extension does not fire validation UI/events merely to inspect causality.

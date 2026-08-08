@@ -1,0 +1,4 @@
+<!doctype html><meta charset="utf-8"><title>TRAE-derived classless login fixture</title>
+<style>#row{display:flex;gap:8px;align-items:center;margin-top:8px}#box{display:inline-block;width:16px;height:16px;border:1px solid #333;cursor:pointer}#box[data-checked="true"]::after{content:'✓'}</style>
+<form><input type="tel" value="13800138000" autocomplete="tel"><input value="123456" name="verification-code"><div id="row"><span id="box" data-checked="false"></span><span>我已阅读并同意 <a href="/terms">服务条款</a> 和 <a href="/privacy">隐私政策</a></span></div><button type="button">登录</button></form>
+<script>document.querySelector('#box').addEventListener('click',e=>{e.currentTarget.dataset.checked='true';});</script>
