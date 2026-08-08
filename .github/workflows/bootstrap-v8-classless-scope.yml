@@ -30,49 +30,24 @@ jobs:
           from pathlib import Path
           p = Path('extension/gate.js')
           s = p.read_text()
-          old = '''  function onMutations(records) {
-            if (requested || paused) return;
-            const start = performance.now();
+          a = """    const start = performance.now();
             for (const record of records) {
-              if (record.type === 'childList') {
-                const nodes = record.addedNodes;
-                if (nodes.length > LARGE_BATCH) {
-                  const hit = sampleLargeBatch(nodes);
-                  if (hit) return activate(`mutation-sample-${hit.reason || 'evidence'}`, hit.seed);
-                  queueBatch(nodes, 0, record.target);
-                  continue;
-                }
-                for (let i = 0; i < nodes.length; i++) {
-                  if (performance.now() - start >= SYNC_MUTATION_BUDGET_MS) { queueBatch(nodes, i, record.target); break; }
-                  const hit = inspectNode(nodes[i], true, Math.min(0.35, Math.max(0.12, SYNC_MUTATION_BUDGET_MS - (performance.now() - start))));
-                  if (hit) return activate(`mutation-${hit.reason || 'evidence'}`, hit.seed || nodes[i]);
-                }
-              } else if (record.type === 'characterData') {
-          '''
-          new = '''  function onMutations(records) {
-            if (requested || paused) return;
-            const start = performance.now();
+          """
+          ar = """    const start = performance.now();
             const rescannedScopes = new WeakSet();
             for (const record of records) {
-              if (record.type === 'childList') {
-                const nodes = record.addedNodes;
-                if (nodes.length > LARGE_BATCH) {
-                  const hit = sampleLargeBatch(nodes);
-                  if (hit) return activate(`mutation-sample-${hit.reason || 'evidence'}`, hit.seed);
-                  queueBatch(nodes, 0, record.target);
-                  continue;
-                }
-                for (let i = 0; i < nodes.length; i++) {
-                  if (performance.now() - start >= SYNC_MUTATION_BUDGET_MS) { queueBatch(nodes, i, record.target); break; }
-                  const node = nodes[i];
+          """
+          b = """          const hit = inspectNode(nodes[i], true, Math.min(0.35, Math.max(0.12, SYNC_MUTATION_BUDGET_MS - (performance.now() - start))));
+                  if (hit) return activate(`mutation-${hit.reason || 'evidence'}`, hit.seed || nodes[i]);
+          """
+          br = """          const node = nodes[i];
                   const remaining = Math.min(0.35, Math.max(0.12, SYNC_MUTATION_BUDGET_MS - (performance.now() - start)));
                   const hit = inspectNode(node, true, remaining);
                   if (hit) return activate(`mutation-${hit.reason || 'evidence'}`, hit.seed || node);
 
-                  // Parser/framework commits often add credentials, a classless legal row, and the proceed
-                  // action as sibling subtrees. No individual subtree then contains enough evidence even
-                  // though their common form/dialog does. Recompose only the affected local UI scope once
-                  // per MutationObserver delivery; never fall back to a document-wide rescan.
+                  // Parser/framework commits can add credentials, a classless legal row, and the
+                  // proceed action as sibling subtrees. Recompose only their common local UI scope
+                  // once per observer delivery; never fall back to a document-wide rescan.
                   const el = node instanceof Element ? node : node?.parentElement;
                   if (!(el instanceof Element)) continue;
                   const nf = node.nodeType === Node.TEXT_NODE ? textFlags(node.data || '') : elementFlags(el);
@@ -83,12 +58,11 @@ jobs:
                   const local = scanEvidence(scope, 112, Math.min(0.65, Math.max(0.18, SYNC_MUTATION_BUDGET_MS - (performance.now() - start))), true);
                   if (local.hit) return activate(`mutation-scope-${local.reason || 'evidence'}`, local.seed || scope);
                   if (local.truncated) queueDeep(scope, true);
-                }
-              } else if (record.type === 'characterData') {
-          '''
-          if s.count(old) != 1:
-              raise SystemExit(f'expected one gate mutation block, found {s.count(old)}')
-          p.write_text(s.replace(old, new))
+          """
+          if s.count(a) != 1: raise SystemExit(f'anchor a count={s.count(a)}')
+          s = s.replace(a, ar, 1)
+          if s.count(b) != 1: raise SystemExit(f'anchor b count={s.count(b)}')
+          p.write_text(s.replace(b, br, 1))
           PY
           node --check extension/gate.js
           npm test
