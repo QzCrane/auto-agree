@@ -101,7 +101,20 @@ async function basicMatrix(base,browser){
   await page.goto(`${base}/positive-login.html`,{waitUntil:'domcontentloaded'}); await waitChecked(page,'#agree');
   await page.goto(`${base}/marketing-negative.html`,{waitUntil:'domcontentloaded'}); await waitUnchecked(page,'#marketing');
   await page.goto(`${base}/fragmented-risk.html`,{waitUntil:'domcontentloaded'}); await waitUnchecked(page,'#risk');
-  await page.goto(`${base}/trae-classless.html`,{waitUntil:'domcontentloaded'}); await page.waitForFunction(()=>document.querySelector('#box')?.dataset.checked==='true',{timeout:3000});
+  await page.goto(`${base}/trae-classless.html`,{waitUntil:'domcontentloaded'});
+  try {
+    await page.waitForFunction(()=>document.querySelector('#box')?.dataset.checked==='true',{timeout:3000});
+  } catch (error) {
+    const diag=await page.evaluate(()=>{
+      const box=document.querySelector('#box'); const row=document.querySelector('#row');
+      const r=box?.getBoundingClientRect();
+      const stack=r?document.elementsFromPoint((r.left+r.right)/2,(r.top+r.bottom)/2).map(el=>({tag:el.tagName,id:el.id,class:el.className})).slice(0,8):[];
+      return {readyState:document.readyState,checked:box?.dataset.checked,clicks:box?.dataset.clicks,boxRect:r?{left:r.left,top:r.top,right:r.right,bottom:r.bottom,width:r.width,height:r.height}:null,rowText:row?.innerText,stack};
+    });
+    const manual=await page.$eval('#box',el=>{el.click();return {checked:el.dataset.checked,clicks:el.dataset.clicks};});
+    console.error('classless-diagnostic:',JSON.stringify({diag,manual}));
+    throw error;
+  }
 
   await page.goto(`${base}/terse-validity.html`,{waitUntil:'domcontentloaded'}); await waitUnchecked(page,'#agree',300);
   await page.$eval('#email',el=>{el.value='valid@example.com';el.dispatchEvent(new Event('input',{bubbles:true}));});
