@@ -1,0 +1,23 @@
+name: cleanup-structural-fuzz-temp
+
+on:
+  push:
+    branches: [agent/v11-structural-fuzz-recovery]
+
+permissions:
+  contents: write
+
+jobs:
+  cleanup:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - name: Remove temporary patch workflows
+        run: |
+          git rm -f .github/workflows/patch-structural-fuzz-root-batch.yml .github/workflows/cleanup-structural-fuzz-temp.yml
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git diff --cached --check
+          git commit -m "chore: remove temporary structural-fuzz patch workflows"
+          git push
