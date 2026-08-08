@@ -109,8 +109,17 @@
   }
 
   function authorize(el) {
+    const lease = [];
     let node = el;
-    for (let i = 0; i < 10 && node instanceof Element; i++, node = composedParent(node)) authorized.add(node);
+    for (let i = 0; i < 10 && node instanceof Element; i++, node = composedParent(node)) {
+      authorized.add(node);
+      lease.push(node);
+    }
+    // Engine dispatches HTMLElement.click() synchronously. If that call throws, is suppressed, or
+    // otherwise emits no click event, do not leave a token that a later stale generation can use.
+    queueMicrotask(() => {
+      for (const leased of lease) authorized.delete(leased);
+    });
   }
 
   function onClick(event) {
