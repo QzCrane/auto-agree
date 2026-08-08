@@ -22,9 +22,19 @@ The handover guard installs a capture-phase click firewall in the new isolated w
 - synthetic clicks that are not agreement-like are outside the firewall;
 - agreement-like synthetic clicks are canceled unless the current Engine synchronously grants a one-shot authorization for the clicked DOM target/ancestor chain;
 - authorization state is a new-generation `WeakSet`, so an older isolated world cannot forge or reuse it;
-- current Engine authorizes immediately before both its first `.click()` and its bounded verifier retry.
+- current Engine authorizes immediately before both its first `.click()` and its bounded verifier retry;
+- a direct Engine authorization that produces no click event is revoked at the next microtask checkpoint;
+- when either a trusted user event or a current-authorized Engine click enters a small local checkbox wrapper, the guard may grant **one descendant synthetic click only for that same DOM event propagation**. A bubble-phase listener revokes the local lease before later MutationObserver work. Broad form/dialog/page containers are never local lease roots.
+
+The last rule preserves common custom-control behavior where a real wrapper click or current Engine click enters page code that synchronously delegates to a hidden/native descendant with `.click()`. It does not turn a Login-button interaction into authority for a sibling Terms row.
 
 The guard's semantic inspection is local and bounded. It does not scan the whole page, use a network service, or add permissions.
+
+## Why event-propagation leases instead of timers
+
+An attempted microtask-only local lease failed in real Chrome. Extension capture listeners and MAIN-world page handlers can cross an isolated-world microtask checkpoint during the same DOM event, so the lease disappeared before the page's wrapper handler could synchronously call its delegated `input.click()`.
+
+Extending that lease with a timer would fix compatibility but create an unnecessarily large authorization window that could survive into later stale-generation work. The accepted design instead scopes the causal exception to event propagation itself: capture grants, nested page delegation may consume once, bubble revokes. No `setTimeout` authorization window exists.
 
 ## Why this mechanism
 
@@ -56,10 +66,11 @@ For an already-active old Engine page, the gate must prove all of the following:
 
 1. v8 Engine was active before update;
 2. v9 handover guard is physically present after update;
-3. a routine mandatory agreement receives exactly one click;
+3. a routine mandatory agreement receives exactly one current-authorized click;
 4. a mixed-state agreement that v8 would click receives exactly zero clicks;
-5. page main-world state survives, proving the page was not reloaded;
-6. isolated-world diagnostics are recorded so coexistence cannot be hidden by a single sentinel.
+5. a genuine trusted click on a small local custom wrapper may still synchronously delegate exactly one page-owned synthetic descendant click;
+6. page main-world state survives, proving the page was not reloaded;
+7. isolated-world diagnostics are recorded so coexistence cannot be hidden by a single sentinel.
 
 ## Boundaries
 
