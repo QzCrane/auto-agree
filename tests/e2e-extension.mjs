@@ -6,6 +6,7 @@ import {execFileSync} from 'node:child_process';
 import {performance} from 'node:perf_hooks';
 import assert from 'node:assert/strict';
 import puppeteer from 'puppeteer';
+import {extensionWorldSentinels} from './e2e-isolated-worlds.mjs';
 
 const ROOT=path.resolve('.');
 const EXTENSION=path.join(ROOT,'extension');
@@ -112,7 +113,8 @@ async function basicMatrix(base,browser){
       return {readyState:document.readyState,checked:box?.dataset.checked,clicks:box?.dataset.clicks,rowClicks:row?.dataset.clicks,rowLastTarget:row?.dataset.lastTarget,boxRect:r?{left:r.left,top:r.top,right:r.right,bottom:r.bottom,width:r.width,height:r.height}:null,rowText:row?.innerText,stack};
     });
     const manual=await page.$eval('#box',el=>{el.click();return {checked:el.dataset.checked,clicks:el.dataset.clicks};});
-    console.error('classless-diagnostic:',JSON.stringify({diag,manual}));
+    const worlds=await extensionWorldSentinels(page);
+    console.error('classless-diagnostic:',JSON.stringify({diag,worlds,manual}));
     throw error;
   }
 
