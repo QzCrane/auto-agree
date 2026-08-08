@@ -1,22 +1,22 @@
 name: v9-handover
 
 on:
-  push:
-    branches: [agent/v9-invariant-hardening]
+  pull_request:
+    branches: [main]
 
 permissions:
   contents: write
 
 jobs:
   apply:
-    if: github.actor != 'github-actions[bot]'
+    if: github.actor != 'github-actions[bot]' && github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
     timeout-minutes: 8
     steps:
       - uses: actions/checkout@v6
         with:
           fetch-depth: 0
-          ref: agent/v9-invariant-hardening
+          ref: ${{ github.head_ref }}
       - uses: actions/setup-node@v7
         with:
           node-version: '24'
@@ -36,5 +36,3 @@ jobs:
           git diff --cached --check
           git commit -m "fix: firewall stale update-generation clicks"
           git push origin HEAD:agent/v9-invariant-hardening
-
-# Trigger commit after workflow installation.
