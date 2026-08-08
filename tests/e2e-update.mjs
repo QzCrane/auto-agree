@@ -191,22 +191,26 @@ await withServer(async base=>{
     const externalIdrefClicks=await activePage.$eval('#external-unknown',el=>Number(el.dataset.clicks||0));
     assert.equal(externalIdrefClicks,0,'external aria-labelledby Terms control must block a direct stale-world synthetic click');
 
+    // Shared semantic-core recognizes Spanish terms/assent, but the v9/v10 guard's private regex
+    // copy does not. Direct stale-world dispatch isolates that semantic-drift authority boundary.
+    await activePage.evaluate(()=>{window.clearRoutineLogin();window.insertSpanishSemanticTrap();});
+    await evaluateInExecutionContext(activePage,oldWorld.id,"document.querySelector('#spanish-terms')?.click(); true");
+    await new Promise(resolve=>setTimeout(resolve,250));
+    const spanishSemanticClicks=await activePage.$eval('#spanish-terms',el=>Number(el.dataset.clicks||0));
+    assert.equal(spanishSemanticClicks,0,'Spanish agreement recognized by shared semantics must block a direct stale-world synthetic click');
+
     await activePage.evaluate(()=>{window.clearRoutineLogin();window.insertWideCausalTrap();});
     await activePage.click('#wide-action');
     await new Promise(resolve=>setTimeout(resolve,350));
     const wideCausalClicks=await activePage.$eval('#wide-terms',el=>Number(el.dataset.clicks||0));
     assert.equal(wideCausalClicks,0,'unrelated trusted action must not authorize a distant sibling Terms synthetic click');
 
-    // A small generic wrapper containing multiple possible delegated controls is ambiguous. v10
-    // must not give the wrapper a regional capability that either control can consume.
     await activePage.evaluate(()=>{window.clearRoutineLogin();window.insertAmbiguousCausalTrap();});
     await activePage.click('#ambiguous-wrapper',{offset:{x:2,y:2}});
     await new Promise(resolve=>setTimeout(resolve,350));
     const ambiguousCausalClicks=await activePage.$eval('#ambiguous-terms',el=>Number(el.dataset.clicks||0));
     assert.equal(ambiguousCausalClicks,0,'multi-control generic wrapper must fail closed instead of leasing a region');
 
-    // Action exclusion dominates semantic wrappers. A button nested inside a label cannot mint a
-    // causal lease for another control merely because label is on the composed path.
     await activePage.evaluate(()=>{window.clearRoutineLogin();window.insertActionInsideLabelTrap();});
     await activePage.click('#label-action');
     await new Promise(resolve=>setTimeout(resolve,350));
@@ -228,6 +232,7 @@ await withServer(async base=>{
       activeMixedClicks:0,
       trustedDelegatedClicks:1,
       externalIdrefClicks:0,
+      spanishSemanticClicks:0,
       wideCausalClicks:0,
       ambiguousCausalClicks:0,
       actionInsideLabelClicks:0
