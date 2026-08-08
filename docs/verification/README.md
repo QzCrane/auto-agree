@@ -26,7 +26,8 @@ From v3 onward, detailed version reports were produced during the corresponding 
 | v4.0.0 | [v4.md](v4.md) | `b2054e9` |
 | v5.0.0 | [v5.md](v5.md) | `6fe3fe3` |
 | v6.0.0 | [v6.md](v6.md) | `1b65137` |
-| v7.0.0 | [v7.md](v7.md) | main milestone beginning at `baa7452` |
+| v7.0.0 | [v7.md](v7.md) | `baa7452` main milestone |
+| v8.0.0 | [v8.md](v8.md) | lifecycle/E2E hardening candidate; final merge SHA is recorded after release |
 
 ## Interpretation rules
 
@@ -35,5 +36,6 @@ From v3 onward, detailed version reports were produced during the corresponding 
 3. Numerical results appear only where an actual preserved measurement/test produced them.
 4. Git history remains the authoritative archive for obsolete executable implementations; this directory records engineering meaning and verification evidence, not duplicate old runtime source.
 5. Current production behavior is defined by `extension/`, the current tests, and the current architecture/security documentation—not by an older version report.
+6. A release report is not considered final until its release-gating CI evidence has been incorporated and the corresponding candidate has passed the repository's current verification policy.
 
 For the high-level evolution map, see [`../history.md`](../history.md). For current architecture, see [`../architecture.md`](../architecture.md).
