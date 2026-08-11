@@ -91,33 +91,63 @@ async function waitTier(page, tier, name) {
   }
 }
 
-async function installGateSchedulerDiagnostic(page, worlds) {
+async function installGateDiagnostic(page, worlds) {
   const gateWorld = worlds.find(w => w.gate === VERSION && !w.engine);
   if (!gateWorld) return null;
   await evaluateInExecutionContext(page, gateWorld.id, `(() => {
-    const state = globalThis.__AUTO_AGREE_GATE_SCHED_DIAG__ = {scheduled:0, started:0, finished:0, rejected:0};
-    const sched = globalThis.scheduler;
-    if (!sched?.postTask || sched.__autoAgreeWrapped) return state;
-    const original = sched.postTask.bind(sched);
-    const wrapped = (fn, options) => {
-      state.scheduled++;
-      let promise;
-      try {
-        promise = original(async (...args) => {
-          state.started++;
-          try { return await fn(...args); }
-          finally { state.finished++; }
-        }, options);
-      } catch (error) {
-        state.rejected++;
-        throw error;
-      }
-      Promise.resolve(promise).catch(() => { state.rejected++; });
-      return promise;
+    const state = globalThis.__AUTO_AGREE_GATE_SCHED_DIAG__ = {
+      scheduled:0, started:0, finished:0, rejected:0,
+      walkers:0, nodes:0, targetRootWalkers:0, targetVisits:0,
+      roots:Object.create(null), treeWrapError:null
     };
-    try { Object.defineProperty(wrapped, '__autoAgreeWrapped', {value:true}); } catch (_) {}
-    sched.postTask = wrapped;
-    try { Object.defineProperty(sched, '__autoAgreeWrapped', {value:true}); } catch (_) {}
+
+    const sched = globalThis.scheduler;
+    if (sched?.postTask && !sched.__autoAgreeWrapped) {
+      const original = sched.postTask.bind(sched);
+      const wrapped = (fn, options) => {
+        state.scheduled++;
+        let promise;
+        try {
+          promise = original(async (...args) => {
+            state.started++;
+            try { return await fn(...args); }
+            finally { state.finished++; }
+          }, options);
+        } catch (error) {
+          state.rejected++;
+          throw error;
+        }
+        Promise.resolve(promise).catch(() => { state.rejected++; });
+        return promise;
+      };
+      try { Object.defineProperty(wrapped, '__autoAgreeWrapped', {value:true}); } catch (_) {}
+      sched.postTask = wrapped;
+      try { Object.defineProperty(sched, '__autoAgreeWrapped', {value:true}); } catch (_) {}
+    }
+
+    try {
+      const originalCreate = document.createTreeWalker.bind(document);
+      document.createTreeWalker = (root, whatToShow, filter) => {
+        state.walkers++;
+        const rootKey = root?.id || root?.nodeName || root?.constructor?.name || 'unknown';
+        state.roots[rootKey] = (state.roots[rootKey] || 0) + 1;
+        if (root?.id === 'gate-deep-subtree-0') state.targetRootWalkers++;
+        const walker = originalCreate(root, whatToShow, filter);
+        const originalNext = walker.nextNode.bind(walker);
+        return {
+          nextNode() {
+            const node = originalNext();
+            if (node) {
+              state.nodes++;
+              if (node.id === 'gate-deep-agree') state.targetVisits++;
+            }
+            return node;
+          }
+        };
+      };
+    } catch (error) {
+      state.treeWrapError = String(error?.message || error);
+    }
     return state;
   })()`);
   return gateWorld.id;
@@ -185,7 +215,7 @@ async function runCase(browser, base, spec, attempt = 1) {
   try {
     await gotoActive(page, `${base}/${spec.file}?attempt=${attempt}`);
     const worldsBefore = await waitTier(page, spec.tier, runName);
-    if (spec.build === 'gate-deep') diagnosticContextId = await installGateSchedulerDiagnostic(page, worldsBefore);
+    if (spec.build === 'gate-deep') diagnosticContextId = await installGateDiagnostic(page, worldsBefore);
     await startCase(page, spec);
     try {
       await page.waitForFunction(selector => document.querySelector(selector)?.checked === true, {timeout: 5000}, spec.selector);
@@ -201,11 +231,11 @@ async function runCase(browser, base, spec, attempt = 1) {
         };
       }, spec.selector);
       const worlds = await extensionWorldSentinels(page);
-      let scheduler = null;
+      let traversal = null;
       if (diagnosticContextId) {
-        try { scheduler = await evaluateInExecutionContext(page, diagnosticContextId, 'globalThis.__AUTO_AGREE_GATE_SCHED_DIAG__ || null'); } catch (_) {}
+        try { traversal = await evaluateInExecutionContext(page, diagnosticContextId, 'globalThis.__AUTO_AGREE_GATE_SCHED_DIAG__ || null'); } catch (_) {}
       }
-      console.error(`${runName}-diagnostic:`, JSON.stringify({diag, worlds, scheduler}));
+      console.error(`${runName}-diagnostic:`, JSON.stringify({diag, worlds, traversal}));
       throw error;
     }
     const result = await page.$eval(spec.selector, el => ({checked: el.checked, clicks: Number(el.dataset.clicks || 0)}));
