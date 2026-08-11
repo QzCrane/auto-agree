@@ -77,6 +77,8 @@ This avoids two failure modes:
 
 The handover guard also consumes `semantic-core.js`; it does not maintain a private legal/assent/required vocabulary. Its update-time semantic view therefore changes with the same bounded source of truth used by current Gate/Engine code.
 
+Language support is treated as an authority boundary, not only a recall feature. A language family that is supported for routine Terms/Privacy assent must also have fail-closed native-language evidence for representative optional, financial, medical, biometric, rights-affecting and factual/age consent. Localized risk patterns may raise severity and suppress automation, but cannot create click authority. Both routine semantics and risk semantics use bounded compact companions so DOM fragmentation cannot create a safety asymmetry.
+
 ## Semantic graph
 
 The Engine does not treat a checkbox label as an isolated string. Each candidate is represented by a bounded relationship graph:
@@ -108,6 +110,29 @@ No high-frequency tracking is added. Existing events contribute bounded intent e
 - interaction with a proceed action.
 
 When intent rises, Auto Agree prewarms only the current context and its candidate index.
+
+## Lossless bounded discovery
+
+Probe, Gate and Engine all use hard bounds and time slicing so hostile or framework-heavy DOM churn cannot create unbounded retained work. The bound applies to the **representation**, not to correctness-relevant final DOM state.
+
+ADR 0012 defines the rule:
+
+```text
+hard queue-object cap
+!=
+permission to forget live semantic work
+```
+
+Current red/green-proven recovery paths are:
+
+- Engine RootBatch pressure keeps `MAX_ROOT_BATCHES = 8`; same-parent overflow coalesces to the normal bounded `queueRoot(parent)` final-state path and mixed roots remain weakly represented.
+- Probe deep pressure keeps `MAX_DEEP = 4`; evicted live roots coalesce through one `WeakRef` recovery scope and re-enter normal background traversal only after ordinary deep work drains.
+- Gate batch pressure keeps `MAX_BATCH_JOBS = 6`; an evicted batch's weak live owner re-enters Gate's bounded deep path.
+- Gate deep pressure keeps `MAX_DEEP_JOBS = 10`; evicted live roots coalesce weakly and re-enter normal traversal after existing batch/deep work drains. Composite evidence authority is tracked separately and is conservatively disabled when distinct scopes are merged to a broader ancestor.
+
+All recovery state is lifecycle-owned and cleared on retirement/activation. Recovery never introduces a synchronous full-document fallback and never strongly retains a detached subtree. Static contracts reject the historical naked-drop forms, while real Chrome saturation keeps the resource caps and final activation behavior coupled in one gate.
+
+The same rule applies to any remaining or future bounded queue: dropping a representation is valid only if its work is complete, disconnected, generation-obsolete, or another bounded recovery representation is already authoritative. Queue classes that have not yet been red-proven are not rewritten merely because their code resembles a prior defect.
 
 ## Worker injection scheduler
 
