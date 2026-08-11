@@ -91,12 +91,67 @@ async function waitTier(page, tier, name) {
   }
 }
 
+async function startCase(page, spec) {
+  if (spec.build === 'probe') {
+    await page.evaluate(() => window.startProbeDeepOverflow());
+    return;
+  }
+  if (spec.build === 'gate-deep') {
+    await page.evaluate(() => {
+      for (let i = 0; i < 11; i++) {
+        const subtree = document.createElement('div');
+        subtree.id = `gate-deep-subtree-${i}`;
+        for (let n = 0; n < 150; n++) {
+          const span = document.createElement('span');
+          span.textContent = `neutral deep ${i}-${n}`;
+          subtree.append(span);
+        }
+        if (i === 0) {
+          const form = document.createElement('form');
+          form.innerHTML = '<input type="email" value="user@example.com"><label><input id="gate-deep-agree" type="checkbox" required>I have read and agree to the Terms of Service</label><button>Login</button>';
+          const input = form.querySelector('#gate-deep-agree');
+          input.addEventListener('click', event => {
+            event.currentTarget.dataset.clicks = String(Number(event.currentTarget.dataset.clicks || 0) + 1);
+          });
+          subtree.append(form);
+        }
+        document.querySelector(`#deep-owner-${i}`).append(subtree);
+      }
+    });
+    return;
+  }
+  if (spec.build === 'gate-batch') {
+    await page.evaluate(() => {
+      for (let i = 0; i < 7; i++) {
+        const fragment = document.createDocumentFragment();
+        for (let n = 0; n < 120; n++) {
+          let node;
+          if (i === 0 && n === 60) {
+            node = document.createElement('label');
+            node.innerHTML = '<input id="gate-batch-agree" type="checkbox" required>I have read and agree to the Terms of Service';
+            node.querySelector('input').addEventListener('click', event => {
+              event.currentTarget.dataset.clicks = String(Number(event.currentTarget.dataset.clicks || 0) + 1);
+            });
+          } else {
+            node = document.createElement('span');
+            node.textContent = `neutral batch ${i}-${n}`;
+          }
+          fragment.append(node);
+        }
+        document.querySelector(`#batch-owner-${i}`).append(fragment);
+      }
+    });
+    return;
+  }
+  throw new Error(`unknown builder: ${spec.build}`);
+}
+
 async function runCase(browser, base, spec) {
   const page = await browser.newPage();
   try {
     await gotoActive(page, `${base}/${spec.file}`);
     await waitTier(page, spec.tier, spec.name);
-    await page.evaluate(start => window[start](), spec.start);
+    await startCase(page, spec);
     try {
       await page.waitForFunction(selector => document.querySelector(selector)?.checked === true, {timeout: 5000}, spec.selector);
     } catch (error) {
@@ -123,9 +178,9 @@ async function runCase(browser, base, spec) {
 }
 
 const cases = [
-  {name: 'e2e-probe-deep-overflow', file: 'probe-deep-overflow.html', tier: 'probe', start: 'startProbeDeepOverflow', selector: '#probe-agree'},
-  {name: 'e2e-gate-deep-overflow', file: 'gate-deep-overflow.html', tier: 'gate', start: 'startGateDeepOverflow', selector: '#gate-deep-agree'},
-  {name: 'e2e-gate-batch-overflow', file: 'gate-batch-overflow.html', tier: 'gate', start: 'startGateBatchOverflow', selector: '#gate-batch-agree'}
+  {name: 'e2e-probe-deep-overflow', file: 'probe-deep-overflow.html', tier: 'probe', build: 'probe', selector: '#probe-agree'},
+  {name: 'e2e-gate-deep-overflow', file: 'gate-deep-overflow.html', tier: 'gate', build: 'gate-deep', selector: '#gate-deep-agree'},
+  {name: 'e2e-gate-batch-overflow', file: 'gate-batch-overflow.html', tier: 'gate', build: 'gate-batch', selector: '#gate-batch-agree'}
 ];
 
 await withServer(async base => {
