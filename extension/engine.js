@@ -1320,13 +1320,52 @@
     if (broadShadowEnabled) queueShadowSweep(root);
   }
 
-  function enqueueRootBatch(roots, index, urgent) {
-    if (!roots || index >= roots.length) return;
-    while (rootBatches.length >= MAX_ROOT_BATCHES) rootBatches.shift();
-    const refs = roots.map(root => root && typeof root === 'object' ? new WeakRef(root) : null);
-    rootBatches.push({ refs, index, urgent, createdAt: performance.now() });
-    scheduleBackground();
+  function sharedRootBatchParent(roots, index) {
+  let parent = null;
+  for (let i = index; i < roots.length; i++) {
+    const root = roots[i];
+    if (!root || !rootConnected(root)) continue;
+    const next = root instanceof ShadowRoot ? root : root.parentNode;
+    if (!next || !rootConnected(next)) continue;
+    if (!parent) parent = next;
+    else if (parent !== next) return null;
   }
+  return parent;
+}
+
+function appendRootBatchRefs(job, roots, index) {
+  for (let i = index; i < roots.length; i++) {
+    const root = roots[i];
+    if (root && typeof root === 'object') job.refs.push(new WeakRef(root));
+  }
+}
+
+function enqueueRootBatch(roots, index, urgent) {
+  if (!roots || index >= roots.length) return;
+  if (rootBatches.length >= MAX_ROOT_BATCHES) {
+    // Queue-object bounds are not permission to forget final DOM state.
+    const parent = sharedRootBatchParent(roots, index);
+    if (parent) {
+      queueRoot(parent, urgent);
+      return;
+    }
+    // Mixed-root overflow remains weakly represented in an existing bounded batch.
+    const tail = rootBatches[rootBatches.length - 1];
+    appendRootBatchRefs(tail, roots, index);
+    tail.urgent = tail.urgent || urgent;
+    tail.createdAt = performance.now();
+    scheduleBackground();
+    return;
+  }
+  const refs = [];
+  for (let i = index; i < roots.length; i++) {
+    const root = roots[i];
+    if (root && typeof root === 'object') refs.push(new WeakRef(root));
+  }
+  if (!refs.length) return;
+  rootBatches.push({ refs, index: 0, urgent, createdAt: performance.now() });
+  scheduleBackground();
+}
 
   function runRootBatch(job, budgetMs) {
     if (performance.now() - job.createdAt > ROOT_BATCH_TTL_MS) return false;
