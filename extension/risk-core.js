@@ -12,16 +12,41 @@
   const COMPACT_RISK = /(?:(?:consent|authori[sz](?:e|ation)?).{0,36}(?:facialrecognition|biometric)|(?:facialrecognition|biometric).{0,36}(?:consent|authori[sz](?:e|ation)?)|authori[sz](?:e|ation)?.{0,32}(?:payment|debit|charge|trading|trade|investment)|(?:loan|credit)agreement|investmentrisk|insurance(?:application|purchase)|medicalconsent|informedconsent|employment(?:agreement|contract)|electronicsignature|arbitration|classaction|powerofattorney|autorenew|subscriptionplan)/i;
   const COMPACT_NEGATIVE = /(?:donotagree|dontagree|rememberme|keepmesignedin|newsletter|marketing|promotion|autorenew|subscription|captcha|recaptcha|hcaptcha|turnstile|thirdpartyshare|sharethirdparty|donation|warranty|cookie|cookies)/i;
   const COMPACT_ATTESTATION = /(?:over18|18years?old|legalage|icertify|iconfirmthat|ideclare|information(?:is|are)(?:true|accurate))/i;
+
+  // These compact expressions are fail-closed companions for language families already accepted
+  // by routine consent semantics. They can suppress automation but cannot create click authority.
+  // Compact matching also makes the safety boundary invariant to DOM text fragmentation.
+  const COMPACT_MULTILINGUAL_NEGATIVE = /(?:publicit[eé]s?|werbung|publicidad|publicidade|pubblicit[aà]|広告|광고|реклам[а-яё]*|الإعلانات|reclame|reklam(?:y|e)?|quảngcáo|iklan|โฆษณา|विज्ञापन|διαφημίσεις|פרסומות)/iu;
+  const COMPACT_MULTILINGUAL_CONSEQUENTIAL = /(?:pr[eé]l[eè]vementautomatique|abbuchung|d[eé]bitodirecto|d[eé]bitodireto|addebitodiretto|口座引き落とし|자동이체|прямоесписание|الخصمالمباشر|automatischeincasso|poleceniazapłaty|otomatiködem|ghinợtrựctiếp|debitlangsung|หักบัญชีอัตโนมัติ|सीधेडेबिट|άμεσηχρέωση|חיובישיר|autogiro|direktebelastning|direktedebitering|contratdepr[eê]t|darlehensvertrag|contratodepr[eé]stamo|contratodeempr[eé]stimo|contrattodiprestito|ローン契約|대출계약|кредитныйдоговор|اتفاقيةقرض|leningsovereenkomst|umowakredytowa|kredisözleşmesi|hợpđồngvay|perjanjianpinjaman|สัญญาเงินกู้|ऋणसमझौता|σύμβασηδανείου|הסכםהלוואה|låneavtal|låneavtale|låneaftale|consentementm[eé]dical|medizinischeeinwilligung|consentimientom[eé]dico|consentimentom[eé]dico|consensomedico|医療同意|의료동의|медицинскоесогласие|موافقةطبية|medischetoestemming|zgodamedyczna|tıbbionam|đồngýytế|persetujuanmedis|ความยินยอมทางการแพทย์|चिकित्सासहमति|ιατρικήσυγκατάθεση|הסכמהרפואית|medicinsktsamtycke|medisinsksamtykke|medicinsksamtykke|medicinsamtykke|reconnaissancefaciale|gesichtserkennung|reconocimientofacial|reconhecimentofacial|riconoscimentofacciale|顔認識|안면인식|распознаваниелица|التعرفعلىالوجه|gezichtsherkenning|rozpoznawanietwarzy|yüztanıma|nhậndiệnkhuônmặt|pengenalanwajah|การจดจำใบหน้า|चेहरापहचान|αναγνώρισηπροσώπου|זיהויפנים|ansiktsigenkänning|ansiktsgjenkjenning|ansigtsgenkendelse|arbitrage|schiedsverfahren|arbitraje|arbitragem|arbitrato|仲裁|중재|арбитраж|تحكيم|arbitraż|tahkim|trọngtài|arbitrase|อนุญาโตตุลาการ|मध्यस्थता|διαιτησία|בוררות|skiljeförfarande|voldgift|renouvellementautomatique|automatischeverlängerung|renovaciónautomática|renovaçãoautomática|rinnovoautomatico|自動更新|자동갱신|автоматическоепродление|التجديدالتلقائي|automatischeverlenging|automatyczneodnowienie|otomatikyenileme|tựđộnggiahạn|perpanjanganotomatis|ต่ออายุอัตโนมัติ|स्वचालितनवीनीकरण|αυτόματηανανέωση|חידושאוטומטי|automatiskförnyelse|automatiskfornyelse)/iu;
+  const COMPACT_MULTILINGUAL_ATTESTATION = /(?:plusde18ans|über18jahrealt|mayorde18años|maisde18anos|piùdi18anni|18歳以上|18세이상|больше18лет|يزيدعن18عام|ouderdan18jaar|ponad18lat|18yaşındanbüyük|trên18tuổi|diatas18tahun|อายุมากกว่า18ปี|18वर्षसेअधिक|άνωτων18ετών|מעלגיל18|över18år|over18år)/iu;
+
   const { normalize, compactSemantic, hasNonLatin } = BASE;
-  function containsNegative(value) { const t=normalize(value); if(!t)return false; if(NEGATIVE.test(t))return true; const c=compactSemantic(t); return COMPACT_NEGATIVE.test(c)||(hasNonLatin(t)&&NEGATIVE.test(c)); }
-  function containsAttestation(value) { const t=normalize(value); if(!t)return false; if(ATTESTATION.test(t))return true; const c=compactSemantic(t); return COMPACT_ATTESTATION.test(c)||(hasNonLatin(t)&&ATTESTATION.test(c)); }
+  function containsNegative(value) {
+    const t=normalize(value); if(!t)return false;
+    if(NEGATIVE.test(t))return true;
+    const c=compactSemantic(t);
+    return COMPACT_NEGATIVE.test(c)||COMPACT_MULTILINGUAL_NEGATIVE.test(c)||(hasNonLatin(t)&&NEGATIVE.test(c));
+  }
+  function containsAttestation(value) {
+    const t=normalize(value); if(!t)return false;
+    if(ATTESTATION.test(t))return true;
+    const c=compactSemantic(t);
+    return COMPACT_ATTESTATION.test(c)||COMPACT_MULTILINGUAL_ATTESTATION.test(c)||(hasNonLatin(t)&&ATTESTATION.test(c));
+  }
   function severityFor(localText, contextText='', transaction=false) {
     const local=normalize(localText,1800), context=normalize(contextText,2400), compact=compactSemantic(local,1800), nonLatin=hasNonLatin(local);
     if(containsAttestation(local)) return {level:SEVERITY.ATTESTATION,kind:'attestation'};
-    if(CONSEQUENTIAL_LOCAL.test(local)||COMPACT_RISK.test(compact)||(nonLatin&&CONSEQUENTIAL_LOCAL.test(compact))||transaction||TRANSACTION_ACTION.test(context)) return {level:SEVERITY.CONSEQUENTIAL,kind:'consequential'};
+    if(CONSEQUENTIAL_LOCAL.test(local)||COMPACT_RISK.test(compact)||COMPACT_MULTILINGUAL_CONSEQUENTIAL.test(compact)||(nonLatin&&CONSEQUENTIAL_LOCAL.test(compact))||transaction||TRANSACTION_ACTION.test(context)) return {level:SEVERITY.CONSEQUENTIAL,kind:'consequential'};
     if(containsNegative(local)) return {level:SEVERITY.OPTIONAL,kind:'optional-or-negative'};
     if(/privacy|隐私|隱私|プライバシー|개인정보|конфиденц|الخصوصية|gizlilik|privasi|गोपनीयता|απορρήτου|פרטיות/i.test(local)) return {level:SEVERITY.PRIVACY,kind:'routine-privacy'};
     return {level:SEVERITY.ROUTINE,kind:'routine'};
   }
-  globalThis.__AUTO_AGREE_RISK__=Object.freeze({version:VERSION,SEVERITY,patterns:Object.freeze({NEGATIVE,ATTESTATION,CONSEQUENTIAL_LOCAL,TRANSACTION_ACTION,COMPACT_RISK,COMPACT_NEGATIVE,COMPACT_ATTESTATION}),containsNegative,containsAttestation,severityFor});
+  globalThis.__AUTO_AGREE_RISK__=Object.freeze({
+    version:VERSION,
+    SEVERITY,
+    patterns:Object.freeze({NEGATIVE,ATTESTATION,CONSEQUENTIAL_LOCAL,TRANSACTION_ACTION,COMPACT_RISK,COMPACT_NEGATIVE,COMPACT_ATTESTATION,COMPACT_MULTILINGUAL_NEGATIVE,COMPACT_MULTILINGUAL_CONSEQUENTIAL,COMPACT_MULTILINGUAL_ATTESTATION}),
+    containsNegative,
+    containsAttestation,
+    severityFor
+  });
 })();
