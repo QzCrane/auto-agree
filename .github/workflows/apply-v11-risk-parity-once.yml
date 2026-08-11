@@ -3,15 +3,13 @@ name: apply-v11-risk-parity-once
 on:
   push:
     branches: [agent/v11-multilingual-risk-parity]
-  pull_request:
-    branches: [main]
 
 permissions:
   contents: write
 
 jobs:
   apply:
-    if: github.actor != 'github-actions[bot]' && (github.event_name != 'pull_request' || github.head_ref == 'agent/v11-multilingual-risk-parity')
+    if: github.actor != 'github-actions[bot]'
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
@@ -30,7 +28,6 @@ jobs:
 
           risk = Path('extension/risk-core.js')
           s = risk.read_text()
-          # Exact Danish medical-consent form exposed by the second red pass.
           if 'medicinsamtykke' not in s:
               raise SystemExit('expected Danish medical token not found')
           s = s.replace('medicinsamtykke', 'medicinsksamtykke|medicinsamtykke', 1)
@@ -86,7 +83,8 @@ for (const sample of multilingualRemainingHighConsequence) {
 }
 
 '''
-          t = t.replace(marker, block + marker, 1)
+          if 'multilingualRemainingHighConsequence' not in t:
+              t = t.replace(marker, block + marker, 1)
           test.write_text(t)
           PY
           node --check extension/risk-core.js
