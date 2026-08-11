@@ -20,6 +20,7 @@ export async function extensionWorldSentinels(page) {
             gate: globalThis.__AUTO_AGREE_GATE__ || null,
             risk: globalThis.__AUTO_AGREE_RISK__?.version || globalThis.__AUTO_AGREE_RISK__ || null,
             engine: globalThis.__AUTO_AGREE_ENGINE__ || null,
+            bootstrapReason: globalThis.__AUTO_AGREE_BOOTSTRAP_CONTEXT__?.reason || null,
             href: location.href
           }))()`
         });
