@@ -68,6 +68,10 @@ jobs:
         env:
           AUTO_AGREE_HEADED: '1'
         run: xvfb-run -a node tests/e2e-engine-overflow.mjs
+      - name: Prove live Engine RootBatch survives TTL age
+        env:
+          AUTO_AGREE_HEADED: '1'
+        run: xvfb-run -a node tests/e2e-engine-rootbatch-ttl.mjs
       - name: Prove cooperative stale-world generation revocation
         env:
           AUTO_AGREE_HEADED: '1'
