@@ -60,4 +60,37 @@ Disconnected/dead owners and roots are still discarded. Hard queue caps, per-sli
 
 `tests/e2e-tier-overflow.mjs` now runs Gate-deep saturation on **five independent pages per canonical CI run**, while Probe deep and Gate batch retain their independent discriminators. Every Gate-deep attempt must end with exactly one activation within the existing timeout. The timeout, queue cap and fixture are not relaxed to obtain green status.
 
-Final closure requires the exact final head to pass core/package, structural fuzz, Probe deep, Gate deep **5/5**, Gate batch, generation lease, PR-base update transition and existing profile ceilings in one canonical run.
+`tests/e2e-gate-live-ttl.mjs` independently creates a live Gate deep cursor and blocks the renderer for about 2.7 seconds after the MutationObserver checkpoint. That crosses `JOB_TTL_MS = 2400` before background traversal resumes, so the test proves that age alone cannot erase connected unfinished work.
+
+## Exact-head green closure
+
+Exact production head **`bc2b0402569329f6cf927714d02a0e94d2150264`**, canonical verify run **31467318094**, completed both jobs successfully with the actual FIFO/TTL production code present.
+
+The real-Chrome job proved in one run:
+
+```text
+e2e-basic: PASS
+structural fuzz: 300/300
+  falsePositive = 0
+  falseNegative = 0
+  duplicateToggle = 0
+worker termination: PASS
+Probe deep overflow: PASS
+Gate deep overflow #1: PASS
+Gate deep overflow #2: PASS
+Gate deep overflow #3: PASS
+Gate deep overflow #4: PASS
+Gate deep overflow #5: PASS
+Gate batch overflow: PASS
+Gate live-TTL (> 2.4 s): PASS
+generation lease current → next generation: PASS
+PR-base → candidate update transition: PASS
+```
+
+The same run measured the 5,000-checkbox profile at approximately **274.7 ms latency / 0.2648 s TaskDuration / 231 samples**, within the established performance ceilings.
+
+Generation-lease evidence remained fail-closed (`staleAutomatedClicks = 0`, `directStaleClicks = 0`) while one trusted browser click still succeeded. The same-version update transition kept old/current isolated worlds simultaneously observable, produced exactly one current routine click, zero mixed-state stale clicks, one legitimate trusted delegated click, and zero clicks for the external-IDREF, Spanish semantic, broad-wrapper, ambiguous-wrapper and action-inside-label negatives.
+
+`npm test` and deterministic packaging also passed on this exact head. The static bounded-work contract now rejects old-FIFO eviction, age-only live-work deletion, weakening Gate-deep repetition below five attempts, and removing the explicit >2.4-second live-TTL discriminator.
+
+Any later documentation-only closure commit must pass the same canonical gate again before merge so the merged head and recorded repository state remain aligned.
