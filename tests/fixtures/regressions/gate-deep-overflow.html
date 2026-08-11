@@ -1,0 +1,38 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Gate deep overflow</title>
+<div id="gate-seed"><span id="gate-legal">Terms of Service</span><span role="checkbox" aria-checked="false" aria-labelledby="gate-legal"></span></div>
+<div id="owners"></div>
+<script>
+(() => {
+  const owners = document.querySelector('#owners');
+  for (let i = 0; i < 11; i++) {
+    const owner = document.createElement('div');
+    owner.id = `deep-owner-${i}`;
+    owners.append(owner);
+  }
+
+  window.startGateDeepOverflow = () => {
+    for (let i = 0; i < 11; i++) {
+      const subtree = document.createElement('div');
+      subtree.id = `gate-deep-subtree-${i}`;
+      for (let n = 0; n < 150; n++) {
+        const span = document.createElement('span');
+        span.textContent = `neutral deep ${i}-${n}`;
+        subtree.append(span);
+      }
+      if (i === 0) {
+        const form = document.createElement('form');
+        form.innerHTML = '<input type="email" value="user@example.com"><label><input id="gate-deep-agree" type="checkbox" required>I have read and agree to the Terms of Service</label><button>Login</button>';
+        const input = form.querySelector('#gate-deep-agree');
+        input.addEventListener('click', event => {
+          event.currentTarget.dataset.clicks = String(Number(event.currentTarget.dataset.clicks || 0) + 1);
+        });
+        subtree.append(form);
+      }
+      document.querySelector(`#deep-owner-${i}`).append(subtree);
+    }
+    window.gateDeepOverflowStarted = true;
+  };
+})();
+</script>
