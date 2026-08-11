@@ -3,7 +3,7 @@ import path from 'node:path';
 import http from 'node:http';
 import assert from 'node:assert/strict';
 import puppeteer from 'puppeteer';
-import {extensionWorldSentinels} from './e2e-isolated-worlds.mjs';
+import {extensionWorldSentinels, evaluateInExecutionContext} from './e2e-isolated-worlds.mjs';
 
 const ROOT = path.resolve('.');
 const EXTENSION = path.join(ROOT, 'extension');
@@ -91,6 +91,38 @@ async function waitTier(page, tier, name) {
   }
 }
 
+async function installGateSchedulerDiagnostic(page, worlds) {
+  const gateWorld = worlds.find(w => w.gate === VERSION && !w.engine);
+  if (!gateWorld) return null;
+  await evaluateInExecutionContext(page, gateWorld.id, `(() => {
+    const state = globalThis.__AUTO_AGREE_GATE_SCHED_DIAG__ = {scheduled:0, started:0, finished:0, rejected:0};
+    const sched = globalThis.scheduler;
+    if (!sched?.postTask || sched.__autoAgreeWrapped) return state;
+    const original = sched.postTask.bind(sched);
+    const wrapped = (fn, options) => {
+      state.scheduled++;
+      let promise;
+      try {
+        promise = original(async (...args) => {
+          state.started++;
+          try { return await fn(...args); }
+          finally { state.finished++; }
+        }, options);
+      } catch (error) {
+        state.rejected++;
+        throw error;
+      }
+      Promise.resolve(promise).catch(() => { state.rejected++; });
+      return promise;
+    };
+    try { Object.defineProperty(wrapped, '__autoAgreeWrapped', {value:true}); } catch (_) {}
+    sched.postTask = wrapped;
+    try { Object.defineProperty(sched, '__autoAgreeWrapped', {value:true}); } catch (_) {}
+    return state;
+  })()`);
+  return gateWorld.id;
+}
+
 async function startCase(page, spec) {
   if (spec.build === 'probe') {
     await page.evaluate(() => window.startProbeDeepOverflow());
@@ -149,9 +181,11 @@ async function startCase(page, spec) {
 async function runCase(browser, base, spec, attempt = 1) {
   const page = await browser.newPage();
   const runName = spec.repeat > 1 ? `${spec.name}#${attempt}` : spec.name;
+  let diagnosticContextId = null;
   try {
     await gotoActive(page, `${base}/${spec.file}?attempt=${attempt}`);
-    await waitTier(page, spec.tier, runName);
+    const worldsBefore = await waitTier(page, spec.tier, runName);
+    if (spec.build === 'gate-deep') diagnosticContextId = await installGateSchedulerDiagnostic(page, worldsBefore);
     await startCase(page, spec);
     try {
       await page.waitForFunction(selector => document.querySelector(selector)?.checked === true, {timeout: 5000}, spec.selector);
@@ -167,7 +201,11 @@ async function runCase(browser, base, spec, attempt = 1) {
         };
       }, spec.selector);
       const worlds = await extensionWorldSentinels(page);
-      console.error(`${runName}-diagnostic:`, JSON.stringify({diag, worlds}));
+      let scheduler = null;
+      if (diagnosticContextId) {
+        try { scheduler = await evaluateInExecutionContext(page, diagnosticContextId, 'globalThis.__AUTO_AGREE_GATE_SCHED_DIAG__ || null'); } catch (_) {}
+      }
+      console.error(`${runName}-diagnostic:`, JSON.stringify({diag, worlds, scheduler}));
       throw error;
     }
     const result = await page.$eval(spec.selector, el => ({checked: el.checked, clicks: Number(el.dataset.clicks || 0)}));
@@ -180,7 +218,7 @@ async function runCase(browser, base, spec, attempt = 1) {
 
 const cases = [
   {name: 'e2e-probe-deep-overflow', file: 'probe-deep-overflow.html', tier: 'probe', build: 'probe', selector: '#probe-agree', repeat: 1},
-  {name: 'e2e-gate-deep-overflow', file: 'gate-deep-overflow.html', tier: 'gate', build: 'gate-deep', selector: '#gate-deep-agree', repeat: 5},
+  {name: 'e2e-gate-deep-overflow', file: 'gate-deep-overflow.html', tier: 'gate', build: 'gate-deep', selector: '#gate-deep-agree', repeat: 12},
   {name: 'e2e-gate-batch-overflow', file: 'gate-batch-overflow.html', tier: 'gate', build: 'gate-batch', selector: '#gate-batch-agree', repeat: 1}
 ];
 
