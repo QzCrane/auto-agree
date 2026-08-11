@@ -3,13 +3,15 @@ name: apply-v11-rootbatch-once
 on:
   push:
     branches: [agent/v11-lossless-discovery]
+  pull_request:
+    branches: [main]
 
 permissions:
   contents: write
 
 jobs:
   apply:
-    if: github.actor != 'github-actions[bot]'
+    if: github.actor != 'github-actions[bot]' && (github.event_name != 'pull_request' || github.head_ref == 'agent/v11-lossless-discovery')
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
@@ -58,10 +60,6 @@ jobs:
           function enqueueRootBatch(roots, index, urgent) {
             if (!roots || index >= roots.length) return;
             if (rootBatches.length >= MAX_ROOT_BATCHES) {
-              // The queue-object cap is a resource bound, not permission to forget final DOM state.
-              // Sibling overflow is losslessly coalesced to its live parent and re-enters the normal
-              // generation/time-sliced root path. Mixed roots remain weakly represented in the
-              // newest bounded batch so detached DOM is never strongly retained.
               const parent = sharedRootBatchParent(roots, index);
               if (parent) {
                 queueRoot(parent, urgent);
