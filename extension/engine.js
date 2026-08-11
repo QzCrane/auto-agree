@@ -1418,7 +1418,7 @@ function enqueueRootBatch(roots, index, urgent) {
 }
 
   function runRootBatch(job, budgetMs) {
-    if (performance.now() - job.createdAt > ROOT_BATCH_TTL_MS) return false;
+    if (performance.now() - job.createdAt > ROOT_BATCH_TTL_MS) job.createdAt = performance.now();
     const start = performance.now();
     while (job.index < job.refs.length && performance.now() - start < budgetMs) {
       const root = job.refs[job.index++]?.deref?.();
