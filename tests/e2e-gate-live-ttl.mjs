@@ -45,12 +45,18 @@ async function poll(fn, timeout = 6000, interval = 60) {
   throw new Error(`poll timeout after ${timeout}ms`);
 }
 
+async function extensionInstalled(browser) {
+  return poll(async () => {
+    const extensions = await browser.extensions();
+    const extension = [...extensions.values()].find(ext => ext.name === 'Auto Agree Login Terms');
+    return extension?.version === VERSION ? extension : null;
+  }, 6000, 50);
+}
+
 await withServer(async url => {
   const browser = await launch();
   try {
-    const extensions = await browser.extensions();
-    const extension = [...extensions.values()].find(ext => ext.name === 'Auto Agree Login Terms');
-    assert.equal(extension?.version, VERSION, 'Auto Agree must be installed');
+    await extensionInstalled(browser);
 
     const page = await browser.newPage();
     await page.bringToFront();
@@ -78,9 +84,9 @@ await withServer(async url => {
       });
       root.append(label);
 
-      // Schedule a page task before ending the current task. Gate's MutationObserver runs at the
-      // ensuing microtask checkpoint and queues a deep cursor first; this timer then blocks the
-      // shared renderer thread long enough to cross JOB_TTL_MS=2400 before background traversal.
+      // End the task only after scheduling a renderer-blocking timer. Gate's MutationObserver runs
+      // at the microtask checkpoint first and creates the deep cursor. The page task then blocks
+      // the same renderer long enough to cross JOB_TTL_MS before background traversal can resume.
       const blocker = new Promise(resolve => setTimeout(() => {
         const until = performance.now() + 2700;
         while (performance.now() < until) {}
