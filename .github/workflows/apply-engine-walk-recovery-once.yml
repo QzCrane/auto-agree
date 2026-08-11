@@ -1,0 +1,187 @@
+name: apply-engine-walk-recovery-once
+
+on:
+  push:
+    branches: [agent/v11-engine-walk-saturation-v2]
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: agent/v11-engine-walk-saturation-v2
+          fetch-depth: 0
+      - name: Apply red-proven Engine walk recovery
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+
+          p = Path('extension/engine.js')
+          s = p.read_text()
+
+          old_decl = """  const rootBatches = [];
+          const walkJobs = [];
+          const shadowJobs = [];
+"""
+          new_decl = """  const rootBatches = [];
+          const walkJobs = [];
+          let walkRecoveryRef = null;
+          let walkRecoveryUrgent = false;
+          const shadowJobs = [];
+"""
+          if old_decl not in s:
+              raise SystemExit('walk declaration anchor missing')
+          s = s.replace(old_decl, new_decl, 1)
+
+          anchor = """  function releaseWalkJob(job) {
+            const root = job?.rootRef?.deref?.();
+            if (root) queuedWalkRoots.delete(root);
+          }
+
+"""
+          if anchor not in s:
+              raise SystemExit('releaseWalkJob anchor missing')
+          helpers = anchor + """  function walkRecoveryElement(root) {
+            if (root instanceof Document) return root.documentElement;
+            if (root instanceof ShadowRoot) return root.host;
+            return root instanceof Element ? root : null;
+          }
+
+          function commonWalkRecoveryRoot(a, b) {
+            if (!a) return b;
+            if (!b || a === b) return a;
+            const ae = walkRecoveryElement(a), be = walkRecoveryElement(b);
+            if (!(ae instanceof Element) || !(be instanceof Element)) return document.documentElement;
+            const ar = ae.getRootNode?.(), br = be.getRootNode?.();
+            if (ar !== br) return document.documentElement;
+            let p = ae, hops = 0;
+            while (p instanceof Element && hops++ < 40) {
+              if (p === be || p.contains(be)) return p;
+              p = p.parentElement;
+            }
+            if (ar instanceof ShadowRoot) return ar;
+            return document.documentElement;
+          }
+
+          function rememberWalkRecovery(root, urgent) {
+            if (!root || !rootConnected(root)) return;
+            const current = walkRecoveryRef?.deref?.();
+            const merged = current && rootConnected(current) ? commonWalkRecoveryRoot(current, root) : root;
+            if (!merged || !rootConnected(merged)) return;
+            walkRecoveryRef = new WeakRef(merged);
+            walkRecoveryUrgent = walkRecoveryUrgent || !!urgent;
+          }
+
+          function promoteWalkRecovery() {
+            if (walkJobs.length || !walkRecoveryRef) return false;
+            const root = walkRecoveryRef.deref?.();
+            const urgent = walkRecoveryUrgent;
+            walkRecoveryRef = null;
+            walkRecoveryUrgent = false;
+            if (!root || !rootConnected(root) || queuedWalkRoots.has(root)) return false;
+            if (!currentWalkGeneration(root)) walkGeneration.set(root, 1);
+            const job = makeWalkJob(root, urgent);
+            if (!job) return false;
+            queuedWalkRoots.add(root);
+            walkJobs.push(job);
+            return true;
+          }
+
+          function admitWalkJob(root, job) {
+            if (!root || !job || queuedWalkRoots.has(root)) return;
+            if (walkJobs.length >= MAX_WALK_JOBS) {
+              // Keep existing FIFO cursors authoritative; compress only new excess final state.
+              rememberWalkRecovery(root, job.urgent);
+              return;
+            }
+            queuedWalkRoots.add(root);
+            walkJobs.push(job);
+          }
+
+"""
+          s = s.replace(anchor, helpers, 1)
+
+          old_admit = """      if (!queuedWalkRoots.has(root)) {
+                queuedWalkRoots.add(root);
+                while (walkJobs.length >= MAX_WALK_JOBS) releaseWalkJob(walkJobs.shift());
+                walkJobs.push(job);
+              }
+"""
+          count = s.count(old_admit)
+          if count != 2:
+              raise SystemExit(f'expected 2 historical walk admissions, found {count}')
+          s = s.replace(old_admit, "      admitWalkJob(root, job);\n")
+
+          drain_anchor = """  async function drainBackground(generation = lifecycleGeneration) {
+"""
+          if drain_anchor not in s:
+              raise SystemExit('drainBackground anchor missing')
+          s = s.replace(drain_anchor, """  function hasBackgroundWork() {
+            return !!(rootBatches.length || walkJobs.length || walkRecoveryRef || batchJobs.length || shadowJobs.length);
+          }
+
+          async function drainBackground(generation = lifecycleGeneration) {
+""", 1)
+
+          historical_work = '(rootBatches.length || walkJobs.length || batchJobs.length || shadowJobs.length)'
+          if s.count(historical_work) < 3:
+              raise SystemExit('background-work predicates changed unexpectedly')
+          s = s.replace(historical_work, 'hasBackgroundWork()')
+
+          loop_anchor = """      while (!lifecyclePaused && generation === lifecycleGeneration && hasBackgroundWork() && rounds++ < 24) {
+"""
+          if loop_anchor not in s:
+              raise SystemExit('background loop anchor missing')
+          s = s.replace(loop_anchor, loop_anchor + "        if (!rootBatches.length && !walkJobs.length) promoteWalkRecovery();\n", 1)
+
+          finally_anchor = """    } finally {
+              if (backgroundEpoch === generation) backgroundQueued = false;
+"""
+          if finally_anchor not in s:
+              raise SystemExit('background finally anchor missing')
+          s = s.replace(finally_anchor, """    } finally {
+              if (!rootBatches.length && !walkJobs.length) promoteWalkRecovery();
+              if (backgroundEpoch === generation) backgroundQueued = false;
+""", 1)
+
+          clear_anchor = """    rootBatches.length = 0;
+              walkJobs.length = 0;
+              shadowJobs.length = 0;
+"""
+          if clear_anchor not in s:
+              raise SystemExit('clearQueuedWork anchor missing')
+          s = s.replace(clear_anchor, """    rootBatches.length = 0;
+              walkJobs.length = 0;
+              walkRecoveryRef = null;
+              walkRecoveryUrgent = false;
+              shadowJobs.length = 0;
+""", 1)
+
+          if 'while (walkJobs.length >= MAX_WALK_JOBS) releaseWalkJob(walkJobs.shift())' in s:
+              raise SystemExit('historical lossy walk overflow remains')
+          p.write_text(s)
+          PY
+          node --check extension/engine.js
+          npm test
+          python tools/package_extension.py --check
+          git diff --check
+          git diff -- extension/engine.js
+      - name: Commit production patch
+        run: |
+          set -euo pipefail
+          if git diff --quiet -- extension/engine.js; then
+            echo 'No Engine patch produced' >&2
+            exit 1
+          fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add extension/engine.js
+          git commit -m 'fix: preserve Engine walk work under bounded pressure'
+          git push origin HEAD:agent/v11-engine-walk-saturation-v2
