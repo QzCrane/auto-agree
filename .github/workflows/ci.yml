@@ -6,99 +6,13 @@ on:
   pull_request:
 
 permissions:
-  contents: write
+  contents: read
 
 concurrency:
   group: verify-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
-  migrate-risk-parity:
-    if: github.event_name == 'pull_request' && github.head_ref == 'agent/v11-multilingual-risk-parity' && github.actor != 'github-actions[bot]'
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
-    steps:
-      - uses: actions/checkout@v6
-        with:
-          ref: agent/v11-multilingual-risk-parity
-          fetch-depth: 0
-      - uses: actions/setup-node@v7
-        with:
-          node-version: '24'
-      - name: Apply, verify, and erase migration transport
-        run: |
-          set -euo pipefail
-          python - <<'PY'
-          from pathlib import Path
-          risk = Path('extension/risk-core.js')
-          s = risk.read_text()
-          if 'medicinsksamtykke' not in s:
-              if 'medicinsamtykke' not in s:
-                  raise SystemExit('Danish medical anchor missing')
-              s = s.replace('medicinsamtykke', 'medicinsksamtykke|medicinsamtykke', 1)
-          if 'COMPACT_MULTILINGUAL_HIGH_CONSEQUENCE' not in s:
-              anchor = "  const COMPACT_MULTILINGUAL_ATTESTATION = /"
-              extra = r'''  const COMPACT_MULTILINGUAL_HIGH_CONSEQUENCE = /(?:risquedinvestissement|anlagerisiko|riesgodeinversión|riscodeinvestimento|rischiodiinvestimento|投資リスク|투자위험|инвестиционныйриск|مخاطرالاستثمار|beleggingsrisico|ryzykoinwestycyjne|yatırımriski|rủirođầutư|risikoinvestasi|ความเสี่ยงในการลงทุน|निवेशजोखिम|επενδυτικόςκίνδυνος|סיכוןהשקעה|investeringsrisk|investeringsrisiko|demandedassurance|versicherungsantrag|solicituddeseguro|pedidodeseguro|domandadiassicurazione|保険申込|보험신청|заявлениенастрахование|طلبالتأمين|verzekeringsaanvraag|wniosekubezpieczeniowy|sigortabaşvurusu|đơnđăngkýbảohiểm|pengajuanasuransi|ใบสมัครประกัน|बीमाआवेदन|αίτησηασφάλισης|בקשתביטוח|försäkringsansökan|forsikringssøknad|forsikringsansøgning|contratdetravail|arbeitsvertrag|contratodetrabajo|contratodetrabalho|contrattodilavoro|雇用契約|근로계약|трудовойдоговор|عقدالعمل|arbeidsovereenkomst|umowaopracę|işsözleşmesi|hợpđồnglaođộng|perjanjiankerja|สัญญาจ้างงาน|रोजगारअनुबंध|σύμβασηεργασίας|חוזהעבודה|anställningsavtal|arbeidsavtale|ansættelseskontrakt)/iu;
-'''
-              if anchor not in s:
-                  raise SystemExit('attestation anchor missing')
-              s = s.replace(anchor, extra + anchor, 1)
-              s = s.replace('COMPACT_MULTILINGUAL_CONSEQUENTIAL.test(compact)||', 'COMPACT_MULTILINGUAL_CONSEQUENTIAL.test(compact)||COMPACT_MULTILINGUAL_HIGH_CONSEQUENCE.test(compact)||', 1)
-              s = s.replace('COMPACT_MULTILINGUAL_CONSEQUENTIAL,COMPACT_MULTILINGUAL_ATTESTATION', 'COMPACT_MULTILINGUAL_CONSEQUENTIAL,COMPACT_MULTILINGUAL_HIGH_CONSEQUENCE,COMPACT_MULTILINGUAL_ATTESTATION', 1)
-          risk.write_text(s)
-
-          test = Path('tests/property-consent-model.mjs')
-          t = test.read_text()
-          if 'multilingualRemainingHighConsequence' not in t:
-              marker = 'const legalBases = positives.slice(0, 3);'
-              block = r'''const multilingualRemainingHighConsequence = [
-  { lang:'fr', terms:["risque d'investissement","demande d'assurance",'contrat de travail'] },
-  { lang:'de', terms:['Anlagerisiko','Versicherungsantrag','Arbeitsvertrag'] },
-  { lang:'es', terms:['riesgo de inversión','solicitud de seguro','contrato de trabajo'] },
-  { lang:'pt', terms:['risco de investimento','pedido de seguro','contrato de trabalho'] },
-  { lang:'it', terms:['rischio di investimento','domanda di assicurazione','contratto di lavoro'] },
-  { lang:'ja', terms:['投資リスク','保険申込','雇用契約'] },
-  { lang:'ko', terms:['투자 위험','보험 신청','근로 계약'] },
-  { lang:'ru', terms:['инвестиционный риск','заявление на страхование','трудовой договор'] },
-  { lang:'ar', terms:['مخاطر الاستثمار','طلب التأمين','عقد العمل'] },
-  { lang:'nl', terms:['beleggingsrisico','verzekeringsaanvraag','arbeidsovereenkomst'] },
-  { lang:'pl', terms:['ryzyko inwestycyjne','wniosek ubezpieczeniowy','umowa o pracę'] },
-  { lang:'tr', terms:['yatırım riski','sigorta başvurusu','iş sözleşmesi'] },
-  { lang:'vi', terms:['rủi ro đầu tư','đơn đăng ký bảo hiểm','hợp đồng lao động'] },
-  { lang:'id', terms:['risiko investasi','pengajuan asuransi','perjanjian kerja'] },
-  { lang:'th', terms:['ความเสี่ยงในการลงทุน','ใบสมัครประกัน','สัญญาจ้างงาน'] },
-  { lang:'hi', terms:['निवेश जोखिम','बीमा आवेदन','रोजगार अनुबंध'] },
-  { lang:'el', terms:['επενδυτικός κίνδυνος','αίτηση ασφάλισης','σύμβαση εργασίας'] },
-  { lang:'he', terms:['סיכון השקעה','בקשת ביטוח','חוזה עבודה'] },
-  { lang:'sv', terms:['investeringsrisk','försäkringsansökan','anställningsavtal'] },
-  { lang:'no', terms:['investeringsrisiko','forsikringssøknad','arbeidsavtale'] },
-  { lang:'da', terms:['investeringsrisiko','forsikringsansøgning','ansættelseskontrakt'] }
-];
-for (const sample of multilingualRemainingHighConsequence) {
-  for (const term of sample.terms) assert.ok(risk.severityFor(term).level >= S.CONSEQUENTIAL, `${sample.lang} remaining high-consequence: ${term}`);
-}
-
-'''
-              if marker not in t:
-                  raise SystemExit('property marker missing')
-              t = t.replace(marker, block + marker, 1)
-              test.write_text(t)
-          PY
-          node --check extension/risk-core.js
-          node tests/property-consent-model.mjs
-          npm test
-          python tools/package_extension.py --check
-          git diff --check
-          git fetch origin main
-          git checkout origin/main -- .github/workflows/ci.yml
-          git rm -f .github/workflows/apply-v11-risk-parity-once.yml
-          git config user.name github-actions[bot]
-          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
-          git add extension/risk-core.js tests/property-consent-model.mjs .github/workflows/ci.yml
-          git diff --cached --check
-          git commit -m "fix: complete multilingual high-consequence risk parity"
-          git push origin HEAD:agent/v11-multilingual-risk-parity
-
   core:
     runs-on: ubuntu-latest
     timeout-minutes: 5
