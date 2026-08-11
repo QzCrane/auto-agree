@@ -62,6 +62,19 @@ assert.equal(
 );
 assert.match(gate, /if\s*\(!batchJobs\.length\s*&&\s*!deepJobs\.length\)\s*promoteDeepRecovery\(\)/, 'Gate recovery must be promoted only after ordinary bounded work drains');
 
+// A deep slice that enters with no remaining background budget has not started. Marking the job
+// started before the loop leaves cursorRef null; the next slice then mistakes that for completion.
+assert.equal(
+  /let\s+node\s*=\s*job\.started\s*\?[^;]+:\s*root\.firstChild;\s*job\.started\s*=\s*true;/.test(gate),
+  false,
+  'Gate must not mark a zero-budget deep slice started before processing its first node'
+);
+assert.match(
+  gate,
+  /while\s*\(performance\.now\(\)\s*-\s*start\s*<\s*BACKGROUND_BUDGET_MS\s*&&\s*node\)\s*\{[\s\S]{0,420}job\.started\s*=\s*true;/,
+  'Gate deep jobs become started only inside a slice that actually processes a node'
+);
+
 const ttlRefreshes = gate.match(/if\s*\(performance\.now\(\)\s*-\s*job\.createdAt\s*>\s*JOB_TTL_MS\)\s*job\.createdAt\s*=\s*performance\.now\(\)/g) || [];
 assert.ok(ttlRefreshes.length >= 2, 'connected Gate batch and deep work must refresh liveness age instead of expiring by age alone');
 assert.equal(
