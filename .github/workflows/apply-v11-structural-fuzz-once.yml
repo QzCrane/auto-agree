@@ -1,0 +1,31 @@
+name: apply-v11-structural-fuzz-once
+
+on:
+  push:
+    branches: [agent/v11-lossless-discovery]
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: agent/v11-lossless-discovery
+          fetch-depth: 0
+      - name: Restore only the clean structural fuzz artifacts
+        run: |
+          set -euo pipefail
+          git fetch origin agent/v11-structural-fuzz-recovery
+          git checkout origin/agent/v11-structural-fuzz-recovery -- tests/e2e-extension.mjs tests/fixtures/regressions/structural-fuzz.html
+          git rm .github/workflows/apply-v11-structural-fuzz-once.yml
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add tests/e2e-extension.mjs tests/fixtures/regressions/structural-fuzz.html
+          git diff --cached --check
+          git commit -m "test: restore deterministic structural DOM fuzz"
+          git push origin HEAD:agent/v11-lossless-discovery
