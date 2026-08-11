@@ -2,37 +2,8 @@
 <meta charset="utf-8">
 <title>Gate batch overflow</title>
 <div id="gate-seed"><span role="checkbox" aria-checked="false" aria-label="Terms of Service"></span></div>
-<div id="owners"></div>
-<script>
-(() => {
-  const owners = document.querySelector('#owners');
-  const futureControl = 'PGlucHV0IGlkPSJnYXRlLWJhdGNoLWFncmVlIiB0eXBlPSJjaGVja2JveCIgcmVxdWlyZWQ+SSBoYXZlIHJlYWQgYW5kIGFncmVlIHRvIHRoZSBUZXJtcyBvZiBTZXJ2aWNl';
-  for (let i = 0; i < 7; i++) {
-    const owner = document.createElement('div');
-    owner.id = `batch-owner-${i}`;
-    owners.append(owner);
-  }
-
-  window.startGateBatchOverflow = () => {
-    for (let i = 0; i < 7; i++) {
-      const fragment = document.createDocumentFragment();
-      for (let n = 0; n < 120; n++) {
-        let node;
-        if (i === 0 && n === 60) {
-          node = document.createElement('label');
-          node.innerHTML = atob(futureControl);
-          node.querySelector('input').addEventListener('click', event => {
-            event.currentTarget.dataset.clicks = String(Number(event.currentTarget.dataset.clicks || 0) + 1);
-          });
-        } else {
-          node = document.createElement('span');
-          node.textContent = `neutral batch ${i}-${n}`;
-        }
-        fragment.append(node);
-      }
-      document.querySelector(`#batch-owner-${i}`).append(fragment);
-    }
-    window.gateBatchOverflowStarted = true;
-  };
-})();
-</script>
+<div id="owners">
+  <div id="batch-owner-0"></div><div id="batch-owner-1"></div><div id="batch-owner-2"></div>
+  <div id="batch-owner-3"></div><div id="batch-owner-4"></div><div id="batch-owner-5"></div>
+  <div id="batch-owner-6"></div>
+</div>
