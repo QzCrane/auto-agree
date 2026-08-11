@@ -60,6 +60,10 @@ jobs:
         env:
           AUTO_AGREE_HEADED: '1'
         run: xvfb-run -a node tests/e2e-tier-overflow.mjs
+      - name: Saturate Engine walk queue
+        env:
+          AUTO_AGREE_HEADED: '1'
+        run: xvfb-run -a node tests/e2e-engine-overflow.mjs
       - name: Prove cooperative stale-world generation revocation
         env:
           AUTO_AGREE_HEADED: '1'
