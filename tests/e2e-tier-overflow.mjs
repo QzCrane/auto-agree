@@ -146,11 +146,12 @@ async function startCase(page, spec) {
   throw new Error(`unknown builder: ${spec.build}`);
 }
 
-async function runCase(browser, base, spec) {
+async function runCase(browser, base, spec, attempt = 1) {
   const page = await browser.newPage();
+  const runName = spec.repeat > 1 ? `${spec.name}#${attempt}` : spec.name;
   try {
-    await gotoActive(page, `${base}/${spec.file}`);
-    await waitTier(page, spec.tier, spec.name);
+    await gotoActive(page, `${base}/${spec.file}?attempt=${attempt}`);
+    await waitTier(page, spec.tier, runName);
     await startCase(page, spec);
     try {
       await page.waitForFunction(selector => document.querySelector(selector)?.checked === true, {timeout: 5000}, spec.selector);
@@ -166,21 +167,21 @@ async function runCase(browser, base, spec) {
         };
       }, spec.selector);
       const worlds = await extensionWorldSentinels(page);
-      console.error(`${spec.name}-diagnostic:`, JSON.stringify({diag, worlds}));
+      console.error(`${runName}-diagnostic:`, JSON.stringify({diag, worlds}));
       throw error;
     }
     const result = await page.$eval(spec.selector, el => ({checked: el.checked, clicks: Number(el.dataset.clicks || 0)}));
-    assert.deepEqual(result, {checked: true, clicks: 1}, `${spec.name} must activate exactly once`);
-    console.log(`${spec.name}: PASS`);
+    assert.deepEqual(result, {checked: true, clicks: 1}, `${runName} must activate exactly once`);
+    console.log(`${runName}: PASS`);
   } finally {
     await page.close();
   }
 }
 
 const cases = [
-  {name: 'e2e-probe-deep-overflow', file: 'probe-deep-overflow.html', tier: 'probe', build: 'probe', selector: '#probe-agree'},
-  {name: 'e2e-gate-deep-overflow', file: 'gate-deep-overflow.html', tier: 'gate', build: 'gate-deep', selector: '#gate-deep-agree'},
-  {name: 'e2e-gate-batch-overflow', file: 'gate-batch-overflow.html', tier: 'gate', build: 'gate-batch', selector: '#gate-batch-agree'}
+  {name: 'e2e-probe-deep-overflow', file: 'probe-deep-overflow.html', tier: 'probe', build: 'probe', selector: '#probe-agree', repeat: 1},
+  {name: 'e2e-gate-deep-overflow', file: 'gate-deep-overflow.html', tier: 'gate', build: 'gate-deep', selector: '#gate-deep-agree', repeat: 5},
+  {name: 'e2e-gate-batch-overflow', file: 'gate-batch-overflow.html', tier: 'gate', build: 'gate-batch', selector: '#gate-batch-agree', repeat: 1}
 ];
 
 await withServer(async base => {
@@ -189,8 +190,10 @@ await withServer(async base => {
   try {
     await extensionInstalled(browser);
     for (const spec of cases) {
-      try { await runCase(browser, base, spec); }
-      catch (error) { failures.push({name: spec.name, message: error?.message || String(error)}); }
+      for (let attempt = 1; attempt <= spec.repeat; attempt++) {
+        try { await runCase(browser, base, spec, attempt); }
+        catch (error) { failures.push({name: spec.name, attempt, message: error?.message || String(error)}); }
+      }
     }
   } finally {
     await browser.close();

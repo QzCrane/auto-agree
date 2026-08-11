@@ -301,13 +301,14 @@
 
   function queueDeep(root, allowComposite = true) {
     if (requested || paused || !root || deepQueued.has(root) || !rootConnected(root)) return;
-    deepQueued.add(root);
-    while (deepJobs.length >= MAX_DEEP_JOBS) {
-      const dropped = deepJobs.shift();
-      const droppedRoot = dropped?.rootRef?.deref?.();
-      releaseDeep(dropped);
-      rememberDeepRecovery(droppedRoot, dropped?.allowComposite);
+    if (deepJobs.length >= MAX_DEEP_JOBS) {
+      // Preserve older live FIFO cursors. Only the new excess final state is compressed into the
+      // bounded weak recovery scope, so queue pressure cannot make age/order a correctness oracle.
+      rememberDeepRecovery(root, allowComposite);
+      scheduleBackground();
+      return;
     }
+    deepQueued.add(root);
     deepJobs.push({ rootRef: new WeakRef(root), cursorRef: null, started: false, flags: 0, allowComposite, createdAt: performance.now() });
     scheduleBackground();
   }
@@ -346,9 +347,12 @@
     const root = job?.rootRef?.deref?.();
     if (!root || !rootConnected(root)) return { done: true };
     let node = job.started ? job.cursorRef?.deref?.() : root.firstChild;
-    job.started = true;
     if (node && !(node === root || root.contains(node))) node = root.firstChild;
     while (performance.now() - start < BACKGROUND_BUDGET_MS && node) {
+      // `started` means at least one node was actually processed. Marking it before the budget
+      // check turns a zero-budget first slice into `started=true + cursor=null`, which the next
+      // slice mistakes for completion and permanently skips the subtree tail.
+      job.started = true;
       const next = nextNode(node, root);
       job.cursorRef = next instanceof Node ? new WeakRef(next) : null;
       let nf = node.nodeType === Node.TEXT_NODE ? textFlags(node.data || '') : (node instanceof Element ? elementFlags(node) : 0);
@@ -386,7 +390,8 @@
         while (batchJobs.length && performance.now() - start < BACKGROUND_BUDGET_MS) {
           const job = batchJobs[0];
           const owner = job.ownerRef?.deref?.();
-          if (performance.now() - job.createdAt > JOB_TTL_MS || (job.ownerRef && (!(owner instanceof Element) || !owner.isConnected))) { batchJobs.shift(); continue; }
+          if (job.ownerRef && (!(owner instanceof Element) || !owner.isConnected)) { batchJobs.shift(); continue; }
+          if (performance.now() - job.createdAt > JOB_TTL_MS) job.createdAt = performance.now();
           let done = false;
           while (performance.now() - start < BACKGROUND_BUDGET_MS && !done) {
             let node = null;
@@ -416,8 +421,9 @@
         if (!batchJobs.length && deepJobs.length && performance.now() - start < BACKGROUND_BUDGET_MS) {
           const job = deepJobs[0];
           const root = job?.rootRef?.deref?.();
-          if (performance.now() - job.createdAt > JOB_TTL_MS || !root || !rootConnected(root)) releaseDeep(deepJobs.shift());
+          if (!root || !rootConnected(root)) releaseDeep(deepJobs.shift());
           else {
+            if (performance.now() - job.createdAt > JOB_TTL_MS) job.createdAt = performance.now();
             const out = drainDeep(job, start);
             if (out.hit) return activate(out.reason, out.seed);
             if (out.done) releaseDeep(deepJobs.shift());
