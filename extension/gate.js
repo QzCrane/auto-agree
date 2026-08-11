@@ -265,7 +265,11 @@
 
   function queueBatch(nodes, index, owner) {
     if (!nodes?.length || index >= nodes.length) return;
-    while (batchJobs.length >= MAX_BATCH_JOBS) batchJobs.shift();
+    while (batchJobs.length >= MAX_BATCH_JOBS) {
+      const dropped = batchJobs.shift();
+      const droppedOwner = dropped?.ownerRef?.deref?.();
+      if (droppedOwner instanceof Element && droppedOwner.isConnected) queueDeep(droppedOwner, true);
+    }
     const ownerRef = owner instanceof Element ? new WeakRef(owner) : null;
     const remaining = nodes.length - index;
     if (remaining > LARGE_BATCH) {
