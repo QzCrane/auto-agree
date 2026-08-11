@@ -1,0 +1,38 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Probe deep overflow</title>
+<style>body{font:16px sans-serif}.owner{margin:2px}</style>
+<div id="root"></div>
+<script>
+(() => {
+  const root = document.querySelector('#root');
+  for (let i = 0; i < 6; i++) {
+    const owner = document.createElement('div');
+    owner.className = 'owner';
+    owner.id = `owner-${i}`;
+    root.append(owner);
+  }
+
+  window.startProbeDeepOverflow = () => {
+    for (let i = 0; i < 6; i++) {
+      const subtree = document.createElement('div');
+      subtree.id = `probe-subtree-${i}`;
+      for (let n = 0; n < 150; n++) {
+        const span = document.createElement('span');
+        span.textContent = `neutral ${i}-${n}`;
+        subtree.append(span);
+      }
+      if (i === 0) {
+        const form = document.createElement('form');
+        form.innerHTML = '<input type="email" value="user@example.com"><label><input id="probe-agree" type="checkbox" required>I have read and agree to the Terms of Service</label><button>Login</button>';
+        subtree.append(form);
+        document.querySelector('#owner-0').addEventListener('click', event => {
+          if (event.target?.id === 'probe-agree') event.target.dataset.clicks = String(Number(event.target.dataset.clicks || 0) + 1);
+        });
+      }
+      document.querySelector(`#owner-${i}`).append(subtree);
+    }
+    window.probeOverflowStarted = true;
+  };
+})();
+</script>
