@@ -52,7 +52,7 @@ Gate deep overflow: FAIL
 
 This establishes Gate deep overflow as a real **schedule-sensitive permanent false negative**. A prior pass is therefore evidence only that the race/interleaving can succeed; it is not proof that the queue is lossless.
 
-Because the tier step failed, generation-lease and PR-base update-transition steps were skipped in this intermediate run. They remain mandatory for final closure.
+Because the tier step failed, generation-lease and PR-base update-transition steps were skipped in this intermediate run. They remained mandatory for final closure.
 
 ## Production repair
 
@@ -73,20 +73,45 @@ Recovery semantics are:
 
 No hard cap is raised, no synchronous unbounded document scan is introduced, and no detached subtree is strongly retained. `tests/static-bounded-work.mjs` rejects the three historical naked-drop forms and requires the weak recovery paths.
 
-## Final closure criterion
+## Final green evidence
 
-The exact final head must pass in one canonical run:
+Exact-head canonical run **31461157675** passed both jobs in Chrome for Testing **149.0.7827.22**. The real-browser job reported:
 
 ```text
-core/package
-ordinary E2E
-300-case structural fuzz
-Probe deep saturation
-Gate deep saturation
-Gate batch saturation
-generation lease current→next probe
-PR-base→candidate update transition
-performance ceilings
+e2e-basic: PASS
+structural fuzz: 300/300
+  false positive = 0
+  false negative = 0
+  duplicate toggle = 0
+worker termination: PASS
+
+Probe deep overflow: PASS
+Gate deep overflow: PASS
+Gate batch overflow: PASS
+e2e-tier-overflow: PASS
+
+generation lease 10→11 probe: PASS
+  stale automated clicks = 0
+  direct stale clicks = 0
+  trusted clicks = 1
+
+PR-base → candidate update transition: PASS
+  previousVersion = 10.0.0
+  currentVersion = 10.0.0
+  oldContextVisible = true
+  currentContextVisible = true
+  current routine clicks = 1
+  mixed/stale/broad/ambiguous protected paths = 0
 ```
 
-Final green run details are appended only after that exact-head verification succeeds.
+The same run's 5,000-checkbox profile was approximately:
+
+```text
+wall latency: 262.1 ms
+TaskDuration: 0.2555 s
+CPU samples: 220
+```
+
+This remains comfortably below the established `<1000 ms` wall and `<0.8 s` TaskDuration release ceilings.
+
+The final invariant is therefore evidenced at all three pre-Engine bounded-work pressure points: queue-object caps remain hard, while live correctness-relevant final state retains a bounded weak recovery representation instead of being silently forgotten.
