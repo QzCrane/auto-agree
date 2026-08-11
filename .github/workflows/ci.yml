@@ -14,13 +14,13 @@ concurrency:
 
 jobs:
   migrate-tier-recovery:
-    if: github.event_name == 'pull_request' && github.head_ref == 'agent/v11-tier-overflow' && github.actor != 'github-actions[bot]'
+    if: github.event_name == 'pull_request' && github.head_ref == 'agent/v11-tier-overflow-fix' && github.actor != 'github-actions[bot]'
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@v6
         with:
-          ref: agent/v11-tier-overflow
+          ref: agent/v11-tier-overflow-fix
           fetch-depth: 0
       - uses: actions/setup-node@v7
         with:
@@ -177,7 +177,7 @@ jobs:
           git add extension/bootstrap.js extension/gate.js
           git diff --cached --check
           git commit -m "fix: preserve Probe and Gate work across proven queue overflow"
-          git push origin HEAD:agent/v11-tier-overflow
+          git push origin HEAD:agent/v11-tier-overflow-fix
 
   core:
     runs-on: ubuntu-latest
