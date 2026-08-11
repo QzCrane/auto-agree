@@ -15,6 +15,7 @@ Two different test layers are mandatory.
 - multilingual risk parity: every routine-supported language family must also recognize native-language optional, consequential and attestation evidence conservatively;
 - multilingual fragmentation invariance: representative routine phrases remain legal+assent evidence when a DOM fragment boundary is inserted at every character position;
 - bounded-work contracts: hard queue-object caps remain in place while known Probe/Gate/Engine saturation paths retain weak recoverable final-state work instead of naked oldest-item drops;
+- Engine walk FIFO invariants: `MAX_WALK_JOBS = 12` remains hard, existing cursors cannot be evicted to admit newer work, excess roots use weak final-state recovery, recovery cannot overtake ordinary RootBatch/walk work, and lifecycle retirement clears that recovery state;
 - Gate deep FIFO/TTL invariants: older connected cursors cannot be evicted to admit newer work, live age alone cannot delete batch/deep work, the Gate-deep saturation gate remains five attempts, and the live-TTL discriminator must cross the production TTL;
 - generation-lease contract: current generation passes, version mismatch and invalidated Runtime fail closed, no global event listener is added;
 - worker exact-document injection and `documentLifecycle` rejection;
@@ -64,6 +65,8 @@ A queue cap is therefore tested as both a resource bound and a correctness bound
 
 `tests/e2e-gate-live-ttl.mjs` isolates lifetime semantics from overflow. It establishes a Gate-only world, queues a live deep root, then deliberately blocks the renderer for about **2.7 seconds** after the MutationObserver checkpoint. This crosses `JOB_TTL_MS = 2400` before background traversal can resume. The connected cursor must continue and produce exactly one activation; pure queue age is never sufficient evidence that correctness work is obsolete.
 
+`tests/e2e-engine-overflow.mjs` is the permanent Engine walk-queue saturation discriminator. It first proves the full Engine is active and a seed routine agreement clicked exactly once, then appends **20 roots × 900 nodes** in one mutation burst. The only fresh routine agreement sits near the tail of an early root while enough later roots exceed `MAX_WALK_JOBS = 12`. The target must eventually activate exactly once within the fixed 9-second deadline. This couples the hard walk-job cap to eventual semantic progress: raising the cap, moving the target into an edge sample, shortening the roots or weakening the deadline is not an acceptable repair.
+
 `tests/e2e-generation-lease.mjs` is a reusable future-generation probe. It:
 
 1. activates the current Engine and confirms that world carries the current generation lease;
@@ -94,7 +97,7 @@ This distinguishes a JavaScript execution context remaining observable from that
 
 These assertions are deliberately behavioral. Engine version sentinels alone are not accepted as proof that one generation owns the action surface.
 
-The transition step runs only for `pull_request`, using `github.event.pull_request.base.sha` as `AUTO_AGREE_PREVIOUS_REF`. Main pushes still run deterministic core plus current-version real Chrome E2E/profile, tier saturation, the Gate live-TTL discriminator and cooperative generation probe, but do **not** replay arbitrary push history. The harness itself is version-agnostic: major releases, patch releases and same-version hotfix/reload candidates use the same state-transition machinery.
+The transition step runs only for `pull_request`, using `github.event.pull_request.base.sha` as `AUTO_AGREE_PREVIOUS_REF`. Main pushes still run deterministic core plus current-version real Chrome E2E/profile, tier saturation, Gate live-TTL, Engine walk saturation and the cooperative generation probe, but do **not** replay arbitrary push history. The harness itself is version-agnostic: major releases, patch releases and same-version hotfix/reload candidates use the same state-transition machinery.
 
 With `--profile`, the real-extension E2E records a DevTools CPU profile summary and page metrics to `artifacts/e2e-profile.json`. The latency assertion is deliberately broad; the profile is the authority for deciding future micro-optimizations, not a fragile single-machine microbenchmark.
 
@@ -104,7 +107,7 @@ With `--profile`, the real-extension E2E records a DevTools CPU profile summary 
 
 `structural-fuzz.html` is a deterministic combinatorial corpus, not a replacement for minimal regressions. It searches interactions between structure, fragmentation, language, control representation and mutation timing that curated one-case fixtures cannot exhaustively enumerate.
 
-`probe-deep-overflow.html`, `gate-deep-overflow.html`, and `gate-batch-overflow.html` isolate bounded-work saturation. Gate fixtures keep future agreement content out of the initial DOM so Gate-only state is physically established before the adversarial mutation burst. `gate-live-ttl.html` separately supplies the Gate-only seed for the renderer-delay TTL discriminator.
+`probe-deep-overflow.html`, `gate-deep-overflow.html`, and `gate-batch-overflow.html` isolate bounded-work saturation. Gate fixtures keep future agreement content out of the initial DOM so Gate-only state is physically established before the adversarial mutation burst. `gate-live-ttl.html` separately supplies the Gate-only seed for the renderer-delay TTL discriminator. `engine-walk-overflow.html` supplies an already-active Engine plus the dynamic large-root mount used to isolate walk-job saturation.
 
 `causal-propagation.html` is a permanent authority-lifetime fixture, not merely a one-off reproduction. It ensures page-controlled propagation stopping cannot turn a same-event exception into future asynchronous authority.
 
@@ -115,9 +118,11 @@ Correctness-relevant work queues have two simultaneous obligations:
 1. a hard representation bound protects CPU/memory and prevents detached-DOM retention;
 2. live semantic final state cannot be silently forgotten merely because that representation is full or old.
 
-Overflow recovery therefore prefers weak final-state roots/owners, generation supersession and bounded time-sliced rescans. For Gate deep work, ADR 0014 additionally requires **old live FIFO cursors to outrank new overflow**: the existing queue remains in order and only new excess final state is compressed. Age-only TTL expiration is valid for no connected live Gate cursor; the age is refreshed and traversal continues. A drop is valid only when work is complete, obsolete, disconnected, or another bounded recovery representation is already authoritative.
+Overflow recovery therefore prefers weak final-state roots/owners, generation supersession and bounded time-sliced rescans. For Gate deep work, ADR 0014 additionally requires **old live FIFO cursors to outrank new overflow**: the existing queue remains in order and only new excess final state is compressed. Age-only TTL expiration is valid for no connected live Gate cursor; the age is refreshed and traversal continues.
 
-This policy is enforced by deterministic static contracts, five-attempt real-Chrome Gate saturation, and an independent >2.4-second live-TTL discriminator. Queue classes not yet red-proven retain their current implementation until an isolated browser test demonstrates a correctness failure.
+Engine walk now follows the same evidence-backed admission principle at `MAX_WALK_JOBS = 12`: existing FIFO cursors remain authoritative, only new excess roots are weakly coalesced into one final-state recovery scope, and recovery is promoted only after ordinary RootBatch/walk work drains. Urgency is tracked separately from the weak DOM scope. This mechanism was introduced only after a real Chrome discriminator proved the historical oldest-walk drop caused a permanent false negative.
+
+A drop is valid only when work is complete, obsolete, disconnected, generation-superseded, or another bounded recovery representation is already authoritative. This policy is enforced by deterministic static contracts plus the real-browser RootBatch structural corpus, Probe/Gate saturation, Gate live-TTL and Engine walk saturation. Queue classes not yet red-proven retain their current implementation until an isolated browser test demonstrates a correctness failure.
 
 ## Service-worker termination policy
 
