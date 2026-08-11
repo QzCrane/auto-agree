@@ -6,6 +6,7 @@
 <script>
 (() => {
   const owners = document.querySelector('#owners');
+  const futureControl = 'PGlucHV0IGlkPSJnYXRlLWJhdGNoLWFncmVlIiB0eXBlPSJjaGVja2JveCIgcmVxdWlyZWQ+SSBoYXZlIHJlYWQgYW5kIGFncmVlIHRvIHRoZSBUZXJtcyBvZiBTZXJ2aWNl';
   for (let i = 0; i < 7; i++) {
     const owner = document.createElement('div');
     owner.id = `batch-owner-${i}`;
@@ -19,7 +20,7 @@
         let node;
         if (i === 0 && n === 60) {
           node = document.createElement('label');
-          node.innerHTML = '<input id="gate-batch-agree" type="checkbox" required>I have read and agree to the Terms of Service';
+          node.innerHTML = atob(futureControl);
           node.querySelector('input').addEventListener('click', event => {
             event.currentTarget.dataset.clicks = String(Number(event.currentTarget.dataset.clicks || 0) + 1);
           });
