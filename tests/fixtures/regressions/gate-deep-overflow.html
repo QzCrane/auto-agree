@@ -2,38 +2,9 @@
 <meta charset="utf-8">
 <title>Gate deep overflow</title>
 <div id="gate-seed"><span role="checkbox" aria-checked="false" aria-label="Terms of Service"></span></div>
-<div id="owners"></div>
-<script>
-(() => {
-  const owners = document.querySelector('#owners');
-  const futureForm = 'PGlucHV0IHR5cGU9ImVtYWlsIiB2YWx1ZT0idXNlckBleGFtcGxlLmNvbSI+PGxhYmVsPjxpbnB1dCBpZD0iZ2F0ZS1kZWVwLWFncmVlIiB0eXBlPSJjaGVja2JveCIgcmVxdWlyZWQ+SSBoYXZlIHJlYWQgYW5kIGFncmVlIHRvIHRoZSBUZXJtcyBvZiBTZXJ2aWNlPC9sYWJlbD48YnV0dG9uPkxvZ2luPC9idXR0b24+';
-  for (let i = 0; i < 11; i++) {
-    const owner = document.createElement('div');
-    owner.id = `deep-owner-${i}`;
-    owners.append(owner);
-  }
-
-  window.startGateDeepOverflow = () => {
-    for (let i = 0; i < 11; i++) {
-      const subtree = document.createElement('div');
-      subtree.id = `gate-deep-subtree-${i}`;
-      for (let n = 0; n < 150; n++) {
-        const span = document.createElement('span');
-        span.textContent = `neutral deep ${i}-${n}`;
-        subtree.append(span);
-      }
-      if (i === 0) {
-        const form = document.createElement('form');
-        form.innerHTML = atob(futureForm);
-        const input = form.querySelector('#gate-deep-agree');
-        input.addEventListener('click', event => {
-          event.currentTarget.dataset.clicks = String(Number(event.currentTarget.dataset.clicks || 0) + 1);
-        });
-        subtree.append(form);
-      }
-      document.querySelector(`#deep-owner-${i}`).append(subtree);
-    }
-    window.gateDeepOverflowStarted = true;
-  };
-})();
-</script>
+<div id="owners">
+  <div id="deep-owner-0"></div><div id="deep-owner-1"></div><div id="deep-owner-2"></div>
+  <div id="deep-owner-3"></div><div id="deep-owner-4"></div><div id="deep-owner-5"></div>
+  <div id="deep-owner-6"></div><div id="deep-owner-7"></div><div id="deep-owner-8"></div>
+  <div id="deep-owner-9"></div><div id="deep-owner-10"></div>
+</div>
