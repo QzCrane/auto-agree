@@ -6,6 +6,7 @@
 <script>
 (() => {
   const owners = document.querySelector('#owners');
+  const futureForm = 'PGlucHV0IHR5cGU9ImVtYWlsIiB2YWx1ZT0idXNlckBleGFtcGxlLmNvbSI+PGxhYmVsPjxpbnB1dCBpZD0iZ2F0ZS1kZWVwLWFncmVlIiB0eXBlPSJjaGVja2JveCIgcmVxdWlyZWQ+SSBoYXZlIHJlYWQgYW5kIGFncmVlIHRvIHRoZSBUZXJtcyBvZiBTZXJ2aWNlPC9sYWJlbD48YnV0dG9uPkxvZ2luPC9idXR0b24+';
   for (let i = 0; i < 11; i++) {
     const owner = document.createElement('div');
     owner.id = `deep-owner-${i}`;
@@ -23,7 +24,7 @@
       }
       if (i === 0) {
         const form = document.createElement('form');
-        form.innerHTML = '<input type="email" value="user@example.com"><label><input id="gate-deep-agree" type="checkbox" required>I have read and agree to the Terms of Service</label><button>Login</button>';
+        form.innerHTML = atob(futureForm);
         const input = form.querySelector('#gate-deep-agree');
         input.addEventListener('click', event => {
           event.currentTarget.dataset.clicks = String(Number(event.currentTarget.dataset.clicks || 0) + 1);
