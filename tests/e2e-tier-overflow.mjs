@@ -76,20 +76,26 @@ async function poll(fn, timeout = 4000, interval = 50) {
   throw new Error(`poll timeout after ${timeout}ms`);
 }
 
-async function waitTier(page, tier) {
-  return poll(async () => {
+async function waitTier(page, tier, name) {
+  try {
+    return await poll(async () => {
+      const worlds = await extensionWorldSentinels(page);
+      if (tier === 'probe') return worlds.some(w => w.probe === VERSION && !w.gate && !w.engine) ? worlds : null;
+      if (tier === 'gate') return worlds.some(w => w.gate === VERSION && !w.engine) ? worlds : null;
+      return null;
+    }, 5000, 60);
+  } catch (error) {
     const worlds = await extensionWorldSentinels(page);
-    if (tier === 'probe') return worlds.some(w => w.probe === VERSION && !w.gate && !w.engine) ? worlds : null;
-    if (tier === 'gate') return worlds.some(w => w.gate === VERSION && !w.engine) ? worlds : null;
-    return null;
-  }, 5000, 60);
+    console.error(`${name}-tier-diagnostic:`, JSON.stringify({expected:tier, worlds}));
+    throw error;
+  }
 }
 
 async function runCase(browser, base, spec) {
   const page = await browser.newPage();
   try {
     await gotoActive(page, `${base}/${spec.file}`);
-    await waitTier(page, spec.tier);
+    await waitTier(page, spec.tier, spec.name);
     await page.evaluate(start => window[start](), spec.start);
     try {
       await page.waitForFunction(selector => document.querySelector(selector)?.checked === true, {timeout: 5000}, spec.selector);
