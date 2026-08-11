@@ -48,10 +48,6 @@ for (const text of optional) assert.ok(risk.severityFor(text).level >= S.OPTIONA
 for (const text of consequential) assert.ok(risk.severityFor(text).level >= S.CONSEQUENTIAL, text);
 for (const text of attestations) assert.equal(risk.severityFor(text).level, S.ATTESTATION, text);
 
-// Safety parity: every language family supported for routine consent must also recognize
-// representative optional, financial-authorization and factual-attestation language. These are
-// deliberately local-language phrases rather than English loanwords so routine multilingual
-// support cannot outrun the fail-closed risk vocabulary.
 const multilingualRisk = [
   { lang:'fr', optional:"J’accepte de recevoir des publicités", consequential:"J’autorise le prélèvement automatique", attestation:"Je confirme avoir plus de 18 ans" },
   { lang:'de', optional:'Ich stimme dem Erhalt von Werbung zu', consequential:'Ich autorisiere die Abbuchung', attestation:'Ich bestätige, dass ich über 18 Jahre alt bin' },
@@ -81,7 +77,35 @@ for (const sample of multilingualRisk) {
   assert.equal(risk.severityFor(sample.attestation).level, S.ATTESTATION, `${sample.lang} attestation: ${sample.attestation}`);
 }
 
-// Property: adding a high-consequence clause must never lower severity below OPTIONAL.
+const multilingualHighConsequence = [
+  { lang:'fr', terms:['contrat de prêt','consentement médical','reconnaissance faciale','arbitrage','renouvellement automatique'] },
+  { lang:'de', terms:['Darlehensvertrag','medizinische Einwilligung','Gesichtserkennung','Schiedsverfahren','automatische Verlängerung'] },
+  { lang:'es', terms:['contrato de préstamo','consentimiento médico','reconocimiento facial','arbitraje','renovación automática'] },
+  { lang:'pt', terms:['contrato de empréstimo','consentimento médico','reconhecimento facial','arbitragem','renovação automática'] },
+  { lang:'it', terms:['contratto di prestito','consenso medico','riconoscimento facciale','arbitrato','rinnovo automatico'] },
+  { lang:'ja', terms:['ローン契約','医療同意','顔認識','仲裁','自動更新'] },
+  { lang:'ko', terms:['대출 계약','의료 동의','안면 인식','중재','자동 갱신'] },
+  { lang:'ru', terms:['кредитный договор','медицинское согласие','распознавание лица','арбитраж','автоматическое продление'] },
+  { lang:'ar', terms:['اتفاقية قرض','موافقة طبية','التعرف على الوجه','تحكيم','التجديد التلقائي'] },
+  { lang:'nl', terms:['leningsovereenkomst','medische toestemming','gezichtsherkenning','arbitrage','automatische verlenging'] },
+  { lang:'pl', terms:['umowa kredytowa','zgoda medyczna','rozpoznawanie twarzy','arbitraż','automatyczne odnowienie'] },
+  { lang:'tr', terms:['kredi sözleşmesi','tıbbi onam','yüz tanıma','tahkim','otomatik yenileme'] },
+  { lang:'vi', terms:['hợp đồng vay','đồng ý y tế','nhận diện khuôn mặt','trọng tài','tự động gia hạn'] },
+  { lang:'id', terms:['perjanjian pinjaman','persetujuan medis','pengenalan wajah','arbitrase','perpanjangan otomatis'] },
+  { lang:'th', terms:['สัญญาเงินกู้','ความยินยอมทางการแพทย์','การจดจำใบหน้า','อนุญาโตตุลาการ','ต่ออายุอัตโนมัติ'] },
+  { lang:'hi', terms:['ऋण समझौता','चिकित्सा सहमति','चेहरा पहचान','मध्यस्थता','स्वचालित नवीनीकरण'] },
+  { lang:'el', terms:['σύμβαση δανείου','ιατρική συγκατάθεση','αναγνώριση προσώπου','διαιτησία','αυτόματη ανανέωση'] },
+  { lang:'he', terms:['הסכם הלוואה','הסכמה רפואית','זיהוי פנים','בוררות','חידוש אוטומטי'] },
+  { lang:'sv', terms:['låneavtal','medicinskt samtycke','ansiktsigenkänning','skiljeförfarande','automatisk förnyelse'] },
+  { lang:'no', terms:['låneavtale','medisinsk samtykke','ansiktsgjenkjenning','voldgift','automatisk fornyelse'] },
+  { lang:'da', terms:['låneaftale','medicinsk samtykke','ansigtsgenkendelse','voldgift','automatisk fornyelse'] }
+];
+for (const sample of multilingualHighConsequence) {
+  for (const term of sample.terms) {
+    assert.ok(risk.severityFor(term).level >= S.CONSEQUENTIAL, `${sample.lang} high-consequence: ${term}`);
+  }
+}
+
 const legalBases = positives.slice(0, 3);
 const dangerousSuffixes = [
   ' and authorize payment',
@@ -100,9 +124,8 @@ for (let i = 0; i < 10000; i++) {
   cases++;
 }
 
-// Property: normalization is bounded for pathological inputs.
 const huge = `${'x'.repeat(1_000_000)} I agree to the Terms of Service`;
 const normalized = core.normalize(huge, 1000);
 assert.ok(normalized.length <= 1000);
 assert.equal(core.assessText(normalized).legal, true);
-console.log(`property-consent-model: PASS (${cases + positives.length + optional.length + consequential.length + attestations.length + multilingualRisk.length * 3 + 1} assertions)`);
+console.log(`property-consent-model: PASS (${cases + positives.length + optional.length + consequential.length + attestations.length + multilingualRisk.length * 3 + multilingualHighConsequence.length * 5 + 1} assertions)`);
