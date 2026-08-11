@@ -9,8 +9,6 @@
   const { LEGAL, ASSENT, REQUIRED: REQUIRED_TEXT, COMPACT_LEGAL, COMPACT_ASSENT } = CORE.patterns;
   const COMPACT_REQUIRED = /(?:required|mandatory|must(?:agree|accept)|please(?:agree|accept))/i;
 
-  // v7 gate is an evidence gate, not a keyword gate. Weak signals such as a footer
-  // "Privacy Policy" link or a newsletter email field must never load the full engine alone.
   const AUTH_ACTION = /(?:登录|登入|登陆|注册|註冊|验证码登录|驗證碼登入|获取验证码|獲取驗證碼|发送验证码|發送驗證碼|login|log\s*in|sign\s*in|sign\s*up|register|verification\s*code|connexion|anmelden|iniciar\s+sesi[oó]n|ログイン|로그인|войти|تسجيل\s+الدخول|inloggen|zaloguj|giriş\s+yap|đăng\s+nhập|masuk|เข้าสู่ระบบ|लॉग\s*इन|σύνδεση|התחברות|logga\s+in|logg\s+inn|log\s+ind)/iu;
   const CREDENTIAL_ATTR = /(?:phone|mobile|tel|email|username|user.?name|account|账号|帳號|手机号|手機號|邮箱|郵箱)/iu;
   const AUTH_ATTR = /(?:login|signin|sign-in|signup|sign-up|register|auth|verification|otp|password|验证码|驗證碼|登录|登入|注册|註冊)/iu;
@@ -38,6 +36,8 @@
   const batchJobs = [];
   const deepJobs = [];
   const deepQueued = new WeakSet();
+  let deepRecoveryRef = null;
+  let deepRecoveryComposite = false;
   let localChecked = new WeakSet();
 
   function rootConnected(root) {
@@ -52,7 +52,6 @@
   function nextNode(node, root) {
     if (!(node instanceof Node) || !(root instanceof Node)) return null;
     if (node instanceof Element && /^(?:script|style|noscript|template|head)$/i.test(node.localName)) {
-      // skip non-interactive subtrees
     } else if (node.firstChild) return node.firstChild;
     let p = node;
     while (p && p !== root) {
@@ -165,9 +164,6 @@
     let reason = allowComposite ? activationReason(flags) : ((flags & F.STRONG_AUTH) ? 'strong-auth' : '');
     if (reason) return { hit: true, flags, reason, truncated: false, seed: root instanceof Element ? root : null };
 
-    // A legal sentence can be split through several inline elements, including through the
-    // middle of a word. Only local/composite scopes with an actual consent control get this
-    // bounded aggregate pass; whole-document discovery never concatenates arbitrary page text.
     if (allowComposite && root?.querySelector) {
       let hasControl = root instanceof Element && isConsentControl(root);
       if (!hasControl) { try { hasControl = !!root.querySelector('input[type="checkbox"],input[type="radio"],[role="checkbox"],[role="radio"],[role="switch"],[aria-checked]'); } catch (_) {} }
@@ -190,9 +186,6 @@
       if (nf & F.STRONG_AUTH) return { hit: true, flags: flags | nf, reason: 'strong-auth', truncated: false, seed: node instanceof Element ? node : node.parentElement };
       flags |= nf;
       if (allowComposite && (reason = activationReason(flags))) return { hit: true, flags, reason, truncated: false, seed: node instanceof Element ? node : node.parentElement };
-
-      // On a whole-document scan, weak evidence is only allowed to combine inside a local UI
-      // container. This prevents footer Terms + newsletter Email from becoming a false activation.
       if (!allowComposite && (nf & (F.AUTH | F.LEGAL | F.ASSENT | F.CONTROL | F.CREDENTIAL))) {
         const scope = localScope(node);
         if (scope && !localChecked.has(scope)) {
@@ -228,7 +221,10 @@
     detachEvents();
     detachLifecycle();
     batchJobs.length = 0;
+    for (const job of deepJobs) releaseDeep(job);
     deepJobs.length = 0;
+    deepRecoveryRef = null;
+    deepRecoveryComposite = false;
     chrome.runtime.sendMessage({ type: 'AUTO_AGREE_ACTIVATE', reason }, response => {
       if (!chrome.runtime.lastError && response?.ok) { handoffRetry = 0; return; }
       requested = false;
@@ -255,17 +251,74 @@
     if (root) deepQueued.delete(root);
   }
 
+  function recoveryElement(root) {
+    if (root instanceof Document) return root.documentElement;
+    if (root instanceof ShadowRoot) return root.host;
+    return root instanceof Element ? root : null;
+  }
+
+  function commonDeepRecoveryRoot(a, b) {
+    if (!a) return b;
+    if (!b || a === b) return a;
+    const ae = recoveryElement(a), be = recoveryElement(b);
+    if (!(ae instanceof Element) || !(be instanceof Element)) return document.documentElement;
+    const ar = ae.getRootNode?.(), br = be.getRootNode?.();
+    if (ar !== br) return document.documentElement;
+    let p = ae, hops = 0;
+    while (p instanceof Element && hops++ < 32) {
+      if (p === be || p.contains(be)) return p;
+      p = p.parentElement;
+    }
+    if (ar instanceof ShadowRoot) return ar;
+    return document.documentElement;
+  }
+
+  function rememberDeepRecovery(root, allowComposite) {
+    if (!root || !rootConnected(root)) return;
+    const current = deepRecoveryRef?.deref?.();
+    if (!current || !rootConnected(current)) {
+      deepRecoveryRef = new WeakRef(root);
+      deepRecoveryComposite = !!allowComposite;
+      return;
+    }
+    const merged = commonDeepRecoveryRoot(current, root);
+    const sameScope = merged === current && merged === root;
+    deepRecoveryRef = new WeakRef(merged);
+    deepRecoveryComposite = sameScope ? (deepRecoveryComposite && !!allowComposite) : false;
+  }
+
+  function promoteDeepRecovery() {
+    if (deepJobs.length || !deepRecoveryRef) return false;
+    const root = deepRecoveryRef.deref?.();
+    const allowComposite = deepRecoveryComposite;
+    deepRecoveryRef = null;
+    deepRecoveryComposite = false;
+    if (!root || !rootConnected(root) || deepQueued.has(root)) return false;
+    deepQueued.add(root);
+    deepJobs.push({ rootRef: new WeakRef(root), cursorRef: null, started: false, flags: 0, allowComposite, createdAt: performance.now() });
+    return true;
+  }
+
   function queueDeep(root, allowComposite = true) {
     if (requested || paused || !root || deepQueued.has(root) || !rootConnected(root)) return;
     deepQueued.add(root);
-    while (deepJobs.length >= MAX_DEEP_JOBS) releaseDeep(deepJobs.shift());
+    while (deepJobs.length >= MAX_DEEP_JOBS) {
+      const dropped = deepJobs.shift();
+      const droppedRoot = dropped?.rootRef?.deref?.();
+      releaseDeep(dropped);
+      rememberDeepRecovery(droppedRoot, dropped?.allowComposite);
+    }
     deepJobs.push({ rootRef: new WeakRef(root), cursorRef: null, started: false, flags: 0, allowComposite, createdAt: performance.now() });
     scheduleBackground();
   }
 
   function queueBatch(nodes, index, owner) {
     if (!nodes?.length || index >= nodes.length) return;
-    while (batchJobs.length >= MAX_BATCH_JOBS) batchJobs.shift();
+    while (batchJobs.length >= MAX_BATCH_JOBS) {
+      const dropped = batchJobs.shift();
+      const droppedOwner = dropped?.ownerRef?.deref?.();
+      if (droppedOwner instanceof Element && droppedOwner.isConnected) queueDeep(droppedOwner, true);
+    }
     const ownerRef = owner instanceof Element ? new WeakRef(owner) : null;
     const remaining = nodes.length - index;
     if (remaining > LARGE_BATCH) {
@@ -374,6 +427,7 @@
         else break;
       }
     } finally {
+      if (!batchJobs.length && !deepJobs.length) promoteDeepRecovery();
       if (backgroundEpoch === epoch) backgroundRunning = false;
       if (!requested && !paused && epoch === lifecycleEpoch && (batchJobs.length || deepJobs.length)) scheduleBackground();
     }
@@ -419,10 +473,6 @@ const remaining = Math.min(0.35, Math.max(0.12, SYNC_MUTATION_BUDGET_MS - (perfo
 const result = scanEvidence(node, 64, remaining, true);
 if (result.hit) return activate(`mutation-${result.reason || 'evidence'}`, result.seed || node);
 if (result.truncated) queueDeep(node, true);
-
-// Reuse the bounded scan we already paid for. A classless legal row keeps LEGAL/ASSENT
-// in descendant text rather than the row's own attributes; discarding result.flags made
-// such sibling evidence invisible to the local-scope transaction.
 const el = node instanceof Element ? node : node?.parentElement;
 if (!(el instanceof Element)) continue;
 const nf = result.flags | (node.nodeType === Node.TEXT_NODE ? textFlags(node.data || '') : elementFlags(el));
@@ -546,11 +596,8 @@ if (scope instanceof Element && scope !== el) queueDeep(scope, true);
         if (local.hit) return activate(`probe-seed-${local.reason || 'evidence'}`, local.seed || seedEl);
         if (local.truncated) queueDeep(scope, true);
       }
-      // Probe structural edges next: login modals/forms are commonly appended near the tail of a
-      // large SPA. This finds them without scanning thousands of unrelated settings controls.
       const edge = edgeProbe(document.documentElement);
       if (edge?.hit) return activate(`initial-edge-${edge.reason || 'evidence'}`, edge.seed || document.documentElement);
-      // Whole-document scans only allow composite weak evidence inside local UI containers.
       const initial = scanEvidence(document.documentElement, 128, 2.2, false);
       if (initial.hit) activate(`initial-${initial.reason || 'evidence'}`, initial.seed || document.documentElement);
       else if (initial.truncated) queueDeep(document.documentElement, false);
@@ -561,6 +608,8 @@ if (scope instanceof Element && scope !== el) queueDeep(scope, true);
     for (const job of deepJobs) releaseDeep(job);
     deepJobs.length = 0;
     batchJobs.length = 0;
+    deepRecoveryRef = null;
+    deepRecoveryComposite = false;
     backgroundRunning = false;
   }
 

@@ -12,6 +12,9 @@ Two different test layers are mandatory.
 - Manifest V3/permission/isolated-world/frame invariants;
 - absence of forbidden network/eval/polling/debugger/wildcard-scan paths;
 - production semantic severity properties;
+- multilingual risk parity: every routine-supported language family must also recognize native-language optional, consequential and attestation evidence conservatively;
+- multilingual fragmentation invariance: representative routine phrases remain legal+assent evidence when a DOM fragment boundary is inserted at every character position;
+- bounded-work contracts: hard queue-object caps remain in place while known Probe/Gate/Engine saturation paths retain weak recoverable final-state work instead of naked oldest-item drops;
 - generation-lease contract: current generation passes, version mismatch and invalidated Runtime fail closed, no global event listener is added;
 - worker exact-document injection and `documentLifecycle` rejection;
 - every dynamically injected Gate/Engine/update-protection world carries the required generation lease dependency;
@@ -47,7 +50,16 @@ CI installs a pinned Puppeteer test tool and launches the runner's real Chrome w
 - stopped-propagation causal delegation with two required branches:
   - synchronous descendant `click()` during the exact trusted source event -> one click;
   - descendant `click()` in a later task after source dispatch ended -> zero clicks;
+- deterministic fixed-seed structural fuzz over **300 dynamic contexts** crossing native/external labels, ARIA IDREFs, custom controls, wrapper depth, text fragmentation, multilingual routine semantics and blocked/already-checked/disabled/mixed states; the aggregate gate requires false positives = 0, false negatives = 0 and duplicate toggles = 0;
 - a 5,000-unrelated-checkbox tail-login profile scenario.
+
+`tests/e2e-tier-overflow.mjs` is the permanent bounded-work adversarial gate. Each case first proves the expected runtime tier and then saturates one bounded queue with the only valid agreement stored in the oldest work representation. It requires exactly one final activation for:
+
+- Probe deep work at `MAX_DEEP = 4`;
+- Gate deep work at `MAX_DEEP_JOBS = 10`;
+- Gate large-batch work at `MAX_BATCH_JOBS = 6`.
+
+A queue cap is therefore tested as both a resource bound and a correctness boundary. Increasing a cap, weakening the fixture, or replacing recovery with an unbounded synchronous document scan is not an acceptable way to make this gate green.
 
 `tests/e2e-generation-lease.mjs` is a reusable future-generation probe. It:
 
@@ -79,7 +91,7 @@ This distinguishes a JavaScript execution context remaining observable from that
 
 These assertions are deliberately behavioral. Engine version sentinels alone are not accepted as proof that one generation owns the action surface.
 
-The transition step runs only for `pull_request`, using `github.event.pull_request.base.sha` as `AUTO_AGREE_PREVIOUS_REF`. Main pushes still run deterministic core plus current-version real Chrome E2E/profile and cooperative generation probe, but do **not** replay arbitrary push history. The harness itself is version-agnostic: major releases, patch releases and same-version hotfix/reload candidates use the same state-transition machinery.
+The transition step runs only for `pull_request`, using `github.event.pull_request.base.sha` as `AUTO_AGREE_PREVIOUS_REF`. Main pushes still run deterministic core plus current-version real Chrome E2E/profile, tier saturation and cooperative generation probe, but do **not** replay arbitrary push history. The harness itself is version-agnostic: major releases, patch releases and same-version hotfix/reload candidates use the same state-transition machinery.
 
 With `--profile`, the real-extension E2E records a DevTools CPU profile summary and page metrics to `artifacts/e2e-profile.json`. The latency assertion is deliberately broad; the profile is the authority for deciding future micro-optimizations, not a fragile single-machine microbenchmark.
 
@@ -87,7 +99,20 @@ With `--profile`, the real-extension E2E records a DevTools CPU profile summary 
 
 `tests/fixtures/regressions/` is the canonical privacy-safe structural corpus. A real-world miss or false positive must be reduced to a minimal fixture before the fix is considered closed. Do not copy credentials, session identifiers, private URLs, or unnecessary proprietary page markup into fixtures.
 
+`structural-fuzz.html` is a deterministic combinatorial corpus, not a replacement for minimal regressions. It searches interactions between structure, fragmentation, language, control representation and mutation timing that curated one-case fixtures cannot exhaustively enumerate.
+
+`probe-deep-overflow.html`, `gate-deep-overflow.html`, and `gate-batch-overflow.html` isolate bounded-work saturation. Gate fixtures keep future agreement content out of the initial DOM so Gate-only state is physically established before the adversarial mutation burst.
+
 `causal-propagation.html` is a permanent authority-lifetime fixture, not merely a one-off reproduction. It ensures page-controlled propagation stopping cannot turn a same-event exception into future asynchronous authority.
+
+## Bounded-work policy
+
+Correctness-relevant work queues have two simultaneous obligations:
+
+1. a hard representation bound protects CPU/memory and prevents detached-DOM retention;
+2. live semantic final state cannot be silently forgotten merely because that representation is full or stale.
+
+Overflow recovery therefore prefers weak final-state roots/owners, generation supersession and bounded time-sliced rescans. A naked oldest-item drop is valid only when the represented work is complete, obsolete, disconnected, or another bounded recovery representation is already authoritative. This policy is codified in ADR 0012 and enforced by deterministic static contracts plus real-Chrome saturation.
 
 ## Service-worker termination policy
 
