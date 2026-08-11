@@ -4,6 +4,8 @@ import assert from 'node:assert/strict';
 const engine = fs.readFileSync('extension/engine.js', 'utf8');
 const probe = fs.readFileSync('extension/bootstrap.js', 'utf8');
 const gate = fs.readFileSync('extension/gate.js', 'utf8');
+const tierE2e = fs.readFileSync('tests/e2e-tier-overflow.mjs', 'utf8');
+const gateTtlE2e = fs.readFileSync('tests/e2e-gate-live-ttl.mjs', 'utf8');
 
 assert.equal(
   /while\s*\(rootBatches\.length\s*>=\s*MAX_ROOT_BATCHES\)\s*rootBatches\.shift\(\)/.test(engine),
@@ -37,9 +39,9 @@ assert.match(gate, /const\s+droppedOwner\s*=\s*dropped\?\.ownerRef\?\.deref\?\.\
 assert.match(gate, /queueDeep\(droppedOwner,\s*true\)/, 'Gate evicted batch owner must re-enter the existing bounded deep path');
 
 assert.equal(
-  /while\s*\(deepJobs\.length\s*>=\s*MAX_DEEP_JOBS\)\s*releaseDeep\(deepJobs\.shift\(\)\)/.test(gate),
+  /while\s*\(deepJobs\.length\s*>=\s*MAX_DEEP_JOBS\)/.test(gate),
   false,
-  'Gate deep pressure must not silently release the oldest unfinished root'
+  'Gate deep pressure must not evict existing FIFO cursors to admit newer work'
 );
 assert.match(gate, /MAX_DEEP_JOBS\s*=\s*10/, 'Gate deep recovery must preserve the hard deep-job cap');
 assert.match(gate, /let\s+deepRecoveryRef\s*=\s*null/, 'Gate needs a weak deep final-state recovery representation');
@@ -48,7 +50,37 @@ assert.match(gate, /function\s+rememberDeepRecovery\s*\(/, 'Gate deep overflow m
 assert.match(gate, /function\s+promoteDeepRecovery\s*\(/, 'Gate deep recovery must re-enter bounded background traversal');
 assert.match(gate, /deepRecoveryRef\s*=\s*new WeakRef\(merged\)/, 'Gate deep recovery must remain weak');
 assert.match(gate, /deepRecoveryComposite\s*=\s*sameScope\s*\?[^:]+:\s*false/, 'coalescing distinct Gate scopes must fail closed on composite authority');
-assert.match(gate, /rememberDeepRecovery\(droppedRoot,\s*dropped\?\.allowComposite\)/, 'evicted Gate deep jobs must preserve their recovery authority mode');
+assert.match(
+  gate,
+  /if\s*\(deepJobs\.length\s*>=\s*MAX_DEEP_JOBS\)\s*\{[\s\S]{0,500}rememberDeepRecovery\(root,\s*allowComposite\)[\s\S]{0,250}return;/,
+  'Gate must compress only new excess roots while preserving existing FIFO cursors'
+);
+assert.equal(
+  /rememberDeepRecovery\(droppedRoot,\s*dropped\?\.allowComposite\)/.test(gate),
+  false,
+  'Gate must not remove an old live cursor and defer it through recovery'
+);
 assert.match(gate, /if\s*\(!batchJobs\.length\s*&&\s*!deepJobs\.length\)\s*promoteDeepRecovery\(\)/, 'Gate recovery must be promoted only after ordinary bounded work drains');
+
+const ttlRefreshes = gate.match(/if\s*\(performance\.now\(\)\s*-\s*job\.createdAt\s*>\s*JOB_TTL_MS\)\s*job\.createdAt\s*=\s*performance\.now\(\)/g) || [];
+assert.ok(ttlRefreshes.length >= 2, 'connected Gate batch and deep work must refresh liveness age instead of expiring by age alone');
+assert.equal(
+  /performance\.now\(\)\s*-\s*job\.createdAt\s*>\s*JOB_TTL_MS[^\n]*batchJobs\.shift\(\)/.test(gate),
+  false,
+  'Gate batch TTL must not erase still-live work by age alone'
+);
+assert.equal(
+  /performance\.now\(\)\s*-\s*job\.createdAt\s*>\s*JOB_TTL_MS[^\n]*releaseDeep\(deepJobs\.shift\(\)\)/.test(gate),
+  false,
+  'Gate deep TTL must not erase still-live cursors by age alone'
+);
+
+assert.match(
+  tierE2e,
+  /name:\s*'e2e-gate-deep-overflow'[\s\S]{0,220}repeat:\s*5/,
+  'Gate deep saturation variance gate must remain five independent attempts'
+);
+assert.match(gateTtlE2e, /performance\.now\(\)\s*\+\s*2700/, 'Gate live-TTL E2E must cross the 2400 ms production TTL');
+assert.match(gateTtlE2e, /live Gate deep work must survive age beyond JOB_TTL_MS exactly once/, 'Gate live-TTL E2E must assert exactly-once recovery');
 
 console.log('static-bounded-work: PASS');
