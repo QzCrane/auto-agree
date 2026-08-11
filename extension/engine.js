@@ -69,6 +69,8 @@
   const urgentRoots = new Set();
   const rootBatches = [];
   const walkJobs = [];
+  let walkRecoveryRef = null;
+  let walkRecoveryUrgent = false;
   const shadowJobs = [];
   const batchJobs = [];
   const walkGeneration = new WeakMap();
@@ -546,7 +548,6 @@
   function consentSeverity(localText, context) {
     return severityFor(localText, context?.text || '', !!context?.transaction);
   }
-
 
   function snapshotCandidate(el) {
     const rowInfo = semanticRowInfo(el);
@@ -1293,6 +1294,63 @@
     if (root) queuedWalkRoots.delete(root);
   }
 
+  function walkRecoveryElement(root) {
+    if (root instanceof Document) return root.documentElement;
+    if (root instanceof ShadowRoot) return root.host;
+    return root instanceof Element ? root : null;
+  }
+
+  function commonWalkRecoveryRoot(a, b) {
+    if (!a) return b;
+    if (!b || a === b) return a;
+    const ae = walkRecoveryElement(a), be = walkRecoveryElement(b);
+    if (!(ae instanceof Element) || !(be instanceof Element)) return document.documentElement;
+    const ar = ae.getRootNode?.(), br = be.getRootNode?.();
+    if (ar !== br) return document.documentElement;
+    let p = ae, hops = 0;
+    while (p instanceof Element && hops++ < 40) {
+      if (p === be || p.contains(be)) return p;
+      p = p.parentElement;
+    }
+    if (ar instanceof ShadowRoot) return ar;
+    return document.documentElement;
+  }
+
+  function rememberWalkRecovery(root, urgent) {
+    if (!root || !rootConnected(root)) return;
+    const current = walkRecoveryRef?.deref?.();
+    const merged = current && rootConnected(current) ? commonWalkRecoveryRoot(current, root) : root;
+    if (!merged || !rootConnected(merged)) return;
+    walkRecoveryRef = new WeakRef(merged);
+    walkRecoveryUrgent = walkRecoveryUrgent || !!urgent;
+  }
+
+  function promoteWalkRecovery() {
+    if (walkJobs.length || !walkRecoveryRef) return false;
+    const root = walkRecoveryRef.deref?.();
+    const urgent = walkRecoveryUrgent;
+    walkRecoveryRef = null;
+    walkRecoveryUrgent = false;
+    if (!root || !rootConnected(root) || queuedWalkRoots.has(root)) return false;
+    if (!currentWalkGeneration(root)) walkGeneration.set(root, 1);
+    const job = makeWalkJob(root, urgent);
+    if (!job) return false;
+    queuedWalkRoots.add(root);
+    walkJobs.push(job);
+    return true;
+  }
+
+  function admitWalkJob(root, job) {
+    if (!root || !job || queuedWalkRoots.has(root)) return;
+    if (walkJobs.length >= MAX_WALK_JOBS) {
+      // Keep existing FIFO cursors authoritative; compress only the new excess final state.
+      rememberWalkRecovery(root, job.urgent);
+      return;
+    }
+    queuedWalkRoots.add(root);
+    walkJobs.push(job);
+  }
+
   function processSubtree(root, urgent = false, syncBudget = null) {
     if (!root) return;
     if (!currentWalkGeneration(root)) walkGeneration.set(root, 1);
@@ -1300,20 +1358,12 @@
     if (!job) return;
     const budget = syncBudget == null ? (urgent ? SYNC_BUDGET_MS : 1.2) : syncBudget;
     if (budget <= 0) {
-      if (!queuedWalkRoots.has(root)) {
-        queuedWalkRoots.add(root);
-        while (walkJobs.length >= MAX_WALK_JOBS) releaseWalkJob(walkJobs.shift());
-        walkJobs.push(job);
-      }
+      admitWalkJob(root, job);
       scheduleBackground();
     } else {
       const more = runWalkJob(job, budget);
       if (more) {
-        if (!queuedWalkRoots.has(root)) {
-          queuedWalkRoots.add(root);
-          while (walkJobs.length >= MAX_WALK_JOBS) releaseWalkJob(walkJobs.shift());
-          walkJobs.push(job);
-        }
+        admitWalkJob(root, job);
         scheduleBackground();
       }
     }
@@ -1542,11 +1592,16 @@ function enqueueRootBatch(roots, index, urgent) {
     return new Promise(resolve => setTimeout(resolve, 0));
   }
 
+  function hasBackgroundWork() {
+    return !!(rootBatches.length || walkJobs.length || walkRecoveryRef || batchJobs.length || shadowJobs.length);
+  }
+
   async function drainBackground(generation = lifecycleGeneration) {
     if (lifecyclePaused || generation !== lifecycleGeneration) { if (backgroundEpoch === generation) backgroundQueued = false; return; }
     try {
       let rounds = 0;
-      while (!lifecyclePaused && generation === lifecycleGeneration && (rootBatches.length || walkJobs.length || batchJobs.length || shadowJobs.length) && rounds++ < 24) {
+      while (!lifecyclePaused && generation === lifecycleGeneration && hasBackgroundWork() && rounds++ < 24) {
+        if (!rootBatches.length && !walkJobs.length) promoteWalkRecovery();
         if (rootBatches.length) {
           const job = rootBatches[0];
           if (!runRootBatch(job, BACKGROUND_BUDGET_MS)) rootBatches.shift();
@@ -1565,14 +1620,15 @@ function enqueueRootBatch(roots, index, urgent) {
           if (!root || !rootConnected(root)) { if (root) queuedShadowRoots.delete(root); shadowJobs.shift(); }
           else if (!runShadowJob(job, BACKGROUND_BUDGET_MS)) { queuedShadowRoots.delete(root); shadowJobs.shift(); }
         }
-        if (rootBatches.length || walkJobs.length || batchJobs.length || shadowJobs.length) {
+        if (hasBackgroundWork()) {
           await yieldMain();
           if (lifecyclePaused || generation !== lifecycleGeneration) break;
         }
       }
     } finally {
+      if (!rootBatches.length && !walkJobs.length) promoteWalkRecovery();
       if (backgroundEpoch === generation) backgroundQueued = false;
-      if (!lifecyclePaused && generation === lifecycleGeneration && (rootBatches.length || walkJobs.length || batchJobs.length || shadowJobs.length)) scheduleBackground();
+      if (!lifecyclePaused && generation === lifecycleGeneration && hasBackgroundWork()) scheduleBackground();
     }
   }
 
@@ -1918,6 +1974,8 @@ function enqueueRootBatch(roots, index, urgent) {
     urgentRoots.clear();
     rootBatches.length = 0;
     walkJobs.length = 0;
+    walkRecoveryRef = null;
+    walkRecoveryUrgent = false;
     shadowJobs.length = 0;
     batchJobs.length = 0;
     queuedWalkRoots = new WeakSet();

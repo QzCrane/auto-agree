@@ -126,13 +126,14 @@ permission to forget live semantic work
 Current red/green-proven recovery paths are:
 
 - Engine RootBatch pressure keeps `MAX_ROOT_BATCHES = 8`; same-parent overflow coalesces to the normal bounded `queueRoot(parent)` final-state path and mixed roots remain weakly represented.
+- Engine walk pressure keeps `MAX_WALK_JOBS = 12`; existing FIFO walk cursors remain authoritative, while only a **new excess** root is weakly coalesced into one final-state `walkRecoveryRef`. Recovery is promoted only after ordinary RootBatch/walk work drains, and urgent intent is retained separately without strongly owning the DOM.
 - Probe deep pressure keeps `MAX_DEEP = 4`; evicted live roots coalesce through one `WeakRef` recovery scope and re-enter normal background traversal only after ordinary deep work drains.
 - Gate batch pressure keeps `MAX_BATCH_JOBS = 6`; an evicted batch's weak live owner re-enters Gate's bounded deep path.
 - Gate deep pressure keeps `MAX_DEEP_JOBS = 10`; **existing FIFO cursors stay in place** and only a new excess live root is weakly coalesced into final-state recovery. Recovery re-enters normal traversal only after ordinary batch/deep work drains. Composite evidence authority is tracked separately and is conservatively disabled when distinct scopes merge to a broader ancestor.
 
 ADR 0014 adds the stronger ordering/lifetime rule for Gate: scheduling age alone is not authority to erase connected correctness work. A live batch/deep job that crosses `JOB_TTL_MS` retains its cursor and refreshes its liveness age; only disconnected/dead work is retired for that reason. This prevents both newer work from displacing older unique evidence and a busy renderer from turning queue delay into a permanent false negative.
 
-All recovery state is lifecycle-owned and cleared on retirement/activation. Recovery never introduces a synchronous full-document fallback and never strongly retains a detached subtree. Static contracts reject the historical naked-drop forms, old-FIFO eviction and age-only live-work expiration, while real Chrome saturation and a separate >2.4-second live-TTL discriminator keep resource bounds and final activation behavior coupled in one gate.
+All recovery state is lifecycle-owned and cleared on retirement/activation. Recovery never introduces a synchronous full-document fallback and never strongly retains a detached subtree. Static contracts reject the historical naked-drop forms, old-FIFO eviction and age-only live-work expiration. Real Chrome now couples these resource contracts to behavior through RootBatch structural fuzz, Probe/Gate saturation, Gate live-TTL and Engine walk saturation.
 
 The same rule applies to any remaining or future bounded queue: dropping a representation is valid only if its work is complete, disconnected, generation-obsolete, or another bounded recovery representation is already authoritative. Queue classes that have not yet been red-proven are not rewritten merely because their code resembles a prior defect.
 
