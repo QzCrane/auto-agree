@@ -14,6 +14,11 @@
 - Added profile-governance regression tests for 64 concurrent flow writes, precise same-fingerprint/different-locator identity, 300-origin bounded persistence and storage-failure propagation.
 - Fixed deterministic packaging to derive its runtime JavaScript closure from `extension/*.js`. The audit found that the previous hand-maintained package list could pass ZIP verification while omitting newly introduced runtime modules such as the generation handover guard.
 - Expanded real update E2E with external-IDREF semantics, non-English shared semantics, broad-wrapper causal negatives, ambiguous controls and action-inside-label negatives.
+- Added a permanent 300-case real-Chrome structural fuzz corpus and repaired Engine RootBatch pressure so a hard queue-object cap no longer silently discards unfinished final DOM state.
+- Added fail-closed multilingual risk parity across the language families already supported for routine Terms/Privacy assent; localized optional, financial, medical, biometric, arbitration/rights and age-attestation evidence can suppress automation but cannot create click authority.
+- Hardened Probe/Gate bounded work with real-Chrome saturation tests. Probe deep, Gate large-batch and Gate deep pressure preserve hard caps while retaining bounded weak recovery instead of naked oldest-work drops.
+- Hardened Gate scheduling lifetime after repeated real-Chrome falsification: existing FIFO deep cursors outrank new overflow, connected work is not erased by age alone, a >2.4-second live-TTL test is permanent, and a zero-budget slice no longer marks a deep job started before processing any node.
+- Repaired Engine walk saturation at `MAX_WALK_JOBS = 12`: existing FIFO walk cursors remain authoritative, while only new excess roots are weakly coalesced into final-state recovery and promoted after ordinary RootBatch/walk work drains. The permanent 20×900-node Chrome discriminator proved the historical oldest-walk drop caused a permanent false negative.
 - Kept permissions unchanged: `scripting`, `storage`, `<all_urls>`; no debugger, telemetry, network client or remote code.
 
 ## 9.0.0 — 2026-08-08
