@@ -29,14 +29,16 @@ jobs:
           from pathlib import Path
           p = Path('extension/engine.js')
           s = p.read_text()
-          old = '''  function enqueueRootBatch(roots, index, urgent) {
-            if (!roots || index >= roots.length) return;
-            while (rootBatches.length >= MAX_ROOT_BATCHES) rootBatches.shift();
-            const refs = roots.map(root => root && typeof root === 'object' ? new WeakRef(root) : null);
-            rootBatches.push({ refs, index, urgent, createdAt: performance.now() });
-            scheduleBackground();
-          }
-          '''
+          start_marker = '  function enqueueRootBatch(roots, index, urgent) {'
+          end_marker = '\n\n  function runRootBatch(job, budgetMs) {'
+          start = s.find(start_marker)
+          end = s.find(end_marker, start)
+          if start < 0 or end < 0:
+              raise SystemExit('RootBatch function boundaries not found')
+          old = s[start:end]
+          historical = 'while (rootBatches.length >= MAX_ROOT_BATCHES) rootBatches.shift();'
+          if historical not in old:
+              raise SystemExit('RootBatch function is not the expected historical lossy form')
           new = '''  function sharedRootBatchParent(roots, index) {
             let parent = null;
             for (let i = index; i < roots.length; i++) {
@@ -60,11 +62,13 @@ jobs:
           function enqueueRootBatch(roots, index, urgent) {
             if (!roots || index >= roots.length) return;
             if (rootBatches.length >= MAX_ROOT_BATCHES) {
+              // Queue-object bounds are not permission to forget final DOM state.
               const parent = sharedRootBatchParent(roots, index);
               if (parent) {
                 queueRoot(parent, urgent);
                 return;
               }
+              // Mixed-root overflow remains weakly represented in an existing bounded batch.
               const tail = rootBatches[rootBatches.length - 1];
               appendRootBatchRefs(tail, roots, index);
               tail.urgent = tail.urgent || urgent;
@@ -80,11 +84,8 @@ jobs:
             if (!refs.length) return;
             rootBatches.push({ refs, index: 0, urgent, createdAt: performance.now() });
             scheduleBackground();
-          }
-          '''
-          if s.count(old) != 1:
-              raise SystemExit(f'expected one historical RootBatch drop block, got {s.count(old)}')
-          p.write_text(s.replace(old, new))
+          }'''
+          p.write_text(s[:start] + new + s[end:])
           PY
           node --check extension/engine.js
           npm test
