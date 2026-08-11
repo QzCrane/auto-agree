@@ -347,9 +347,12 @@
     const root = job?.rootRef?.deref?.();
     if (!root || !rootConnected(root)) return { done: true };
     let node = job.started ? job.cursorRef?.deref?.() : root.firstChild;
-    job.started = true;
     if (node && !(node === root || root.contains(node))) node = root.firstChild;
     while (performance.now() - start < BACKGROUND_BUDGET_MS && node) {
+      // `started` means at least one node was actually processed. Marking it before the budget
+      // check turns a zero-budget first slice into `started=true + cursor=null`, which the next
+      // slice mistakes for completion and permanently skips the subtree tail.
+      job.started = true;
       const next = nextNode(node, root);
       job.cursorRef = next instanceof Node ? new WeakRef(next) : null;
       let nf = node.nodeType === Node.TEXT_NODE ? textFlags(node.data || '') : (node instanceof Element ? elementFlags(node) : 0);
