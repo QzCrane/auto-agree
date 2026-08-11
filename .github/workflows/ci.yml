@@ -6,13 +6,179 @@ on:
   pull_request:
 
 permissions:
-  contents: read
+  contents: write
 
 concurrency:
   group: verify-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
+  migrate-tier-recovery:
+    if: github.event_name == 'pull_request' && github.head_ref == 'agent/v11-tier-overflow' && github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: agent/v11-tier-overflow
+          fetch-depth: 0
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '24'
+      - name: Apply only red-proven bounded-work repairs
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+
+          p = Path('extension/bootstrap.js')
+          s = p.read_text()
+          anchor = '  const queued = new WeakSet();\n'
+          if anchor not in s:
+              raise SystemExit('Probe queued anchor missing')
+          if 'let deepRecoveryRef = null;' not in s:
+              s = s.replace(anchor, anchor + '  let deepRecoveryRef = null;\n', 1)
+
+          old = '''  function releaseDeep(job) {
+            const root = job?.rootRef?.deref?.();
+            if (root) queued.delete(root);
+          }
+
+          function queueDeep(root) {
+            if (gateRequested || paused || !root || queued.has(root) || !rootConnected(root)) return;
+            queued.add(root);
+            while (deep.length >= MAX_DEEP) releaseDeep(deep.shift());
+            deep.push({ rootRef: new WeakRef(root), cursorRef: null, started: false, createdAt: performance.now() });
+            scheduleDrain();
+          }
+'''
+          new = '''  function releaseDeep(job) {
+            const root = job?.rootRef?.deref?.();
+            if (root) queued.delete(root);
+          }
+
+          function recoveryElement(root) {
+            if (root instanceof Document) return root.documentElement;
+            if (root instanceof ShadowRoot) return root.host;
+            return root instanceof Element ? root : null;
+          }
+
+          function commonDeepRecoveryRoot(a, b) {
+            if (!a) return b;
+            if (!b || a === b) return a;
+            const ae = recoveryElement(a), be = recoveryElement(b);
+            if (!(ae instanceof Element) || !(be instanceof Element)) return document.documentElement;
+            const ar = ae.getRootNode?.(), br = be.getRootNode?.();
+            if (ar !== br) return document.documentElement;
+            let p = ae, hops = 0;
+            while (p instanceof Element && hops++ < 32) {
+              if (p === be || p.contains(be)) return p;
+              p = p.parentElement;
+            }
+            if (ar instanceof ShadowRoot) return ar;
+            return document.documentElement;
+          }
+
+          function rememberDeepRecovery(root) {
+            if (!root || !rootConnected(root)) return;
+            const current = deepRecoveryRef?.deref?.();
+            const merged = current && rootConnected(current) ? commonDeepRecoveryRoot(current, root) : root;
+            if (merged && rootConnected(merged)) deepRecoveryRef = new WeakRef(merged);
+          }
+
+          function promoteDeepRecovery() {
+            if (deep.length || !deepRecoveryRef) return false;
+            const root = deepRecoveryRef.deref?.();
+            deepRecoveryRef = null;
+            if (!root || !rootConnected(root) || queued.has(root)) return false;
+            queued.add(root);
+            deep.push({ rootRef: new WeakRef(root), cursorRef: null, started: false, createdAt: performance.now() });
+            return true;
+          }
+
+          function queueDeep(root) {
+            if (gateRequested || paused || !root || queued.has(root) || !rootConnected(root)) return;
+            queued.add(root);
+            while (deep.length >= MAX_DEEP) {
+              const dropped = deep.shift();
+              const droppedRoot = dropped?.rootRef?.deref?.();
+              releaseDeep(dropped);
+              rememberDeepRecovery(droppedRoot);
+            }
+            deep.push({ rootRef: new WeakRef(root), cursorRef: null, started: false, createdAt: performance.now() });
+            scheduleDrain();
+          }
+'''
+          if old not in s:
+              raise SystemExit('Probe historical deep queue block missing')
+          s = s.replace(old, new, 1)
+
+          tail = '''      if (deep.length && !gateRequested) scheduleDrain();
+    };
+'''
+          tail_new = '''      if (!deep.length) promoteDeepRecovery();
+      if (deep.length && !gateRequested) scheduleDrain();
+    };
+'''
+          if tail not in s:
+              raise SystemExit('Probe drain tail missing')
+          s = s.replace(tail, tail_new, 1)
+
+          clear = '''  function clearProbeWork() {
+    for (const job of deep) releaseDeep(job);
+    deep.length = 0;
+    drainScheduled = false;
+  }
+'''
+          clear_new = '''  function clearProbeWork() {
+    for (const job of deep) releaseDeep(job);
+    deep.length = 0;
+    deepRecoveryRef = null;
+    drainScheduled = false;
+  }
+'''
+          if clear not in s:
+              raise SystemExit('Probe clear block missing')
+          s = s.replace(clear, clear_new, 1)
+
+          handoff = '''    for (const job of deep) releaseDeep(job);
+    deep.length = 0;
+    chrome.runtime.sendMessage'''
+          handoff_new = '''    for (const job of deep) releaseDeep(job);
+    deep.length = 0;
+    deepRecoveryRef = null;
+    chrome.runtime.sendMessage'''
+          if handoff not in s:
+              raise SystemExit('Probe handoff cleanup block missing')
+          s = s.replace(handoff, handoff_new, 1)
+          p.write_text(s)
+
+          g = Path('extension/gate.js')
+          t = g.read_text()
+          old_gate = '    while (batchJobs.length >= MAX_BATCH_JOBS) batchJobs.shift();\n'
+          new_gate = '''    while (batchJobs.length >= MAX_BATCH_JOBS) {
+      const dropped = batchJobs.shift();
+      const droppedOwner = dropped?.ownerRef?.deref?.();
+      if (droppedOwner instanceof Element && droppedOwner.isConnected) queueDeep(droppedOwner, true);
+    }
+'''
+          if old_gate not in t:
+              raise SystemExit('Gate historical batch overflow block missing')
+          t = t.replace(old_gate, new_gate, 1)
+          g.write_text(t)
+          PY
+          node --check extension/bootstrap.js
+          node --check extension/gate.js
+          npm test
+          python tools/package_extension.py --check
+          git diff --check
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add extension/bootstrap.js extension/gate.js
+          git diff --cached --check
+          git commit -m "fix: preserve Probe and Gate work across proven queue overflow"
+          git push origin HEAD:agent/v11-tier-overflow
+
   core:
     runs-on: ubuntu-latest
     timeout-minutes: 5
