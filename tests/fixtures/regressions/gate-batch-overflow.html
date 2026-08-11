@@ -1,0 +1,37 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Gate batch overflow</title>
+<div id="gate-seed"><span id="gate-legal">Terms of Service</span><span role="checkbox" aria-checked="false" aria-labelledby="gate-legal"></span></div>
+<div id="owners"></div>
+<script>
+(() => {
+  const owners = document.querySelector('#owners');
+  for (let i = 0; i < 7; i++) {
+    const owner = document.createElement('div');
+    owner.id = `batch-owner-${i}`;
+    owners.append(owner);
+  }
+
+  window.startGateBatchOverflow = () => {
+    for (let i = 0; i < 7; i++) {
+      const fragment = document.createDocumentFragment();
+      for (let n = 0; n < 120; n++) {
+        let node;
+        if (i === 0 && n === 60) {
+          node = document.createElement('label');
+          node.innerHTML = '<input id="gate-batch-agree" type="checkbox" required>I have read and agree to the Terms of Service';
+          node.querySelector('input').addEventListener('click', event => {
+            event.currentTarget.dataset.clicks = String(Number(event.currentTarget.dataset.clicks || 0) + 1);
+          });
+        } else {
+          node = document.createElement('span');
+          node.textContent = `neutral batch ${i}-${n}`;
+        }
+        fragment.append(node);
+      }
+      document.querySelector(`#batch-owner-${i}`).append(fragment);
+    }
+    window.gateBatchOverflowStarted = true;
+  };
+})();
+</script>
