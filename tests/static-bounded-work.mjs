@@ -36,7 +36,19 @@ assert.match(gate, /MAX_BATCH_JOBS\s*=\s*6/, 'Gate batch recovery must preserve 
 assert.match(gate, /const\s+droppedOwner\s*=\s*dropped\?\.ownerRef\?\.deref\?\.\(\)/, 'Gate must resolve the evicted batch owner weakly');
 assert.match(gate, /queueDeep\(droppedOwner,\s*true\)/, 'Gate evicted batch owner must re-enter the existing bounded deep path');
 
-// Gate deep saturation currently passes the real-browser discriminator. Do not convert static
-// suspicion into a production rewrite until a red test proves a correctness failure there.
+assert.equal(
+  /while\s*\(deepJobs\.length\s*>=\s*MAX_DEEP_JOBS\)\s*releaseDeep\(deepJobs\.shift\(\)\)/.test(gate),
+  false,
+  'Gate deep pressure must not silently release the oldest unfinished root'
+);
+assert.match(gate, /MAX_DEEP_JOBS\s*=\s*10/, 'Gate deep recovery must preserve the hard deep-job cap');
+assert.match(gate, /let\s+deepRecoveryRef\s*=\s*null/, 'Gate needs a weak deep final-state recovery representation');
+assert.match(gate, /let\s+deepRecoveryComposite\s*=\s*false/, 'Gate must remember composite authority separately from recovery scope');
+assert.match(gate, /function\s+rememberDeepRecovery\s*\(/, 'Gate deep overflow must retain recoverable final state');
+assert.match(gate, /function\s+promoteDeepRecovery\s*\(/, 'Gate deep recovery must re-enter bounded background traversal');
+assert.match(gate, /deepRecoveryRef\s*=\s*new WeakRef\(merged\)/, 'Gate deep recovery must remain weak');
+assert.match(gate, /deepRecoveryComposite\s*=\s*sameScope\s*\?[^:]+:\s*false/, 'coalescing distinct Gate scopes must fail closed on composite authority');
+assert.match(gate, /rememberDeepRecovery\(droppedRoot,\s*dropped\?\.allowComposite\)/, 'evicted Gate deep jobs must preserve their recovery authority mode');
+assert.match(gate, /if\s*\(!batchJobs\.length\s*&&\s*!deepJobs\.length\)\s*promoteDeepRecovery\(\)/, 'Gate recovery must be promoted only after ordinary bounded work drains');
 
 console.log('static-bounded-work: PASS');
