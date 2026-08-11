@@ -1,0 +1,101 @@
+name: apply-v11-rootbatch-once
+
+on:
+  push:
+    branches: [agent/v11-lossless-discovery]
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: agent/v11-lossless-discovery
+          fetch-depth: 0
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '24'
+      - name: Apply exact lossless RootBatch repair
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+          p = Path('extension/engine.js')
+          s = p.read_text()
+          old = '''  function enqueueRootBatch(roots, index, urgent) {
+            if (!roots || index >= roots.length) return;
+            while (rootBatches.length >= MAX_ROOT_BATCHES) rootBatches.shift();
+            const refs = roots.map(root => root && typeof root === 'object' ? new WeakRef(root) : null);
+            rootBatches.push({ refs, index, urgent, createdAt: performance.now() });
+            scheduleBackground();
+          }
+          '''
+          new = '''  function sharedRootBatchParent(roots, index) {
+            let parent = null;
+            for (let i = index; i < roots.length; i++) {
+              const root = roots[i];
+              if (!root || !rootConnected(root)) continue;
+              const next = root instanceof ShadowRoot ? root : root.parentNode;
+              if (!next || !rootConnected(next)) continue;
+              if (!parent) parent = next;
+              else if (parent !== next) return null;
+            }
+            return parent;
+          }
+
+          function appendRootBatchRefs(job, roots, index) {
+            for (let i = index; i < roots.length; i++) {
+              const root = roots[i];
+              if (root && typeof root === 'object') job.refs.push(new WeakRef(root));
+            }
+          }
+
+          function enqueueRootBatch(roots, index, urgent) {
+            if (!roots || index >= roots.length) return;
+            if (rootBatches.length >= MAX_ROOT_BATCHES) {
+              // The queue-object cap is a resource bound, not permission to forget final DOM state.
+              // Sibling overflow is losslessly coalesced to its live parent and re-enters the normal
+              // generation/time-sliced root path. Mixed roots remain weakly represented in the
+              // newest bounded batch so detached DOM is never strongly retained.
+              const parent = sharedRootBatchParent(roots, index);
+              if (parent) {
+                queueRoot(parent, urgent);
+                return;
+              }
+              const tail = rootBatches[rootBatches.length - 1];
+              appendRootBatchRefs(tail, roots, index);
+              tail.urgent = tail.urgent || urgent;
+              tail.createdAt = performance.now();
+              scheduleBackground();
+              return;
+            }
+            const refs = [];
+            for (let i = index; i < roots.length; i++) {
+              const root = roots[i];
+              if (root && typeof root === 'object') refs.push(new WeakRef(root));
+            }
+            if (!refs.length) return;
+            rootBatches.push({ refs, index: 0, urgent, createdAt: performance.now() });
+            scheduleBackground();
+          }
+          '''
+          if s.count(old) != 1:
+              raise SystemExit(f'expected one historical RootBatch drop block, got {s.count(old)}')
+          p.write_text(s.replace(old, new))
+          PY
+          node --check extension/engine.js
+          npm test
+          python tools/package_extension.py --check
+          git diff --check
+          git rm .github/workflows/apply-v11-rootbatch-once.yml
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add extension/engine.js
+          git diff --cached --check
+          git commit -m "fix: preserve Engine discovery across RootBatch overflow"
+          git push origin HEAD:agent/v11-lossless-discovery
