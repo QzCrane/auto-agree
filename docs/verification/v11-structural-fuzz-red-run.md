@@ -1,0 +1,1 @@
+This branch is intentionally test-only. It must not be merged. Its sole purpose is to produce an exact-head real-Chrome failure against the current v10 runtime before the lossless-discovery repair is applied.
