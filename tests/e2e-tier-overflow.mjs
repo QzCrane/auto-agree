@@ -100,7 +100,6 @@ async function installGateDiagnostic(page, worlds) {
       walkers:0, nodes:0, targetRootWalkers:0, targetVisits:0,
       roots:Object.create(null), treeWrapError:null
     };
-
     const sched = globalThis.scheduler;
     if (sched?.postTask && !sched.__autoAgreeWrapped) {
       const original = sched.postTask.bind(sched);
@@ -113,10 +112,7 @@ async function installGateDiagnostic(page, worlds) {
             try { return await fn(...args); }
             finally { state.finished++; }
           }, options);
-        } catch (error) {
-          state.rejected++;
-          throw error;
-        }
+        } catch (error) { state.rejected++; throw error; }
         Promise.resolve(promise).catch(() => { state.rejected++; });
         return promise;
       };
@@ -124,14 +120,13 @@ async function installGateDiagnostic(page, worlds) {
       sched.postTask = wrapped;
       try { Object.defineProperty(sched, '__autoAgreeWrapped', {value:true}); } catch (_) {}
     }
-
     try {
       const originalCreate = document.createTreeWalker.bind(document);
       document.createTreeWalker = (root, whatToShow, filter) => {
         state.walkers++;
         const rootKey = root?.id || root?.nodeName || root?.constructor?.name || 'unknown';
         state.roots[rootKey] = (state.roots[rootKey] || 0) + 1;
-        if (root?.id === 'gate-deep-subtree-0') state.targetRootWalkers++;
+        if (root?.id === 'gate-deep-subtree-0' || root?.id === 'gate-gc-root') state.targetRootWalkers++;
         const walker = originalCreate(root, whatToShow, filter);
         const originalNext = walker.nextNode.bind(walker);
         return {
@@ -139,18 +134,29 @@ async function installGateDiagnostic(page, worlds) {
             const node = originalNext();
             if (node) {
               state.nodes++;
-              if (node.id === 'gate-deep-agree') state.targetVisits++;
+              if (node.id === 'gate-deep-agree' || node.id === 'gate-gc-agree') state.targetVisits++;
             }
             return node;
           }
         };
       };
-    } catch (error) {
-      state.treeWrapError = String(error?.message || error);
-    }
+    } catch (error) { state.treeWrapError = String(error?.message || error); }
     return state;
   })()`);
   return gateWorld.id;
+}
+
+async function forceRendererGc(page, rounds = 10) {
+  const session = await page.createCDPSession();
+  try {
+    await session.send('HeapProfiler.enable');
+    for (let i = 0; i < rounds; i++) {
+      await session.send('HeapProfiler.collectGarbage');
+      await new Promise(resolve => setTimeout(resolve, 4));
+    }
+  } finally {
+    try { await session.detach(); } catch (_) {}
+  }
 }
 
 async function startCase(page, spec) {
@@ -179,6 +185,25 @@ async function startCase(page, spec) {
         }
         document.querySelector(`#deep-owner-${i}`).append(subtree);
       }
+    });
+    return;
+  }
+  if (spec.build === 'gate-gc') {
+    await page.evaluate(() => {
+      const root = document.createElement('section');
+      root.id = 'gate-gc-root';
+      for (let n = 0; n < 4200; n++) {
+        const span = document.createElement('span');
+        span.textContent = `neutral gc ${n}`;
+        root.append(span);
+      }
+      const form = document.createElement('form');
+      form.innerHTML = '<input type="email" value="user@example.com"><label><input id="gate-gc-agree" type="checkbox" required>I have read and agree to the Terms of Service</label><button>Login</button>';
+      form.querySelector('#gate-gc-agree').addEventListener('click', event => {
+        event.currentTarget.dataset.clicks = String(Number(event.currentTarget.dataset.clicks || 0) + 1);
+      });
+      root.append(form);
+      document.querySelector('#deep-owner-0').append(root);
     });
     return;
   }
@@ -215,20 +240,15 @@ async function runCase(browser, base, spec, attempt = 1) {
   try {
     await gotoActive(page, `${base}/${spec.file}?attempt=${attempt}`);
     const worldsBefore = await waitTier(page, spec.tier, runName);
-    if (spec.build === 'gate-deep') diagnosticContextId = await installGateDiagnostic(page, worldsBefore);
+    if (spec.build === 'gate-deep' || spec.build === 'gate-gc') diagnosticContextId = await installGateDiagnostic(page, worldsBefore);
     await startCase(page, spec);
+    if (spec.forceGc) await forceRendererGc(page, 12);
     try {
       await page.waitForFunction(selector => document.querySelector(selector)?.checked === true, {timeout: 5000}, spec.selector);
     } catch (error) {
       const diag = await page.evaluate(selector => {
         const el = document.querySelector(selector);
-        return {
-          exists: !!el,
-          checked: el?.checked ?? false,
-          clicks: Number(el?.dataset?.clicks || 0),
-          readyState: document.readyState,
-          visibility: document.visibilityState
-        };
+        return {exists:!!el, checked:el?.checked ?? false, clicks:Number(el?.dataset?.clicks || 0), readyState:document.readyState, visibility:document.visibilityState};
       }, spec.selector);
       const worlds = await extensionWorldSentinels(page);
       let traversal = null;
@@ -239,7 +259,7 @@ async function runCase(browser, base, spec, attempt = 1) {
       throw error;
     }
     const result = await page.$eval(spec.selector, el => ({checked: el.checked, clicks: Number(el.dataset.clicks || 0)}));
-    assert.deepEqual(result, {checked: true, clicks: 1}, `${runName} must activate exactly once`);
+    assert.deepEqual(result, {checked:true, clicks:1}, `${runName} must activate exactly once`);
     console.log(`${runName}: PASS`);
   } finally {
     await page.close();
@@ -247,9 +267,10 @@ async function runCase(browser, base, spec, attempt = 1) {
 }
 
 const cases = [
-  {name: 'e2e-probe-deep-overflow', file: 'probe-deep-overflow.html', tier: 'probe', build: 'probe', selector: '#probe-agree', repeat: 1},
-  {name: 'e2e-gate-deep-overflow', file: 'gate-deep-overflow.html', tier: 'gate', build: 'gate-deep', selector: '#gate-deep-agree', repeat: 12},
-  {name: 'e2e-gate-batch-overflow', file: 'gate-batch-overflow.html', tier: 'gate', build: 'gate-batch', selector: '#gate-batch-agree', repeat: 1}
+  {name:'e2e-probe-deep-overflow', file:'probe-deep-overflow.html', tier:'probe', build:'probe', selector:'#probe-agree', repeat:1},
+  {name:'e2e-gate-weak-cursor-gc', file:'gate-deep-overflow.html', tier:'gate', build:'gate-gc', selector:'#gate-gc-agree', repeat:3, forceGc:true},
+  {name:'e2e-gate-deep-overflow', file:'gate-deep-overflow.html', tier:'gate', build:'gate-deep', selector:'#gate-deep-agree', repeat:12},
+  {name:'e2e-gate-batch-overflow', file:'gate-batch-overflow.html', tier:'gate', build:'gate-batch', selector:'#gate-batch-agree', repeat:1}
 ];
 
 await withServer(async base => {
@@ -260,7 +281,7 @@ await withServer(async base => {
     for (const spec of cases) {
       for (let attempt = 1; attempt <= spec.repeat; attempt++) {
         try { await runCase(browser, base, spec, attempt); }
-        catch (error) { failures.push({name: spec.name, attempt, message: error?.message || String(error)}); }
+        catch (error) { failures.push({name:spec.name, attempt, message:error?.message || String(error)}); }
       }
     }
   } finally {
