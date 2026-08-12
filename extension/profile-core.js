@@ -21,8 +21,10 @@
   const KINDS = new Set(['native', 'aria', 'data', 'class', 'custom', 'unknown']);
 
   function finiteNumber(value, fallback = 0) {
-    const n = Number(value);
-    return Number.isFinite(n) ? n : fallback;
+    try {
+      const n = Number(value);
+      return Number.isFinite(n) ? n : fallback;
+    } catch (_) { return fallback; }
   }
 
   function boundedNumber(value, min, max, fallback = min) {
@@ -75,7 +77,7 @@
     const locator = sanitizeLocator(flow.locator);
     const fingerprint = sanitizeFingerprint(flow.fingerprint);
     if (!locator || !fingerprint) return null;
-    const ts = Number(flow.ts);
+    const ts = finiteNumber(flow.ts, NaN);
     const current = finiteNumber(now, Date.now());
     if (!Number.isFinite(ts) || ts > current || current - ts > CONFIG.ttlMs) return null;
     return {
@@ -138,7 +140,7 @@
     if (index && typeof index === 'object') {
       for (const [key, rawTs] of Object.entries(index)) {
         if (typeof key !== 'string' || !key || key === '__proto__' || key === 'prototype' || key === 'constructor') continue;
-        const ts = Number(rawTs);
+        const ts = finiteNumber(rawTs, NaN);
         if (!Number.isFinite(ts) || ts > current) continue;
         entries.set(key, ts);
       }
