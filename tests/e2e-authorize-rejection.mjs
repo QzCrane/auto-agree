@@ -56,13 +56,12 @@ await withServer(async url => {
       const worlds = await extensionWorldSentinels(page);
       const seeded = await page.$eval('#seed-agree', el => ({checked: el.checked, clicks: Number(el.dataset.clicks || 0)}));
       if (!(seeded.checked && seeded.clicks === 1)) return null;
-      return worlds.find(w => w.engine === VERSION && w.handover === VERSION) || null;
+      return worlds.find(w => w.engine === VERSION && w.handover === VERSION && w.action === VERSION) || null;
     });
 
-    // Replace only the public API object used by Engine. The original handover-guard closure and
-    // capture listener remain installed. This forces Engine's authorize call to return false
-    // without populating the guard's private authorized/rejected sets, so any fail-closed result
-    // must come from the actual event boundary rather than the API return value being inspected.
+    // Replace only the public Guard API resolved by ActionAuthority. The original guard capture
+    // listener remains installed, but the facade must now honor authorize=false before dispatching
+    // any click. This proves the explicit protocol while the listener remains defense in depth.
     await evaluateInExecutionContext(page, engineWorld.id, `(() => {
       globalThis.__AUTO_AGREE_TEST_AUTH_CALLS__ = 0;
       globalThis.__AUTO_AGREE_HANDOVER_GUARD__ = Object.freeze({
@@ -94,8 +93,8 @@ await withServer(async url => {
     });
     assert.ok(attempts >= 1, 'Engine must actually reach the rejected authorization path');
 
-    // Allow the verifier's bounded retry window to elapse. Even if Engine retries once, the
-    // original guard listener must cancel every unauthorized synthetic agreement click.
+    // Allow the old verifier/retry window to elapse. A rejected ActionAuthority attempt must
+    // not create DOM effect; any later rediscovery must remain equally fail-closed.
     await new Promise(resolve => setTimeout(resolve, 450));
     const blocked = await page.$eval('#authorize-reject-agree', el => ({checked: el.checked, clicks: Number(el.dataset.clicks || 0)}));
     const finalAttempts = await evaluateInExecutionContext(page, engineWorld.id, 'globalThis.__AUTO_AGREE_TEST_AUTH_CALLS__ || 0');
