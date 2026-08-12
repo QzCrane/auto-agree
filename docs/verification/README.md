@@ -39,8 +39,9 @@ From v3 onward, detailed version reports were produced during the corresponding 
 | pre-v11 Engine RootBatch lifetime hardening | [v11-engine-rootbatch-live-ttl.md](v11-engine-rootbatch-live-ttl.md) | real-Chrome proof that a still-live RootBatch cannot be retired solely because renderer delay crossed `ROOT_BATCH_TTL_MS=3000` |
 | pre-v11 Engine sibling-batch lifetime hardening | [v11-engine-batch-live-ttl.md](v11-engine-batch-live-ttl.md) | real-Chrome proof that a connected `enqueueSiblingRange` job cannot be retired solely because renderer delay crossed `BATCH_JOB_TTL_MS=3000` |
 | pre-v11 Engine broad closed-Shadow hardening | [v11-engine-shadow-overflow.md](v11-engine-shadow-overflow.md) | real-Chrome proof and repair of `MAX_SHADOW_JOBS=8` oldest-cursor loss when a unique routine agreement exists only in a closed ShadowRoot on a plain host |
+| **v11.0.0** | **[v11.md](v11.md)** | formal generation-coherent release; real v10→v11 transition plus v11→v12 stale-generation probe |
 
-These hardening records do not claim a separate v11 release. They record correctness defects found while the production runtime still reports `10.0.0`, their real-browser falsification/repair evidence, and the stronger invariants required before the formal v11 version cut.
+The pre-v11 hardening records intentionally retain their historical `10.0.0` runtime context. The formal v11 report aggregates those red/green findings into the release baseline and records the coherent generation cut.
 
 ## Interpretation rules
 
@@ -54,5 +55,6 @@ These hardening records do not claim a separate v11 release. They record correct
 8. Narrow green tests do not waive historical invariants outside their scope. New releases must preserve previously established safety, resource and persistence contracts or explicitly re-open them with new evidence.
 9. A post-merge addendum may supersede a mechanism claim in the original release report without rewriting history. The original report remains evidence of what was believed/tested at release time; the addendum records the later falsification and stronger replacement invariant.
 10. Scheduling-sensitive queue fixes require the exact final head to pass the permanent real-browser discriminator; when prior evidence showed variance, the same SHA should be rerun before merge rather than treating one green interleaving as proof.
+11. Final exact-head release CI and same-SHA variance evidence are authoritative in the release PR/merge metadata when embedding their generated run IDs into a report would itself create another unverified candidate SHA.
 
 For the high-level evolution map, see [`../history.md`](../history.md). For current architecture, see [`../architecture.md`](../architecture.md).
