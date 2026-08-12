@@ -61,5 +61,6 @@ await new Promise(r=>setTimeout(r,240));
 const failedCalls=d.calls.filter(x=>x.target?.tabId===21);
 assert.ok(failedCalls.filter(x=>sameFiles(x.files,PROTECTION_FILES)).length>=2,'failed protection should be retried');
 assert.equal(failedCalls.some(x=>sameFiles(x.files,BOOTSTRAP_FILES)),false,'bootstrap must not run when protection never succeeds');
-assert.equal(session.has('__auto_agree_update_rehydrate__'),false);
+assert.equal(session.has('__auto_agree_update_rehydrate__'),true,'unresolved protection must preserve durable restart work');
+assert.equal(JSON.stringify(session.get('__auto_agree_update_rehydrate__').pending),JSON.stringify([21]));
 console.log('worker-restart: PASS');
