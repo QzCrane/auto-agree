@@ -1418,7 +1418,7 @@ function enqueueRootBatch(roots, index, urgent) {
 }
 
   function runRootBatch(job, budgetMs) {
-    if (performance.now() - job.createdAt > ROOT_BATCH_TTL_MS) job.createdAt = performance.now();
+    KERNEL.touchExpiredAge(job, ROOT_BATCH_TTL_MS);
     const start = performance.now();
     while (job.index < job.refs.length && performance.now() - start < budgetMs) {
       const root = job.refs[job.index++]?.deref?.();
@@ -1547,9 +1547,11 @@ function enqueueRootBatch(roots, index, urgent) {
   function runBatchJob(job, budgetMs) {
     const now = performance.now();
     const owner = batchOwner(job);
-    if ((job.owner || job.ownerRef) && !(owner instanceof Element)) return false;
-    if (owner instanceof Element && !owner.isConnected) return false;
-    if (now - job.createdAt > BATCH_JOB_TTL_MS) job.createdAt = now;
+    if (job.owner || job.ownerRef) {
+      if (!KERNEL.refreshLiveAge(job, BATCH_JOB_TTL_MS, owner, candidate => candidate instanceof Element && candidate.isConnected, now)) return false;
+    } else {
+      KERNEL.touchExpiredAge(job, BATCH_JOB_TTL_MS, now);
+    }
     const start = now;
 
     if (job.mode === 'sibling-range') {

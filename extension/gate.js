@@ -392,8 +392,11 @@
         while (batchJobs.length && performance.now() - start < BACKGROUND_BUDGET_MS) {
           const job = batchJobs[0];
           const owner = job.ownerRef?.deref?.();
-          if (job.ownerRef && (!(owner instanceof Element) || !owner.isConnected)) { batchJobs.shift(); continue; }
-          if (performance.now() - job.createdAt > JOB_TTL_MS) job.createdAt = performance.now();
+          if (job.ownerRef) {
+            if (!KERNEL.refreshLiveAge(job, JOB_TTL_MS, owner, candidate => candidate instanceof Element && candidate.isConnected)) { batchJobs.shift(); continue; }
+          } else {
+            KERNEL.touchExpiredAge(job, JOB_TTL_MS);
+          }
           let done = false;
           while (performance.now() - start < BACKGROUND_BUDGET_MS && !done) {
             let node = null;
@@ -423,9 +426,8 @@
         if (!batchJobs.length && deepJobs.length && performance.now() - start < BACKGROUND_BUDGET_MS) {
           const job = deepJobs[0];
           const root = job?.rootRef?.deref?.();
-          if (!root || !rootConnected(root)) releaseDeep(deepJobs.shift());
+          if (!root || !KERNEL.refreshLiveAge(job, JOB_TTL_MS, root, rootConnected)) releaseDeep(deepJobs.shift());
           else {
-            if (performance.now() - job.createdAt > JOB_TTL_MS) job.createdAt = performance.now();
             const out = drainDeep(job, start);
             if (out.hit) return activate(out.reason, out.seed);
             if (out.done) releaseDeep(deepJobs.shift());

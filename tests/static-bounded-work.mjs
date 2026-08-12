@@ -98,18 +98,27 @@ assert.match(
   'Gate deep jobs become started only inside a slice that actually processes a node'
 );
 
-const ttlRefreshes = gate.match(/if\s*\(performance\.now\(\)\s*-\s*job\.createdAt\s*>\s*JOB_TTL_MS\)\s*job\.createdAt\s*=\s*performance\.now\(\)/g) || [];
-assert.ok(ttlRefreshes.length >= 2, 'connected Gate batch and deep work must refresh liveness age instead of expiring by age alone');
 assert.equal(
-  /performance\.now\(\)\s*-\s*job\.createdAt\s*>\s*JOB_TTL_MS[^\n]*batchJobs\.shift\(\)/.test(gate),
+  /performance\.now\(\)\s*-\s*job\.createdAt\s*>\s*JOB_TTL_MS/.test(gate),
   false,
-  'Gate batch TTL must not erase still-live work by age alone'
+  'Gate must not retain private age-expiration semantics once lifetime authority is shared'
 );
-assert.equal(
-  /performance\.now\(\)\s*-\s*job\.createdAt\s*>\s*JOB_TTL_MS[^\n]*releaseDeep\(deepJobs\.shift\(\)\)/.test(gate),
-  false,
-  'Gate deep TTL must not erase still-live cursors by age alone'
+assert.match(
+  gate,
+  /KERNEL\.refreshLiveAge\(job,\s*JOB_TTL_MS,\s*owner,\s*candidate\s*=>\s*candidate\s+instanceof\s+Element\s*&&\s*candidate\.isConnected\)/,
+  'Gate owner-backed batch lifetime must use the shared kernel'
 );
+assert.match(
+  gate,
+  /KERNEL\.touchExpiredAge\(job,\s*JOB_TTL_MS\)/,
+  'Gate ownerless batch work must use shared age metadata semantics'
+);
+assert.match(
+  gate,
+  /KERNEL\.refreshLiveAge\(job,\s*JOB_TTL_MS,\s*root,\s*rootConnected\)/,
+  'Gate deep root liveness and age refresh must use the shared kernel'
+);
+assert.match(kernel, /Age is liveness metadata, not obsolescence authority/, 'kernel must retain the canonical age/obsolescence invariant');
 
 assert.match(
   tierE2e,
