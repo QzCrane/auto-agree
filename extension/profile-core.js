@@ -10,14 +10,12 @@
     maxSelectorLength: 420,
     maxHosts: 8,
     maxHostLength: 360,
+    maxKindLength: 32,
     maxSuccesses: 100000,
-    maxFailures: 1000,
-    maxSeverity: 4,
-    maxLinkBucket: 2
+    maxFailures: 1000
   });
 
   const CONTROL = /[\u0000-\u001f]/;
-  const KINDS = new Set(['native', 'aria', 'data', 'class', 'custom', 'unknown']);
 
   function finiteNumber(value, fallback = 0) {
     try {
@@ -59,15 +57,20 @@
 
   function sanitizeDescriptor(descriptor) {
     if (!descriptor || typeof descriptor !== 'object') return null;
-    const kind = KINDS.has(descriptor.kind) ? descriptor.kind : 'unknown';
+    const rawKind = typeof descriptor.kind === 'string' ? descriptor.kind.trim() : '';
+    const kind = rawKind && rawKind.length <= CONFIG.maxKindLength && !CONTROL.test(rawKind) ? rawKind : 'unknown';
     return {
       kind,
-      severity: boundedNumber(descriptor.severity, 0, CONFIG.maxSeverity, 0),
+      // Severity taxonomy belongs to DecisionKernel. ProfileCore only makes the numeric field total
+      // and non-negative; the caller supplies the authoritative OPTIONAL threshold to compatibility.
+      severity: Math.max(0, Math.ceil(finiteNumber(descriptor.severity, 0))),
       legal: !!descriptor.legal,
       assent: !!descriptor.assent,
       required: !!descriptor.required,
       auth: !!descriptor.auth,
-      linkBucket: boundedNumber(descriptor.linkBucket, 0, CONFIG.maxLinkBucket, 0)
+      // Link-bucket extraction belongs to the live Engine adapter. Persisted malformed values are
+      // rounded upward so cache acceleration becomes more conservative rather than less.
+      linkBucket: Math.max(0, Math.ceil(finiteNumber(descriptor.linkBucket, 0)))
     };
   }
 
