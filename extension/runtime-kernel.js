@@ -12,6 +12,43 @@
   }
 
   /**
+   * Pure lifecycle epoch authority. Domain tiers still own observers/listeners/queue teardown and
+   * restoration; this object only owns the cross-cutting truth of paused/active state and whether
+   * an asynchronous callback token still belongs to the current lifecycle generation.
+   *
+   * @param {boolean} [initialPaused]
+   */
+  function createLifecycleState(initialPaused = false) {
+    let paused = !!initialPaused;
+    let epoch = 0;
+
+    function transition(nextPaused) {
+      nextPaused = !!nextPaused;
+      if (nextPaused === paused) return false;
+      paused = nextPaused;
+      epoch++;
+      return true;
+    }
+
+    function pause() { return transition(true); }
+    function resume() { return transition(false); }
+    function capture() { return epoch; }
+    function isCurrent(token, requireActive = true) {
+      return Number.isInteger(token) && token === epoch && (!requireActive || !paused);
+    }
+
+    return Object.freeze({
+      pause,
+      resume,
+      transition,
+      capture,
+      isCurrent,
+      get paused() { return paused; },
+      get epoch() { return epoch; }
+    });
+  }
+
+  /**
    * Bounded FIFO admission with one weak recovery representation.
    *
    * Domain code owns traversal and job shape. The kernel owns only the cross-cutting invariant:
@@ -161,6 +198,7 @@
 
   globalThis.__AUTO_AGREE_RUNTIME_KERNEL__ = Object.freeze({
     version: VERSION,
+    createLifecycleState,
     createBoundedFifo,
     touchExpiredAge,
     refreshLiveAge

@@ -27,8 +27,7 @@
   let drainScheduled = false;
   let eventsAttached = false;
   let lifecycleAttached = false;
-  let paused = false;
-  let lifecycleEpoch = 0;
+  const lifecycle = KERNEL.createLifecycleState(false);
 
   function norm(value, max = 480) {
     if (value == null || max <= 0) return '';
@@ -235,7 +234,7 @@
   }
 
   function requestGate(reason, seed) {
-    if (gateRequested || paused) return;
+    if (gateRequested || lifecycle.paused) return;
     gateRequested = true;
     globalThis.__AUTO_AGREE_PROBE_CONTEXT__ = { reason, seedRef: seed instanceof Element && typeof WeakRef === 'function' ? new WeakRef(seed) : null };
     observer?.disconnect();
@@ -249,19 +248,20 @@
       if (!chrome.runtime.lastError && response?.ok) { handoffRetry = 0; return; }
       gateRequested = false;
       attachLifecycle();
-      if (document.visibilityState === 'hidden' || document.prerendering) paused = true;
-      else { paused = false; attachEvents(); startObserver(); }
+      const shouldPause = document.visibilityState === 'hidden' || document.prerendering;
+      lifecycle.transition(shouldPause);
+      if (!shouldPause) { attachEvents(); startObserver(); }
       const delay = HANDOFF_RETRY_DELAYS[handoffRetry++];
       if (delay == null) return;
       const retrySeed = seed instanceof Element && seed.isConnected ? seed : null;
       setTimeout(() => {
-        if (!paused && !gateRequested) requestGate('worker-restart-retry', retrySeed);
+        if (!lifecycle.paused && !gateRequested) requestGate('worker-restart-retry', retrySeed);
       }, delay);
     });
   }
 
   function scan(root, maxNodes = 96, budgetMs = 0.75) {
-    if (paused || !root) return false;
+    if (lifecycle.paused || !root) return false;
     if (root instanceof Element && suspicious(root)) { requestGate('element', root); return true; }
     const walker = document.createTreeWalker(root, NodeFilter.SHOW_ELEMENT | NodeFilter.SHOW_TEXT);
     const start = performance.now();
@@ -317,7 +317,7 @@
   }
 
   function queueDeep(root) {
-    if (gateRequested || paused || !root || queued.has(root) || !rootConnected(root)) return;
+    if (gateRequested || lifecycle.paused || !root || queued.has(root) || !rootConnected(root)) return;
     const job = { rootRef: new WeakRef(root), cursorRef: null, started: false, createdAt: performance.now() };
     const result = deepWork.admit(job, root, null);
     if (!result.admitted) {
@@ -329,12 +329,12 @@
   }
 
   function scheduleDrain() {
-    if (drainScheduled || gateRequested || paused) return;
+    if (drainScheduled || gateRequested || lifecycle.paused) return;
     drainScheduled = true;
-    const epoch = lifecycleEpoch;
+    const epoch = lifecycle.capture();
     const run = () => {
-      if (paused || gateRequested || epoch !== lifecycleEpoch) {
-        if (epoch === lifecycleEpoch) drainScheduled = false;
+      if (gateRequested || !lifecycle.isCurrent(epoch)) {
+        if (epoch === lifecycle.epoch) drainScheduled = false;
         return;
       }
       drainScheduled = false;
@@ -381,7 +381,7 @@
   }
 
   function eventProbe(event) {
-    if (gateRequested || paused || eventShadow(event)) return;
+    if (gateRequested || lifecycle.paused || eventShadow(event)) return;
     const target = event.target instanceof Element ? event.target : null;
     if (!target) return;
     if (suspicious(target)) requestGate(event.type, target);
@@ -392,7 +392,7 @@
   }
 
   function onMutations(records) {
-    if (paused || gateRequested) return;
+    if (lifecycle.paused || gateRequested) return;
     const start = performance.now();
     for (const r of records) {
       if (gateRequested) return;
@@ -434,7 +434,7 @@
   }
 
   function startObserver() {
-    if (gateRequested || paused) return;
+    if (gateRequested || lifecycle.paused) return;
     if (!observer) observer = new MutationObserver(onMutations);
     try { observer.observe(document, { subtree:true, childList:true, characterData:true, attributes:true, attributeFilter:['type','name','placeholder','autocomplete','role','aria-label','aria-checked'] }); } catch (_) {}
     if (document.documentElement) {
@@ -449,18 +449,16 @@
   }
 
   function pauseProbe() {
-    if (paused || gateRequested) return;
-    paused = true;
-    lifecycleEpoch++;
+    if (lifecycle.paused || gateRequested) return;
+    lifecycle.pause();
     observer?.disconnect();
     detachEvents();
     clearProbeWork();
   }
 
   function resumeProbe() {
-    if (!paused || gateRequested || document.prerendering || document.visibilityState === 'hidden') return;
-    paused = false;
-    lifecycleEpoch++;
+    if (!lifecycle.paused || gateRequested || document.prerendering || document.visibilityState === 'hidden') return;
+    lifecycle.resume();
     attachEvents();
     startObserver();
   }
@@ -500,7 +498,7 @@
   }
 
   function startActiveProbe() {
-    paused = false;
+    lifecycle.resume();
     attachLifecycle();
     if (document.visibilityState === 'hidden') { pauseProbe(); return; }
     attachEvents();

@@ -6,7 +6,7 @@
   "description": "Evidence-gated Chrome extension that automatically accepts routine mandatory access agreements while refusing consequential consent.",
   "scripts": {
     "typecheck": "tsc -p tsconfig.json",
-    "check": "node tests/syntax.mjs && node tests/static-contract.mjs && node tests/runtime-kernel.mjs && node tests/decision-core.mjs && node tests/version-contract.mjs && node tests/static-bounded-work.mjs && node tests/static-engine-lifetime.mjs && node tests/static-engine-shadow.mjs && node tests/generation-lease.mjs && node tests/property-consent-model.mjs && node tests/property-semantic-fragmentation.mjs && node tests/property-consent-fast-check.mjs && node tests/worker-contract.mjs && node tests/worker-profile-governance.mjs && node tests/worker-scheduler.mjs && node tests/worker-restart.mjs && node tests/performance-ledger.mjs && npm run typecheck",
+    "check": "node tests/syntax.mjs && node tests/static-contract.mjs && node tests/runtime-kernel.mjs && node tests/static-lifecycle.mjs && node tests/decision-core.mjs && node tests/version-contract.mjs && node tests/static-bounded-work.mjs && node tests/static-engine-lifetime.mjs && node tests/static-engine-shadow.mjs && node tests/generation-lease.mjs && node tests/property-consent-model.mjs && node tests/property-semantic-fragmentation.mjs && node tests/property-consent-fast-check.mjs && node tests/worker-contract.mjs && node tests/worker-profile-governance.mjs && node tests/worker-scheduler.mjs && node tests/worker-restart.mjs && node tests/performance-ledger.mjs && npm run typecheck",
     "test": "npm run check",
     "e2e": "node tests/e2e-extension.mjs",
     "profile:e2e": "node tests/e2e-extension.mjs --profile"
