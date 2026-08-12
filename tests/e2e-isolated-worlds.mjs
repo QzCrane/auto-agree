@@ -16,6 +16,7 @@ export async function extensionWorldSentinels(page) {
             lease: globalThis.__AUTO_AGREE_GENERATION_LEASE__?.version || null,
             probe: globalThis.__AUTO_AGREE_PROBE__ || null,
             handover: globalThis.__AUTO_AGREE_HANDOVER_GUARD__?.version || null,
+            action: globalThis.__AUTO_AGREE_ACTION_AUTHORITY__?.version || null,
             semantic: globalThis.__AUTO_AGREE_SEMANTIC__?.version || globalThis.__AUTO_AGREE_SEMANTIC__ || null,
             gate: globalThis.__AUTO_AGREE_GATE__ || null,
             risk: globalThis.__AUTO_AGREE_RISK__?.version || globalThis.__AUTO_AGREE_RISK__ || null,
@@ -26,7 +27,7 @@ export async function extensionWorldSentinels(page) {
         });
         if (exceptionDetails) continue;
         const value = result?.value;
-        if (value && (value.lease || value.probe || value.handover || value.semantic || value.gate || value.risk || value.engine)) {
+        if (value && (value.lease || value.probe || value.handover || value.action || value.semantic || value.gate || value.risk || value.engine)) {
           worlds.push({
             id: context.id,
             name: context.name || '',
