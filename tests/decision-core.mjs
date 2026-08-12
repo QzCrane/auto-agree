@@ -115,4 +115,10 @@ for (const [name, pattern] of [
   assert.equal(pattern.test(source), false, `DecisionKernel must remain pure: ${name}`);
 }
 
-console.log('decision-core: PASS (7500 shrinkable differential/safety cases)');
+const severityOwners = fs.readdirSync('extension')
+  .filter(name => name.endsWith('.js'))
+  .filter(name => /const\s+SEVERITY\s*=\s*Object\.freeze/.test(fs.readFileSync(`extension/${name}`, 'utf8')))
+  .sort();
+assert.deepEqual(severityOwners, ['decision-core.js'], 'DecisionKernel must be the sole production severity-lattice authority');
+
+console.log('decision-core: PASS (7500 shrinkable differential/safety cases + sole severity authority)');

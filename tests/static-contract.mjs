@@ -130,6 +130,7 @@ assert.match(risk,/__AUTO_AGREE_DECISION__/,'risk classification must consume th
 assert.equal(/const\s+SEVERITY\s*=\s*Object\.freeze/.test(risk),false,'risk core must not own a duplicate severity lattice');
 const semantic=fs.readFileSync(path.join(root,'semantic-core.js'),'utf8');
 assert.match(semantic,/__AUTO_AGREE_SEMANTIC__\?\.version === VERSION/);
+assert.equal(/const\s+SEVERITY\s*=\s*Object\.freeze/.test(semantic),false,'semantic core must not own a duplicate severity lattice');
 const gate=fs.readFileSync(path.join(root,'gate.js'),'utf8');
 assert.match(gate,/__AUTO_AGREE_SEMANTIC__/);
 assert.ok(gate.indexOf('if (!CORE || CORE.version !== VERSION) return;') < gate.indexOf('globalThis.__AUTO_AGREE_GATE__ = VERSION;'),'Gate sentinel must be assigned only after dependencies are valid');
