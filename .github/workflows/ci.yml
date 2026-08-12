@@ -131,3 +131,42 @@ jobs:
         if: always()
         run: |
           if test -f artifacts/e2e-profile.json; then cat artifacts/e2e-profile.json; fi
+
+  performance:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '24'
+          cache: npm
+      - name: Install locked development dependencies
+        env:
+          PUPPETEER_SKIP_DOWNLOAD: 'true'
+        run: npm ci --ignore-scripts
+      - name: Cache Chrome for Testing
+        uses: actions/cache@v5
+        with:
+          path: ~/.cache/puppeteer
+          key: puppeteer-${{ runner.os }}-${{ runner.arch }}-25.1.0-chrome
+      - name: Install Chrome for Testing explicitly
+        run: npx puppeteer browsers install chrome
+      - name: Ensure virtual display
+        run: |
+          if ! command -v xvfb-run >/dev/null 2>&1; then
+            sudo apt-get update
+            sudo apt-get install -y xvfb
+          fi
+          xvfb-run --help >/dev/null
+      - name: Run repeated real unpacked-extension performance statistics
+        env:
+          AUTO_AGREE_HEADED: '1'
+          AUTO_AGREE_PERF_REPETITIONS: '7'
+        run: xvfb-run -a node tests/e2e-performance-statistics.mjs
+      - name: Print statistical performance evidence
+        if: always()
+        run: |
+          if test -f artifacts/e2e-profile-statistics.json; then cat artifacts/e2e-profile-statistics.json; fi
