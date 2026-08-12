@@ -25,11 +25,12 @@ assert.deepEqual(JSON.parse(JSON.stringify(core.CONFIG)), {
   maxSelectorLength: 420,
   maxHosts: 8,
   maxHostLength: 360,
+  maxKindLength: 32,
+  maxLinkBucket: 2,
   maxSuccesses: 100000,
-  maxFailures: 1000,
-  maxSeverity: 4,
-  maxLinkBucket: 2
+  maxFailures: 1000
 });
+assert.equal('maxSeverity' in core.CONFIG, false, 'DecisionKernel must remain the sole severity-taxonomy authority');
 
 const NOW = 2_000_000_000_000;
 const VERSION = '11.0.0';
@@ -175,6 +176,10 @@ const hostileDescriptor=core.sanitizeDescriptor({kind:'native',severity:Symbol('
 assert.ok(hostileDescriptor);
 assert.equal(hostileDescriptor.severity,0,'numeric coercion must be total even for hostile non-structured-clone inputs');
 assert.equal(hostileDescriptor.linkBucket,0);
+const futureSeverity=core.sanitizeDescriptor({kind:'future-control',severity:5,linkBucket:99});
+assert.equal(futureSeverity.kind,'future-control','ProfileCore must not own a closed copy of Engine control-kind taxonomy');
+assert.equal(futureSeverity.severity,5,'ProfileCore must not clamp future DecisionKernel severity levels to a copied max');
+assert.equal(futureSeverity.linkBucket,2,'profile representation still owns its compact link bucket');
 
 const bigIndex=Object.fromEntries(Array.from({length:300},(_,i)=>[`https://site-${String(i).padStart(3,'0')}.example`,NOW-i]));
 const compact=core.compactOriginIndex(bigIndex,'https://new.example',NOW);
