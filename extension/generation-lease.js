@@ -1,6 +1,6 @@
 (() => {
   'use strict';
-  const VERSION = '10.0.0';
+  const VERSION = '11.0.0';
   if (globalThis.__AUTO_AGREE_GENERATION_LEASE__?.version === VERSION) return;
 
   const descriptor = Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'click');

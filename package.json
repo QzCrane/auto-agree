@@ -1,6 +1,6 @@
 {
   "name": "auto-agree",
-  "version": "10.0.0",
+  "version": "11.0.0",
   "private": true,
   "type": "module",
   "description": "Evidence-gated Chrome extension that automatically accepts routine mandatory access agreements while refusing consequential consent.",
