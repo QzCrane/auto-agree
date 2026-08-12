@@ -1534,8 +1534,9 @@ function enqueueRootBatch(roots, index, urgent) {
   function runBatchJob(job, budgetMs) {
     const now = performance.now();
     const owner = batchOwner(job);
-    if (now - job.createdAt > BATCH_JOB_TTL_MS || ((job.owner || job.ownerRef) && !(owner instanceof Element))) return false;
+    if ((job.owner || job.ownerRef) && !(owner instanceof Element)) return false;
     if (owner instanceof Element && !owner.isConnected) return false;
+    if (now - job.createdAt > BATCH_JOB_TTL_MS) job.createdAt = now;
     const start = now;
 
     if (job.mode === 'sibling-range') {
