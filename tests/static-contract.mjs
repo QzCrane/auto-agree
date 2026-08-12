@@ -64,14 +64,21 @@ assert.match(worker,/PROFILE_INDEX_KEY/);assert.match(worker,/LEGACY_PROFILE_IND
 assert.match(worker,/chrome\.storage\.session/,'session hot profile layer must remain present');
 assert.match(worker,/storageWriteChain = storageWriteChain\.then\(task, task\)/,'profile writes must serialize without swallowing the current operation error');
 assert.match(worker,/protectAndRehydrateTab/,'update rehydration must separate protection from Probe recovery');
-assert.match(worker,/\['runtime-kernel\.js', 'generation-lease\.js', 'semantic-core\.js', 'handover-guard\.js'\]/,'protection phase must install the cooperative generation lease and shared semantics before handover guard');
+assert.match(worker,/\['runtime-kernel\.js', 'generation-lease\.js', 'semantic-core\.js', 'dom-core\.js', 'handover-guard\.js'\]/,'protection phase must install lease, semantics and DomCore before handover guard');
 assert.match(worker,/await scheduleInjection\(target, \['bootstrap\.js'\], 3\)/,'bootstrap must be a later phase after protection resolves');
 assert.equal(/\['handover-guard\.js', 'bootstrap\.js'\]/.test(worker),false,'guard and bootstrap must never share the update injection phase');
 assert.equal(/\bmessage\.origin\b/.test(worker),false,'profile storage identity must come from MessageSender, not message.origin');
 assert.match(worker,/\['runtime-kernel\.js', 'generation-lease\.js', 'semantic-core\.js', 'gate\.js'\]/,'every dynamically injected Gate world must carry the cooperative generation lease');
-assert.match(worker,/\['runtime-kernel\.js', 'generation-lease\.js', 'semantic-core\.js', 'handover-guard\.js', 'decision-core\.js', 'profile-core\.js', 'risk-core\.js', 'engine\.js'\]/,'every Engine-capable world must carry lease, policy, fresh ProfileCore and handover guard');
+assert.match(worker,/\['runtime-kernel\.js', 'generation-lease\.js', 'semantic-core\.js', 'dom-core\.js', 'handover-guard\.js', 'decision-core\.js', 'profile-core\.js', 'risk-core\.js', 'engine\.js'\]/,'every Engine-capable world must carry lease, DomCore, policy, fresh ProfileCore and handover guard');
+
+const domCore=fs.readFileSync(path.join(root,'dom-core.js'),'utf8');
+assert.match(domCore,/function composedParent\s*\(/,'DomCore must own composed-tree ancestry');
+assert.match(domCore,/function rootQueryById\s*\(/,'DomCore must own root-scoped IDREF lookup');
+assert.equal(/createTreeWalker|querySelectorAll|textContent|innerText/.test(domCore),false,'DomCore must remain topology-only, not become a tier policy/scanner');
 
 const guard=fs.readFileSync(path.join(root,'handover-guard.js'),'utf8');
+assert.match(guard,/const DOM = globalThis\.__AUTO_AGREE_DOM_CORE__/,'handover guard must consume shared DOM topology');
+assert.equal(/function\s+(?:composedParent|rootQueryById)\s*\(/.test(guard),false,'handover guard must not retain private topology copies');
 assert.match(guard,/__AUTO_AGREE_SEMANTIC__/,'handover guard must consume the shared semantic core');
 assert.match(guard,/assessText/,'handover agreement classification must use the shared semantic classifier');
 assert.match(guard,/CORE\.version !== VERSION/,'guard must reject a missing or stale semantic generation');
@@ -120,6 +127,8 @@ const gate=fs.readFileSync(path.join(root,'gate.js'),'utf8');
 assert.match(gate,/__AUTO_AGREE_SEMANTIC__/);
 assert.ok(gate.indexOf('if (!CORE || CORE.version !== VERSION) return;') < gate.indexOf('globalThis.__AUTO_AGREE_GATE__ = VERSION;'),'Gate sentinel must be assigned only after dependencies are valid');
 const engine=fs.readFileSync(path.join(root,'engine.js'),'utf8');
+assert.match(engine,/const DOM = globalThis\.__AUTO_AGREE_DOM_CORE__/,'Engine must consume shared DOM topology');
+assert.equal(/function\s+(?:composedParent|rootQueryById)\s*\(/.test(engine),false,'Engine must not retain private topology copies');
 assert.match(engine,/authorizeHandoverClick/);assert.match(engine,/__AUTO_AGREE_DECISION__/,'Engine must consume the pure decision authority');assert.match(engine,/evidenceForCandidate/,'Engine must map browser snapshots into EvidenceIR before policy');assert.equal(/function\s+buildSemanticGraph\s*\(/.test(engine),false,'Engine must not retain a private policy graph implementation');
 assert.match(engine,/decideClasslessEvidence\(classlessEvidence\)/,'classless geometry must cross the DecisionKernel before layout targeting');
 assert.match(engine,/decideClasslessEvidence\(\{ \.\.\.classlessEvidence, stateKind: pseudo\.state\.kind \}\)/,'classless observable state must be revalidated before action');
@@ -129,7 +138,7 @@ assert.match(engine,/PROFILE\.sanitizeDescriptor\(/,'Engine profile descriptors 
 assert.match(engine,/PROFILE\.descriptorCompatible\([^,]+,[^,]+,\s*SEVERITY\.OPTIONAL\)/,'cached evidence compatibility must use ProfileCore with DecisionKernel severity authority');
 assert.equal(/function\s+descriptorCompatible\s*\(/.test(engine),false,'Engine must not retain a second cache-compatibility policy');
 assert.equal(/const\s+CACHE_TTL_MS\s*=\s*180|const\s+PROFILE_MAX_FLOWS\s*=\s*8/.test(engine),false,'Engine must not retain duplicate persisted-profile bounds');
-const engineDeps = 'if (!CORE || CORE.version !== VERSION || !POLICY || POLICY.version !== VERSION || !PROFILE || !RISK || RISK.version !== VERSION) return;';
+const engineDeps = 'if (!CORE || CORE.version !== VERSION || !POLICY || POLICY.version !== VERSION || !PROFILE || !DOM || DOM.version !== VERSION || !RISK || RISK.version !== VERSION) return;';
 assert.ok(engine.includes(engineDeps) && engine.indexOf(engineDeps) < engine.indexOf('globalThis.__AUTO_AGREE_ENGINE__ = VERSION;'),'Engine sentinel must be assigned only after semantic, decision, profile and risk dependencies are valid');
 assert.match(engine,/credentialInvalid/);
 assert.match(engine,/oneShotUnknown/);
