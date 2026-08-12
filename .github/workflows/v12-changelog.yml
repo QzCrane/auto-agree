@@ -1,0 +1,48 @@
+name: v12-changelog
+
+on:
+  pull_request:
+    types: [opened, reopened, synchronize]
+
+permissions:
+  contents: write
+
+jobs:
+  prepend:
+    if: >-
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      github.event.pull_request.head.ref == 'migration/v12-changelog' &&
+      github.event.pull_request.base.ref == 'main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 4
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+      - name: Verify exact changelog transaction
+        env:
+          EXPECTED_BASE: 8c87f83823166bc0a0617f19a26afdc530600043
+          EVENT_BASE: ${{ github.event.pull_request.base.sha }}
+          EVENT_HEAD: ${{ github.event.pull_request.head.sha }}
+        run: |
+          test "$EVENT_BASE" = "$EXPECTED_BASE"
+          test "$(git rev-parse HEAD)" = "$EVENT_HEAD"
+          test "$(git merge-base HEAD origin/main)" = "$EXPECTED_BASE"
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '24'
+      - name: Prepend v12 changelog
+        run: node tools/v12_changelog_prepend.mjs
+      - name: Verify and commit changelog-only result
+        run: |
+          git diff --check
+          test "$(git diff --name-only | tr '\n' ' ')" = "CHANGELOG.md "
+          rm .github/workflows/v12-changelog.yml tools/v12_changelog_prepend.mjs
+          git add -A
+          test "$(git diff --cached --name-only | sort | tr '\n' ' ')" = ".github/workflows/v12-changelog.yml CHANGELOG.md tools/v12_changelog_prepend.mjs "
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -m "docs: record 12.0.0 release"
+          test "$(git diff --name-only 8c87f83823166bc0a0617f19a26afdc530600043..HEAD | tr '\n' ' ')" = "CHANGELOG.md "
+          git push origin HEAD:migration/v12-changelog
