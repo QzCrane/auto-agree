@@ -5,10 +5,13 @@ import assert from 'node:assert/strict';
 const EXTENSION = path.resolve('extension');
 const manifest = JSON.parse(fs.readFileSync(path.join(EXTENSION, 'manifest.json'), 'utf8'));
 const pkg = JSON.parse(fs.readFileSync('package.json', 'utf8'));
+const lock = JSON.parse(fs.readFileSync('package-lock.json', 'utf8'));
 const version = String(manifest.version || '');
 
 assert.match(version, /^\d+\.\d+\.\d+$/, 'manifest must expose one semantic runtime generation');
 assert.equal(pkg.version, version, 'package and extension manifest must describe the same release generation');
+assert.equal(lock.version, version, 'package-lock top-level generation must match the manifest release');
+assert.equal(lock.packages?.['']?.version, version, 'package-lock root package generation must match the manifest release');
 
 const kernel = fs.readFileSync(path.join(EXTENSION, 'runtime-kernel.js'), 'utf8');
 const kernelVersions = [...kernel.matchAll(/const\s+VERSION\s*=\s*['"]([^'"]+)['"]/g)];
@@ -38,4 +41,8 @@ for (const file of productionJs) {
   else assert.deepEqual(literals, [], `${file} must not carry an independent release generation literal`);
 }
 
-console.log(`version-contract: PASS (${version}, one isolated birth generation + manifest-derived Worker)`);
+const runtimeKernelTest = fs.readFileSync(path.resolve('tests/runtime-kernel.mjs'), 'utf8');
+assert.match(runtimeKernelTest, /const\s+CURRENT_VERSION\s*=\s*JSON\.parse\(fs\.readFileSync\('extension\/manifest\.json',\s*'utf8'\)\)\.version/, 'RuntimeKernel unit model must derive the candidate generation from the manifest');
+assert.equal(/assert\.equal\(kernel\.version,\s*['"]\d+\.\d+\.\d+['"]\)/.test(runtimeKernelTest), false, 'RuntimeKernel unit model must not hardcode the current release generation');
+
+console.log(`version-contract: PASS (${version}, manifest/package/lock + one isolated birth generation + manifest-derived Worker/test)`);
