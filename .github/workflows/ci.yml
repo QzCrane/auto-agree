@@ -41,6 +41,7 @@ jobs:
               'extension/handover-guard.js',
               'extension/risk-core.js',
               'extension/semantic-core.js',
+              'extension/worker.js',
           ]
           for name in runtime:
               p = Path(name)
@@ -57,10 +58,6 @@ jobs:
               if s.count(needle) != 1:
                   raise SystemExit(f'{name}: expected exactly one version field {needle}')
               p.write_text(s.replace(needle, f'"version": "{new}"', 1))
-
-          worker = Path('extension/worker.js').read_text()
-          if old in worker:
-              raise SystemExit('extension/worker.js unexpectedly hard-codes old generation')
           PY
           for file in extension/*.js; do node --check "$file"; done
           npm test
@@ -72,7 +69,7 @@ jobs:
           test -n "$(git status --porcelain -- extension package.json)"
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add extension/bootstrap.js extension/engine.js extension/gate.js extension/generation-lease.js extension/handover-guard.js extension/risk-core.js extension/semantic-core.js extension/manifest.json package.json
+          git add extension/bootstrap.js extension/engine.js extension/gate.js extension/generation-lease.js extension/handover-guard.js extension/risk-core.js extension/semantic-core.js extension/worker.js extension/manifest.json package.json
           git commit -m 'release: bump runtime generation to v11.0.0'
           git push origin HEAD:release/v11.0.0
 
