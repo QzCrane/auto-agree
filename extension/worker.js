@@ -240,9 +240,9 @@ async function protectAndRehydrateTab(tabId) {
 }
 
 async function rehydrateExistingTabs() {
-  if (!chrome.tabs?.query) return;
+  if (!chrome.tabs?.query) return null;
   let tabs = [];
-  try { tabs = await chrome.tabs.query({}); } catch (_) { return; }
+  try { tabs = await chrome.tabs.query({}); } catch (_) { return null; }
   let pending = [...new Set(tabs.map(tab => tab?.id).filter(Number.isInteger))];
   for (let pass = 0; pass < 2 && pending.length; pass++) {
     const retry = [];
@@ -254,13 +254,22 @@ async function rehydrateExistingTabs() {
     pending = retry;
     if (pending.length && pass === 0) await new Promise(resolve => setTimeout(resolve, 180));
   }
+  return pending;
 }
 
 async function startUpdateRehydrate() {
   const marker = { version: VERSION, ts: Date.now() };
   try { await chrome.storage.session?.set({ [REHYDRATE_KEY]: marker }); } catch (_) {}
-  try { await rehydrateExistingTabs(); }
-  finally { try { await chrome.storage.session?.remove(REHYDRATE_KEY); } catch (_) {} }
+  const pending = await rehydrateExistingTabs();
+  if (Array.isArray(pending) && pending.length === 0) {
+    try { await chrome.storage.session?.remove(REHYDRATE_KEY); } catch (_) {}
+    return;
+  }
+  try {
+    await chrome.storage.session?.set({
+      [REHYDRATE_KEY]: { ...marker, pending: Array.isArray(pending) ? pending : null }
+    });
+  } catch (_) {}
 }
 
 function requestUpdateRehydrate() {
@@ -306,7 +315,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
   if (message.type === 'AUTO_AGREE_PROFILE_PUT') {
     putProfile(profileOrigin, message.profile).then(
-      () => sendResponse({ ok: true }),
+      applied => sendResponse(applied ? { ok: true, applied: true } : { ok: false, applied: false, error: 'profile-rejected' }),
       error => sendResponse({ ok: false, error: String(error?.message || error) })
     );
     return true;
@@ -314,7 +323,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
   if (message.type === 'AUTO_AGREE_PROFILE_INVALIDATE') {
     invalidateProfileFlow(profileOrigin, message.profile).then(
-      () => sendResponse({ ok: true }),
+      applied => sendResponse(applied ? { ok: true, applied: true } : { ok: false, applied: false, error: 'profile-not-found' }),
       error => sendResponse({ ok: false, error: String(error?.message || error) })
     );
     return true;

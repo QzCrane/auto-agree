@@ -9,6 +9,7 @@ const tierE2e = fs.readFileSync('tests/e2e-tier-overflow.mjs', 'utf8');
 const probeTtlE2e = fs.readFileSync('tests/e2e-probe-live-ttl.mjs', 'utf8');
 const gateTtlE2e = fs.readFileSync('tests/e2e-gate-live-ttl.mjs', 'utf8');
 const engineWalkE2e = fs.readFileSync('tests/e2e-engine-overflow.mjs', 'utf8');
+const engineVisibilityE2e = fs.readFileSync('tests/e2e-engine-visibility-overflow.mjs', 'utf8');
 
 assert.equal(
   /while\s*\(rootBatches\.length\s*>=\s*MAX_ROOT_BATCHES\)\s*rootBatches\.shift\(\)/.test(engine),
@@ -41,6 +42,16 @@ assert.match(engine, /admitWalkJob\(root,\s*job\)/, 'Engine processSubtree must 
 assert.match(engineWalkE2e, /const\s+ROOTS\s*=\s*20/, 'Engine walk saturation fixture must exceed the 12-job cap materially');
 assert.match(engineWalkE2e, /const\s+NODES\s*=\s*900/, 'Engine walk saturation roots must require background continuation');
 assert.match(engineWalkE2e, /timeout:\s*9000/, 'Engine walk saturation keeps a fixed eventual-progress deadline');
+
+assert.match(engine, /MAX_PENDING_VISIBILITY\s*=\s*192/, 'visibility waiting must retain a hard representation cap');
+assert.match(engine, /pendingVisibilityRecoveryRef\s*=\s*new WeakRef\(root\)/, 'visibility overflow must retain weak final-state recovery');
+assert.match(engine, /pendingVisibility\.size\s*\|\|\s*pendingVisibilityRecoveryRef/, 'visual transitions must include overflow recovery work');
+assert.match(engine, /attributeFilter:[^\n]+['"]class['"][^\n]+['"]style['"]/, 'visibility recovery must observe class/style transitions');
+assert.match(engine, /MAX_INDEXED_CANDIDATES\s*=\s*96/, 'per-context candidate indexing must retain a hard cap');
+assert.match(engine, /contextIndexRecovery\.add\(s\.context\.root\s*\|\|\s*document\)/, 'candidate index overflow must retain weak context recovery');
+assert.match(engine, /contextIndexRecovery\.has\(context\)/, 'indexed preflight must re-enter bounded traversal for overflowed contexts');
+assert.match(engineVisibilityE2e, /index\s*<\s*220/, 'visibility saturation fixture must exceed the 192-entry cap');
+assert.match(engineVisibilityE2e, /hidden-219/, 'visibility saturation must recover the tail candidate');
 
 assert.equal(
   /while\s*\(deep\.length\s*>=\s*MAX_DEEP\)/.test(probe),

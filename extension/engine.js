@@ -6,6 +6,7 @@
   const MAX_ROW_TEXT = 1400;
   const MAX_CONTEXT_TEXT = 2200;
   const MAX_PENDING_VISIBILITY = 192;
+  const MAX_INDEXED_CANDIDATES = 96;
   const CLICK_COOLDOWN_MS = 2200;
   const SYNC_BUDGET_MS = 2.2;
   const BACKGROUND_BUDGET_MS = 4.0;
@@ -61,8 +62,10 @@
   let pendingRescueTimer = 0;
   let pendingRescueToken = 0;
   let pendingRescuePhase = 0;
+  let pendingVisibilityRecoveryRef = null;
   const contextIndex = new WeakMap();
   const indexedRefs = new WeakMap();
+  const contextIndexRecovery = new WeakSet();
   const relevantControls = new WeakSet();
   const fragmentRowsSeen = new WeakSet();
   const parserDeferredAnchors = new WeakSet();
@@ -361,7 +364,7 @@
         childList: true,
         characterData: true,
         attributes: true,
-        attributeFilter: ['checked','required','disabled','hidden','role','title','type','name','placeholder','autocomplete','aria-checked','aria-required','aria-disabled','aria-hidden','aria-label','aria-labelledby','aria-describedby','data-state','data-checked']
+        attributeFilter: ['checked','required','disabled','hidden','class','style','role','title','type','name','placeholder','autocomplete','aria-checked','aria-required','aria-disabled','aria-hidden','aria-label','aria-labelledby','aria-describedby','data-state','data-checked']
       });
     } catch (_) {}
   }
@@ -485,7 +488,7 @@
   function visuallyActive(el) { return visualState(el).visible; }
 
   function schedulePendingRescue() {
-    if (lifecycle.paused || pendingRescueTimer || !pendingVisibility.size) return;
+    if (lifecycle.paused || pendingRescueTimer || (!pendingVisibility.size && !pendingVisibilityRecoveryRef)) return;
     const delays = [140, 520, 1300];
     const phase = Math.min(pendingRescuePhase, delays.length - 1);
     const token = lifecycle.capture();
@@ -500,8 +503,8 @@
       pendingRescueToken = 0;
       pendingRescuePhase++;
       recheckPending();
-      if (pendingVisibility.size && pendingRescuePhase < delays.length) schedulePendingRescue();
-      else if (!pendingVisibility.size) pendingRescuePhase = 0;
+      if ((pendingVisibility.size || pendingVisibilityRecoveryRef) && pendingRescuePhase < delays.length) schedulePendingRescue();
+      else if (!pendingVisibility.size && !pendingVisibilityRecoveryRef) pendingRescuePhase = 0;
     }, delays[phase]);
   }
 
@@ -524,7 +527,7 @@
     if (blocker instanceof Element && !blockerStillUsed(blocker)) {
       try { resizeObserver?.unobserve(blocker); } catch (_) {}
     }
-    if (!pendingVisibility.size) pendingRescuePhase = 0;
+    if (!pendingVisibility.size && !pendingVisibilityRecoveryRef) pendingRescuePhase = 0;
   }
 
   function sweepPendingVisibility() {
@@ -537,7 +540,12 @@
   function pend(el, blocker = el) {
     if (!(el instanceof Element) || pendingEntryByElement.has(el)) return;
     if (pendingVisibility.size >= MAX_PENDING_VISIBILITY) sweepPendingVisibility();
-    if (pendingVisibility.size >= MAX_PENDING_VISIBILITY) return;
+    if (pendingVisibility.size >= MAX_PENDING_VISIBILITY) {
+      const root = document.documentElement;
+      if (root) pendingVisibilityRecoveryRef = new WeakRef(root);
+      schedulePendingRescue();
+      return;
+    }
     const observed = blocker instanceof Element ? blocker : el;
     const entry = { targetRef: new WeakRef(el), blockerRef: new WeakRef(observed) };
     pendingVisibility.add(entry);
@@ -624,10 +632,15 @@
     meaningfulCandidateSeen = true;
     relevantControls.add(s.control);
     const set = bucketFor(s.context.root);
+    if (set.size >= MAX_INDEXED_CANDIDATES) sweepCandidateBucket(set);
+    if (set.size >= MAX_INDEXED_CANDIDATES) {
+      contextIndexRecovery.add(s.context.root || document);
+      return;
+    }
     let ref = indexedRefs.get(s.control);
     if (!ref) { ref = new WeakRef(s.control); indexedRefs.set(s.control, ref); }
     set.add(ref);
-    if (set.size > 96) sweepCandidateBucket(set);
+    if (set.size > MAX_INDEXED_CANDIDATES) sweepCandidateBucket(set);
   }
 
   function stateFingerprint(s) {
@@ -1715,7 +1728,7 @@ function enqueueRootBatch(roots, index, urgent) {
       const hint = ownHint(target);
       return FAST_TEXT.test(hint) || relevantControls.has(target);
     }
-    if ((attributeName === 'hidden' || attributeName === 'aria-hidden' || attributeName === 'disabled' || attributeName === 'aria-disabled') && pendingVisibility.size) return true;
+    if ((attributeName === 'hidden' || attributeName === 'aria-hidden' || attributeName === 'disabled' || attributeName === 'aria-disabled' || attributeName === 'class' || attributeName === 'style') && (pendingVisibility.size || pendingVisibilityRecoveryRef)) return true;
     return false;
   }
 
@@ -1786,7 +1799,7 @@ function enqueueRootBatch(roots, index, urgent) {
         childList: true,
         characterData: true,
         attributes: true,
-        attributeFilter: ['type','role','title','name','placeholder','autocomplete','aria-label','aria-labelledby','aria-describedby']
+        attributeFilter: ['type','role','title','name','placeholder','autocomplete','hidden','class','style','aria-hidden','aria-label','aria-labelledby','aria-describedby']
       });
     } catch (_) { return; }
     queueRoot(root, false);
@@ -1794,6 +1807,9 @@ function enqueueRootBatch(roots, index, urgent) {
 
   function recheckPending() {
     if (lifecycle.paused) return;
+    const recoveryRoot = pendingVisibilityRecoveryRef?.deref?.();
+    pendingVisibilityRecoveryRef = null;
+    if (recoveryRoot instanceof Element && recoveryRoot.isConnected) queueRoot(recoveryRoot, true);
     for (const entry of [...pendingVisibility]) {
       const el = entry?.targetRef?.deref?.();
       if (!(el instanceof Element) || !el.isConnected) { removePendingEntry(entry); continue; }
@@ -1822,6 +1838,10 @@ function enqueueRootBatch(roots, index, urgent) {
     contexts.push(document);
     for (const context of contexts) {
       const set = contextIndex.get(context);
+      if (contextIndexRecovery.has(context)) {
+        const recoveryRoot = context instanceof Element ? context : document.documentElement;
+        if (recoveryRoot) queueRoot(recoveryRoot, true);
+      }
       if (!set) continue;
       for (const ref of [...set]) {
         const el = ref?.deref?.();
@@ -1939,7 +1959,7 @@ function enqueueRootBatch(roots, index, urgent) {
     processIndexedContext(root instanceof Element ? root : null);
   }
 
-  function onVisualTransition() { if (!lifecycle.paused && pendingVisibility.size) recheckPending(); }
+  function onVisualTransition() { if (!lifecycle.paused && (pendingVisibility.size || pendingVisibilityRecoveryRef)) recheckPending(); }
 
   function attachEngineEvents() {
     if (engineEventsAttached) return;

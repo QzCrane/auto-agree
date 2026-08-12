@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-import argparse, hashlib, json, pathlib, sys, zipfile
+import argparse, hashlib, io, json, pathlib, sys, zipfile
 ROOT=pathlib.Path(__file__).resolve().parents[1]
 EXT=ROOT/'extension'
 
@@ -7,16 +7,25 @@ EXT=ROOT/'extension'
 # maintaining a second hand-written JS allowlist that can silently omit a newly referenced module.
 FILES=['manifest.json', *sorted(p.name for p in EXT.glob('*.js')), 'README.md']
 
-def build(out):
-    out.parent.mkdir(parents=True,exist_ok=True)
-    with zipfile.ZipFile(out,'w',zipfile.ZIP_DEFLATED,compresslevel=9) as z:
+def build_bytes():
+    # STORED entries make the complete archive byte-identical across Python/zlib
+    # implementations. Compression ratios are not release identity.
+    out=io.BytesIO()
+    with zipfile.ZipFile(out,'w',zipfile.ZIP_STORED) as z:
         for name in FILES:
             data=(EXT/name).read_bytes()
             info=zipfile.ZipInfo(name,date_time=(2026,8,8,0,0,0))
-            info.compress_type=zipfile.ZIP_DEFLATED
+            info.compress_type=zipfile.ZIP_STORED
             info.external_attr=0o100644<<16
-            z.writestr(info,data,compress_type=zipfile.ZIP_DEFLATED,compresslevel=9)
-    return hashlib.sha256(out.read_bytes()).hexdigest()
+            z.writestr(info,data,compress_type=zipfile.ZIP_STORED)
+    return out.getvalue()
+
+def build(out):
+    out.parent.mkdir(parents=True,exist_ok=True)
+    first=build_bytes(); second=build_bytes()
+    if first != second: raise SystemExit('package reproducibility check failed')
+    out.write_bytes(first)
+    return hashlib.sha256(first).hexdigest()
 
 def main():
     ap=argparse.ArgumentParser(); ap.add_argument('--check',action='store_true'); ap.add_argument('--output')

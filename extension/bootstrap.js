@@ -23,6 +23,8 @@
   let observer = null;
   let gateRequested = false;
   let handoffRetry = 0;
+  let handoffBackoff = false;
+  let handoffTimer = 0;
   const HANDOFF_RETRY_DELAYS = [40, 160, 640];
   let drainScheduled = false;
   let eventsAttached = false;
@@ -234,7 +236,7 @@
   }
 
   function requestGate(reason, seed) {
-    if (gateRequested || lifecycle.paused) return;
+    if (gateRequested || handoffBackoff || lifecycle.paused) return;
     gateRequested = true;
     globalThis.__AUTO_AGREE_PROBE_CONTEXT__ = { reason, seedRef: seed instanceof Element && typeof WeakRef === 'function' ? new WeakRef(seed) : null };
     observer?.disconnect();
@@ -245,18 +247,27 @@
     for (const job of deep) releaseDeep(job);
     deepWork.clear();
     chrome.runtime.sendMessage({ type: 'AUTO_AGREE_GATE', reason }, response => {
-      if (!chrome.runtime.lastError && response?.ok) { handoffRetry = 0; return; }
+      if (!chrome.runtime.lastError && response?.ok) {
+        handoffRetry = 0;
+        handoffBackoff = false;
+        if (handoffTimer) clearTimeout(handoffTimer);
+        handoffTimer = 0;
+        return;
+      }
       gateRequested = false;
+      handoffBackoff = true;
+      const delay = HANDOFF_RETRY_DELAYS[Math.min(handoffRetry++, HANDOFF_RETRY_DELAYS.length - 1)];
+      const retrySeed = seed instanceof Element && seed.isConnected ? seed : null;
+      if (handoffTimer) clearTimeout(handoffTimer);
+      handoffTimer = setTimeout(() => {
+        handoffTimer = 0;
+        handoffBackoff = false;
+        if (!lifecycle.paused && !gateRequested) requestGate('worker-restart-retry', retrySeed);
+      }, delay);
       attachLifecycle();
       const shouldPause = document.visibilityState === 'hidden' || document.prerendering;
       lifecycle.transition(shouldPause);
       if (!shouldPause) { attachEvents(); startObserver(); }
-      const delay = HANDOFF_RETRY_DELAYS[handoffRetry++];
-      if (delay == null) return;
-      const retrySeed = seed instanceof Element && seed.isConnected ? seed : null;
-      setTimeout(() => {
-        if (!lifecycle.paused && !gateRequested) requestGate('worker-restart-retry', retrySeed);
-      }, delay);
     });
   }
 
@@ -451,13 +462,16 @@
   function pauseProbe() {
     if (lifecycle.paused || gateRequested) return;
     lifecycle.pause();
+    if (handoffTimer) clearTimeout(handoffTimer);
+    handoffTimer = 0;
+    handoffBackoff = false;
     observer?.disconnect();
     detachEvents();
     clearProbeWork();
   }
 
   function resumeProbe() {
-    if (!lifecycle.paused || gateRequested || document.prerendering || document.visibilityState === 'hidden') return;
+    if (!lifecycle.paused || gateRequested || handoffBackoff || document.prerendering || document.visibilityState === 'hidden') return;
     lifecycle.resume();
     attachEvents();
     startObserver();

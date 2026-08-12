@@ -4,13 +4,13 @@
 
 A green narrow test proves only its own invariant. v12 keeps deterministic policy/resource proofs, real headed-browser behavior, release-transition authority, and statistical performance as separate evidence classes.
 
-Every formal release candidate has three canonical CI jobs:
+Every formal release candidate has three canonical evidence lanes:
 
 1. **core** — auto-discovered deterministic gates + TypeScript + deterministic package verification;
-2. **unpacked-e2e** — real headed Chrome with the actual unpacked MV3 extension;
+2. **unpacked-e2e** — real Chrome with the actual unpacked MV3 extension;
 3. **performance** — repeated real-unpacked performance statistics in independent Chrome processes.
 
-The exact final release head must pass all three and then pass a same-SHA rerun. The release PR uses expected-head merge protection so a moved head cannot inherit stale evidence.
+The exact final release head must pass all three and then pass a same-SHA rerun. GitHub Actions normally replays these commands, but a hosted-runner billing or capacity outage is not a product failure: a recorded local run on a supported Chrome host is valid evidence when it includes the exact SHA and tool/browser identities. Ubuntu is an execution host, not an AutoAgree product platform. Merge authorization remains separate and must use an expected-head compare-and-swap; repository protection is preferred when the hosting plan supports it.
 
 ## 1. Deterministic/core gate
 
@@ -249,9 +249,9 @@ A formal release PR is mergeable only after:
 1. manifest/package/package-lock/RuntimeKernel coherence passes;
 2. all auto-discovered deterministic gates and deterministic packaging pass;
 3. the exact documentation-complete head passes core, full real Chrome/update transition and statistical performance;
-4. those three jobs pass again on the same exact SHA;
+4. those three evidence lanes pass again on the same exact SHA, locally or on a hosted runner;
 5. no temporary write-enabled migration/research workflow survives in the release diff;
-6. expected-head merge protection confirms the reviewed head did not move;
-7. post-merge main passes all three jobs again.
+6. expected-head compare-and-swap confirms the reviewed head did not move;
+7. post-merge main passes the applicable local lanes again; hosted replay is required when available but a documented provider outage is not rewritten as a code failure.
 
 The version report may cite an earlier byte-identical physical candidate for detailed generated evidence; exact final-head run IDs remain authoritative in the final release PR/merge metadata when embedding them in documentation would itself create a new unverified SHA.
