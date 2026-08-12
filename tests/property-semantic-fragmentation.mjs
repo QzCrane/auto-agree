@@ -1,50 +1,50 @@
 import fs from 'node:fs';
 import vm from 'node:vm';
 import assert from 'node:assert/strict';
+import { LANGUAGE_CORPUS } from './fixtures/language-corpus.mjs';
 
 const context = vm.createContext({ console, WeakRef, performance });
 vm.runInContext(fs.readFileSync('extension/runtime-kernel.js', 'utf8'), context);
 vm.runInContext(fs.readFileSync('extension/semantic-core.js', 'utf8'), context);
+vm.runInContext(fs.readFileSync('extension/decision-core.js', 'utf8'), context);
+vm.runInContext(fs.readFileSync('extension/risk-core.js', 'utf8'), context);
 const core = context.__AUTO_AGREE_SEMANTIC__;
-assert.ok(core);
+const risk = context.__AUTO_AGREE_RISK__;
+assert.ok(core && risk);
+const S = risk.SEVERITY;
 
-const phrases = [
-  'I have read and agree to the Terms of Service',
-  "J'ai lu et j'accepte les conditions d'utilisation",
-  'Ich akzeptiere die Nutzungsbedingungen',
-  'He leído y acepto los términos y condiciones',
-  'Li e aceito os termos de uso',
-  'Ho letto e accetto i termini di servizio',
-  '利用規約に同意します',
-  '이용약관에 동의합니다',
-  'Я согласен с условиями использования',
-  'أوافق على الشروط وسياسة الخصوصية',
-  'Ik ga akkoord met de voorwaarden',
-  'Zgadzam się na warunki korzystania',
-  'Kullanım koşullarını kabul ediyorum',
-  'Tôi đồng ý với điều khoản',
-  'Saya setuju dengan syarat dan ketentuan',
-  'ยอมรับข้อกำหนดและเงื่อนไข',
-  'मैं नियम और शर्तों से सहमत हूँ',
-  'Συμφωνώ με τους όρους',
-  'אני מסכים לתנאי שימוש',
-  'Jag godkänner villkoren',
-  'Jeg godtar vilkårene',
-  'Jeg accepterer betingelserne'
-];
-
-let cases = 0;
-for (const phrase of phrases) {
-  const baseline = core.assessText(phrase);
-  assert.equal(baseline.legal, true, `baseline legal: ${phrase}`);
-  assert.equal(baseline.assent, true, `baseline assent: ${phrase}`);
-  for (let cut = 1; cut < phrase.length; cut++) {
-    const fragmented = `${phrase.slice(0, cut)} ${phrase.slice(cut)}`;
+let routineCases = 0;
+let riskCases = 0;
+for (const sample of LANGUAGE_CORPUS) {
+  const baseline = core.assessText(sample.routine);
+  assert.equal(baseline.legal, true, `${sample.id} baseline legal: ${sample.routine}`);
+  assert.equal(baseline.assent, true, `${sample.id} baseline assent: ${sample.routine}`);
+  for (let cut = 1; cut < sample.routine.length; cut++) {
+    const fragmented = `${sample.routine.slice(0, cut)} ${sample.routine.slice(cut)}`;
     const assessed = core.assessText(fragmented);
-    assert.equal(assessed.legal, true, `fragment legal @${cut}: ${fragmented}`);
-    assert.equal(assessed.assent, true, `fragment assent @${cut}: ${fragmented}`);
-    cases++;
+    assert.equal(assessed.legal, true, `${sample.id} fragment legal @${cut}: ${fragmented}`);
+    assert.equal(assessed.assent, true, `${sample.id} fragment assent @${cut}: ${fragmented}`);
+    routineCases++;
+  }
+
+  const riskPhrases = [
+    ['optional', sample.optional, S.OPTIONAL, false],
+    ['consequential', sample.consequential, S.CONSEQUENTIAL, false],
+    ['attestation', sample.attestation, S.ATTESTATION, true],
+    ...sample.highConsequence.map((text, index) => [`high-${index}`, text, S.CONSEQUENTIAL, false])
+  ];
+  for (const [kind, phrase, floor, exact] of riskPhrases) {
+    const baselineSeverity = risk.severityFor(phrase).level;
+    if (exact) assert.equal(baselineSeverity, floor, `${sample.id} ${kind} baseline`);
+    else assert.ok(baselineSeverity >= floor, `${sample.id} ${kind} baseline`);
+    for (let cut = 1; cut < phrase.length; cut++) {
+      const fragmented = `${phrase.slice(0, cut)} ${phrase.slice(cut)}`;
+      const severity = risk.severityFor(fragmented).level;
+      if (exact) assert.equal(severity, floor, `${sample.id} ${kind} fragment @${cut}: ${fragmented}`);
+      else assert.ok(severity >= floor, `${sample.id} ${kind} fragment @${cut}: ${fragmented}`);
+      riskCases++;
+    }
   }
 }
 
-console.log(`property-semantic-fragmentation: PASS (${cases} fragmented phrases)`);
+console.log(`property-semantic-fragmentation: PASS (${routineCases} routine + ${riskCases} risk fragments)`);
