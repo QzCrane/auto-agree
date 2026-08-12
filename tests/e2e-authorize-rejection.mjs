@@ -59,11 +59,25 @@ await withServer(async url => {
       return worlds.find(w => w.engine === VERSION && w.handover === VERSION && w.action === VERSION) || null;
     });
 
-    // Replace only the public Guard API resolved by ActionAuthority. The original guard capture
-    // listener remains installed, but the facade must now honor authorize=false before dispatching
-    // any click. This proves the explicit protocol while the listener remains defense in depth.
+    // Instrument the isolated-world click primitive after the seed completes, then replace only
+    // the public Guard API resolved by ActionAuthority. The original handover-guard closure and
+    // capture listener remain installed. This proves three independent layers:
+    // 1) ActionAuthority does not dispatch at all when authorize() is false;
+    // 2) a direct current-world synthetic click is still blocked by the Guard capture boundary;
+    // 3) trusted browser input remains allowed.
     await evaluateInExecutionContext(page, engineWorld.id, `(() => {
       globalThis.__AUTO_AGREE_TEST_AUTH_CALLS__ = 0;
+      globalThis.__AUTO_AGREE_TEST_SYNTHETIC_CLICK_CALLS__ = 0;
+      const descriptor = Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'click');
+      const original = descriptor?.value;
+      if (typeof original !== 'function') throw new Error('missing-click-primitive');
+      Object.defineProperty(HTMLElement.prototype, 'click', {
+        ...descriptor,
+        value: function(...args) {
+          globalThis.__AUTO_AGREE_TEST_SYNTHETIC_CLICK_CALLS__++;
+          return Reflect.apply(original, this, args);
+        }
+      });
       globalThis.__AUTO_AGREE_HANDOVER_GUARD__ = Object.freeze({
         version: ${JSON.stringify(VERSION)},
         authorize() { globalThis.__AUTO_AGREE_TEST_AUTH_CALLS__++; return false; },
@@ -91,23 +105,33 @@ await withServer(async url => {
       const count = await evaluateInExecutionContext(page, engineWorld.id, 'globalThis.__AUTO_AGREE_TEST_AUTH_CALLS__ || 0');
       return count > 0 ? count : 0;
     });
-    assert.ok(attempts >= 1, 'Engine must actually reach the rejected authorization path');
+    assert.equal(attempts, 1, 'Engine should stop at the first rejected authorization instead of arming a retry');
 
-    // Allow the old verifier/retry window to elapse. A rejected ActionAuthority attempt must
-    // not create DOM effect; any later rediscovery must remain equally fail-closed.
     await new Promise(resolve => setTimeout(resolve, 450));
-    const blocked = await page.$eval('#authorize-reject-agree', el => ({checked: el.checked, clicks: Number(el.dataset.clicks || 0)}));
-    const finalAttempts = await evaluateInExecutionContext(page, engineWorld.id, 'globalThis.__AUTO_AGREE_TEST_AUTH_CALLS__ || 0');
-    assert.deepEqual(blocked, {checked: false, clicks: 0}, 'rejected Engine authorization must result in zero DOM click effect');
-    assert.ok(finalAttempts >= 1, 'authorization rejection must have been exercised');
+    const engineBlocked = await page.$eval('#authorize-reject-agree', el => ({checked: el.checked, clicks: Number(el.dataset.clicks || 0)}));
+    const afterEngine = await evaluateInExecutionContext(page, engineWorld.id, `({
+      auth: globalThis.__AUTO_AGREE_TEST_AUTH_CALLS__ || 0,
+      synthetic: globalThis.__AUTO_AGREE_TEST_SYNTHETIC_CLICK_CALLS__ || 0
+    })`);
+    assert.deepEqual(engineBlocked, {checked: false, clicks: 0}, 'rejected Engine authorization must have zero DOM effect');
+    assert.deepEqual(afterEngine, {auth: 1, synthetic: 0}, 'ActionAuthority must not invoke the synthetic click primitive after authorization rejection');
 
-    // The control itself remains valid and trusted browser input must not be disabled by the
-    // negative test. This distinguishes guard rejection from a broken/hidden fixture.
+    // Defense in depth: bypass Engine/ActionAuthority and issue a direct current-generation
+    // isolated-world click. Generation Lease allows the current generation, so the handover
+    // capture boundary itself must reject this agreement-like click because it carries no
+    // consumed authorization token.
+    await evaluateInExecutionContext(page, engineWorld.id, `document.querySelector('#authorize-reject-agree').click()`);
+    await new Promise(resolve => setTimeout(resolve, 100));
+    const guardBlocked = await page.$eval('#authorize-reject-agree', el => ({checked: el.checked, clicks: Number(el.dataset.clicks || 0)}));
+    const afterDirect = await evaluateInExecutionContext(page, engineWorld.id, 'globalThis.__AUTO_AGREE_TEST_SYNTHETIC_CLICK_CALLS__ || 0');
+    assert.deepEqual(guardBlocked, {checked: false, clicks: 0}, 'Guard capture boundary must independently block direct unauthorized isolated-world clicks');
+    assert.equal(afterDirect, 1, 'the direct synthetic probe must actually reach the isolated click primitive');
+
     await page.click('#authorize-reject-agree');
     const trusted = await page.$eval('#authorize-reject-agree', el => ({checked: el.checked, clicks: Number(el.dataset.clicks || 0)}));
-    assert.deepEqual(trusted, {checked: true, clicks: 1}, 'trusted browser input must remain usable after rejected automation');
+    assert.deepEqual(trusted, {checked: true, clicks: 1}, 'trusted browser input must remain usable after both rejected automation probes');
 
-    console.log('e2e-authorize-rejection:', JSON.stringify({attempts: finalAttempts, blocked, trusted}));
+    console.log('e2e-authorize-rejection:', JSON.stringify({attempts: afterEngine.auth, engineBlocked, syntheticCalls: afterDirect, guardBlocked, trusted}));
     console.log('e2e-authorize-rejection: PASS');
   } finally {
     await browser.close();
