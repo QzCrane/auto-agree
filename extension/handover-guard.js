@@ -6,10 +6,12 @@
   if (globalThis.__AUTO_AGREE_HANDOVER_GUARD__?.version === VERSION) return;
 
   const CORE = globalThis.__AUTO_AGREE_SEMANTIC__;
-  if (!CORE || CORE.version !== VERSION || typeof CORE.assessText !== 'function') {
-    throw new Error(`Auto Agree handover semantic dependency unavailable for ${VERSION}`);
+  const DOM = globalThis.__AUTO_AGREE_DOM_CORE__;
+  if (!CORE || CORE.version !== VERSION || typeof CORE.assessText !== 'function' || !DOM || DOM.version !== VERSION) {
+    throw new Error(`Auto Agree handover dependency unavailable for ${VERSION}`);
   }
   const { normalize, joinNormalized, assessText } = CORE;
+  const { composedParent, rootQueryById } = DOM;
 
   const authorized = new WeakSet();
   const rejected = new WeakSet();
@@ -34,14 +36,6 @@
     } catch (_) {}
     runtimeRevoked = true;
     return false;
-  }
-
-  function composedParent(el) {
-    if (!(el instanceof Element)) return null;
-    if (el.assignedSlot instanceof Element) return el.assignedSlot;
-    if (el.parentElement) return el.parentElement;
-    const root = el.getRootNode?.();
-    return root instanceof ShadowRoot && root.host instanceof Element ? root.host : null;
   }
 
   function boundedText(root, maxNodes = 48, maxChars = 900) {
@@ -79,16 +73,6 @@
       el.getAttribute('data-testid'),
       el.id
     ], 360);
-  }
-
-  function rootQueryById(el, id) {
-    if (!(el instanceof Element) || !id) return null;
-    const root = el.getRootNode();
-    try {
-      if (root instanceof Document) return root.getElementById(id);
-      if (root instanceof DocumentFragment) return root.querySelector(`#${CSS.escape(id)}`);
-      return null;
-    } catch (_) { return null; }
   }
 
   function referencedText(el, maxChars = 480) {
