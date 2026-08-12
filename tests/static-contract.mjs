@@ -31,6 +31,15 @@ assert.match(lease,/version === VERSION/,'generation lease must fail closed on v
 assert.equal(/addEventListener\s*\(/.test(lease),false,'generation lease must not add global event listeners');
 
 const worker=fs.readFileSync(path.join(root,'worker.js'),'utf8');
+const schedulerCore=fs.readFileSync(path.join(root,'scheduler-core.js'),'utf8');
+assert.match(worker,/importScripts\('scheduler-core\.js'\)/,'real Worker must load SchedulerCore before scheduling');
+assert.match(worker,/const SCHEDULER = globalThis\.__AUTO_AGREE_SCHEDULER_CORE__/,'Worker must consume one scheduler policy authority');
+assert.match(worker,/SCHEDULER\.pickNextIndex\(/,'Worker next selection must delegate to SchedulerCore');
+assert.match(worker,/SCHEDULER\.pickPreemptionIndex\(/,'Worker preemption selection must delegate to SchedulerCore');
+assert.match(worker,/SCHEDULER\.isStale\(/,'Worker stale semantics must delegate to SchedulerCore');
+assert.equal(/const INJECTION_MAX_GLOBAL = 4|const INJECTION_MAX_PER_TAB = 2|const INJECTION_QUEUE_MAX = 64|const INJECTION_AGING_MS = 1200|const INJECTION_STALE_MS = 15000/.test(worker),false,'Worker must not retain a second numeric scheduler policy');
+assert.match(schedulerCore,/maxGlobal:\s*4/);assert.match(schedulerCore,/maxPerTab:\s*2/);assert.match(schedulerCore,/queueMax:\s*64/);assert.match(schedulerCore,/agingMs:\s*1200/);assert.match(schedulerCore,/staleMs:\s*15000/);
+assert.equal(/\bchrome\b|\bdocument\b|\bElement\b|\bNode\b/.test(schedulerCore),false,'SchedulerCore must remain browser-independent');
 assert.match(worker,/semantic-core\.js/);assert.match(worker,/chrome\.runtime\.getManifest\(\)\.version/,'Worker generation authority must come from Chrome manifest');assert.match(worker,/documentLifecycle/);assert.match(worker,/INJECTION_AGING_MS/);assert.match(worker,/INJECTION_STALE_MS/);assert.match(worker,/onInstalled/);assert.match(worker,/allFrames:\s*true/);
 assert.match(worker,/profileOriginForSender/);
 assert.match(worker,/PROFILE_ORIGIN_MAX\s*=\s*256/,'persistent site-learning origins must remain bounded');

@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import vm from 'node:vm';
 import assert from 'node:assert/strict';
-const source=fs.readFileSync('extension/worker.js','utf8');
+const source=fs.readFileSync('extension/scheduler-core.js','utf8')+'\n'+fs.readFileSync('extension/worker.js','utf8');
 const CURRENT_VERSION=JSON.parse(fs.readFileSync('extension/manifest.json','utf8')).version;
 
 function makeHarness(){

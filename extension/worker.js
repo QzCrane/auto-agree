@@ -10,11 +10,16 @@ const PROFILE_CACHE_MAX = 32;
 const PROFILE_ORIGIN_MAX = 256;
 const PROFILE_FLOW_MAX = 8;
 const PROFILE_TTL_MS = 180 * 24 * 60 * 60 * 1000;
-const INJECTION_MAX_GLOBAL = 4;
-const INJECTION_MAX_PER_TAB = 2;
-const INJECTION_QUEUE_MAX = 64;
-const INJECTION_AGING_MS = 1200;
-const INJECTION_STALE_MS = 15000;
+if (!globalThis.__AUTO_AGREE_SCHEDULER_CORE__ && typeof importScripts === 'function') importScripts('scheduler-core.js');
+const SCHEDULER = globalThis.__AUTO_AGREE_SCHEDULER_CORE__;
+if (!SCHEDULER) throw new Error('scheduler-core-missing');
+const {
+  maxGlobal: INJECTION_MAX_GLOBAL,
+  maxPerTab: INJECTION_MAX_PER_TAB,
+  queueMax: INJECTION_QUEUE_MAX,
+  agingMs: INJECTION_AGING_MS,
+  staleMs: INJECTION_STALE_MS
+} = SCHEDULER.CONFIG;
 const REHYDRATE_KEY = '__auto_agree_update_rehydrate__';
 const injectionQueue = [];
 const injectionActiveByTab = new Map();
@@ -242,15 +247,13 @@ function putProfile(origin, profile) {
 }
 
 function effectivePriority(job, now = Date.now()) {
-  const age = Math.max(0, now - job.queuedAt);
-  const boost = Math.min(3, Math.floor(age / INJECTION_AGING_MS));
-  return job.priority + boost;
+  return SCHEDULER.effectivePriority(job, now);
 }
 
 function pruneStaleInjectionJobs(now = Date.now()) {
   for (let i = injectionQueue.length - 1; i >= 0; i--) {
     const job = injectionQueue[i];
-    if (now - job.queuedAt <= INJECTION_STALE_MS) continue;
+    if (!SCHEDULER.isStale(job, now)) continue;
     injectionQueue.splice(i, 1);
     try { job.reject(new Error('injection-stale')); } catch (_) {}
   }
@@ -258,22 +261,7 @@ function pruneStaleInjectionJobs(now = Date.now()) {
 
 function pickNextInjectionIndex(now = Date.now()) {
   pruneStaleInjectionJobs(now);
-  let best = -1;
-  let bestScore = -Infinity;
-  for (let i = 0; i < injectionQueue.length; i++) {
-    const job = injectionQueue[i];
-    const tabId = job.target.tabId;
-    if ((injectionActiveByTab.get(tabId) || 0) >= INJECTION_MAX_PER_TAB) continue;
-    const score = effectivePriority(job, now);
-    if (score > bestScore) { best = i; bestScore = score; continue; }
-    if (score < bestScore || best < 0) continue;
-    const prior = injectionQueue[best];
-    const jobRotates = tabId !== lastScheduledTab;
-    const priorRotates = prior.target.tabId !== lastScheduledTab;
-    if (jobRotates !== priorRotates) { if (jobRotates) best = i; continue; }
-    if (job.queuedAt < prior.queuedAt || (job.queuedAt === prior.queuedAt && job.seq < prior.seq)) best = i;
-  }
-  return best;
+  return SCHEDULER.pickNextIndex(injectionQueue, injectionActiveByTab, lastScheduledTab, now);
 }
 
 function finishInjection(job) {
@@ -303,16 +291,7 @@ function makeQueueRoom(priority, now = Date.now()) {
   pruneStaleInjectionJobs(now);
   if (injectionQueue.length < INJECTION_QUEUE_MAX) return true;
   if (priority <= 1) return false;
-  let victim = -1;
-  for (let i = 0; i < injectionQueue.length; i++) {
-    const job = injectionQueue[i];
-    if (job.priority >= priority) continue;
-    if (victim < 0) { victim = i; continue; }
-    const current = injectionQueue[victim];
-    const jobScore = effectivePriority(job, now);
-    const currentScore = effectivePriority(current, now);
-    if (jobScore < currentScore || (jobScore === currentScore && job.queuedAt > current.queuedAt)) victim = i;
-  }
+  const victim = SCHEDULER.pickPreemptionIndex(injectionQueue, priority, now);
   if (victim < 0) return false;
   const [dropped] = injectionQueue.splice(victim, 1);
   try { dropped.reject(new Error('injection-preempted')); } catch (_) {}

@@ -23,7 +23,7 @@ const chrome={
   scripting:{async executeScript(spec){calls.push(spec);return[];}},
   storage:{local:storageArea(local),session:storageArea(session)}
 };
-vm.runInNewContext(fs.readFileSync('extension/worker.js','utf8'),{chrome,console,Promise,Map,Set,Date,Error,Number,String,Array,Object,JSON,Math,URL,setTimeout,clearTimeout});
+vm.runInNewContext(fs.readFileSync('extension/scheduler-core.js','utf8')+'\n'+fs.readFileSync('extension/worker.js','utf8'),{chrome,console,Promise,Map,Set,Date,Error,Number,String,Array,Object,JSON,Math,URL,setTimeout,clearTimeout});
 assert.equal(typeof listener,'function');
 assert.equal(typeof installedListener,'function');
 
