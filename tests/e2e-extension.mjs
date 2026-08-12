@@ -10,6 +10,7 @@ const ROOT=path.resolve('.');
 const EXTENSION=path.join(ROOT,'extension');
 const FIXTURES=path.join(ROOT,'tests','fixtures','regressions');
 const PROFILE=process.argv.includes('--profile');
+const CURRENT_VERSION=JSON.parse(fs.readFileSync(path.join(EXTENSION,'manifest.json'),'utf8')).version;
 const HEADED=process.env.AUTO_AGREE_HEADED==='1';
 
 function fixture(name){return fs.readFileSync(path.join(FIXTURES,name),'utf8');}
@@ -143,7 +144,7 @@ async function basicMatrix(base,browser){
   await gotoActive(page,`${base}/causal-propagation.html`);
   await poll(async()=>{
     const worlds=await extensionWorldSentinels(page);
-    return worlds.some(world=>world.handover==='10.0.0'&&world.engine==='10.0.0');
+    return worlds.some(world=>world.handover===CURRENT_VERSION&&world.engine===CURRENT_VERSION);
   },3000,60);
   await page.click('#sync-visual');
   await new Promise(resolve=>setTimeout(resolve,100));
@@ -165,7 +166,7 @@ async function structuralFuzzMatrix(base,browser){
   await waitChecked(page,'#seed-agree',4000);
   await poll(async()=>{
     const worlds=await extensionWorldSentinels(page);
-    return worlds.some(world=>world.engine==='10.0.0');
+    return worlds.some(world=>world.engine===CURRENT_VERSION);
   },4000,60);
   await page.evaluate(()=>window.startStructuralFuzz());
   await page.waitForFunction(()=>window.structuralFuzzReady===true,{timeout:5000});
@@ -239,7 +240,7 @@ async function profileMatrix(base,browser){
 await withServer(async base=>{
   const browser=await launch(EXTENSION);
   try{
-    const ext=await autoAgreeExtension(browser); assert.equal(ext.version,'10.0.0');
+    const ext=await autoAgreeExtension(browser); assert.equal(ext.version,CURRENT_VERSION);
     await basicMatrix(base,browser); console.log('e2e-basic: PASS');
     await structuralFuzzMatrix(base,browser);
     await workerTerminationMatrix(base,browser,ext.id); console.log('e2e-worker-termination: PASS');

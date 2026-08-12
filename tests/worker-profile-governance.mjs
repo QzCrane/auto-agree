@@ -3,6 +3,7 @@ import vm from 'node:vm';
 import assert from 'node:assert/strict';
 
 const source=fs.readFileSync('extension/worker.js','utf8');
+const CURRENT_VERSION=JSON.parse(fs.readFileSync('extension/manifest.json','utf8')).version;
 
 function harness({failLocalSet=false}={}){
   const local=new Map(),session=new Map();
@@ -33,7 +34,7 @@ function flow(i,{fingerprint=`/login|flow-${i}`,selector=`#agree-${i}`,ts=Date.n
     successes:1,failures:0,ts
   };
 }
-function profile(...flows){return{version:'10.0.0',flows};}
+function profile(...flows){return{version:CURRENT_VERSION,flows};}
 function json(value){return JSON.parse(JSON.stringify(value));}
 
 // Serialized concurrent writes preserve the newest eight independent flows for one origin.
