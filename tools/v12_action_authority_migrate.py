@@ -1,4 +1,5 @@
 from pathlib import Path
+import re
 
 
 def replace_exact(path, old, new, count=1):
@@ -53,8 +54,7 @@ replace_exact(
 )
 
 # Strong static contract: only one Engine function may call guard.authorize or target.click.
-p=Path('tests/static-action-authority.mjs')
-p.write_text(r'''import fs from 'node:fs';
+Path('tests/static-action-authority.mjs').write_text(r'''import fs from 'node:fs';
 import assert from 'node:assert/strict';
 
 const engine=fs.readFileSync('extension/engine.js','utf8');
@@ -81,10 +81,12 @@ assert.match(lease,/HTMLElement\.prototype/,'generation lease remains the lower-
 console.log('static-action-authority: PASS');
 ''')
 
+# The old package.json hand-maintained chain silently dropped classless-decision in an unrelated
+# merge. Deterministic gates are now discovered by tests/run-core.mjs, so adding a test file is
+# sufficient to make it part of CI and no future package-line merge can forget one.
 pkg=Path('package.json'); text=pkg.read_text()
-old='node tests/classless-decision.mjs && node tests/scheduler-core.mjs'
-new='node tests/classless-decision.mjs && node tests/static-action-authority.mjs && node tests/scheduler-core.mjs'
-if text.count(old)!=1: raise SystemExit('package authority gate anchor changed')
-pkg.write_text(text.replace(old,new))
+text, count = re.subn(r'"check":\s*"[^"]+"', '"check": "node tests/run-core.mjs && npm run typecheck"', text, count=1)
+if count != 1: raise SystemExit('package check script replacement failed')
+pkg.write_text(text)
 
 print('v12 action authority migration prepared successfully')
