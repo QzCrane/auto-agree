@@ -23,14 +23,19 @@ replace_exact(
 """,
 )
 
-# Direct guards use the single lifecycle authority.
+# Direct guards use the single lifecycle authority. The gateRequested+paused guard exists in both
+# requestGate() and startObserver(), so the exact migration intentionally replaces both.
+replace_exact(
+    'extension/bootstrap.js',
+    'if (gateRequested || paused) return;',
+    'if (gateRequested || lifecycle.paused) return;',
+    2,
+)
 for old, new in [
-    ('if (gateRequested || paused) return;', 'if (gateRequested || lifecycle.paused) return;'),
     ('if (paused || !root) return false;', 'if (lifecycle.paused || !root) return false;'),
     ('if (gateRequested || paused || !root || queued.has(root) || !rootConnected(root)) return;', 'if (gateRequested || lifecycle.paused || !root || queued.has(root) || !rootConnected(root)) return;'),
     ('if (gateRequested || paused || eventShadow(event)) return;', 'if (gateRequested || lifecycle.paused || eventShadow(event)) return;'),
     ('if (paused || gateRequested) return;', 'if (lifecycle.paused || gateRequested) return;'),
-    ('if (gateRequested || paused) return;', 'if (gateRequested || lifecycle.paused) return;'),
 ]:
     replace_exact('extension/bootstrap.js', old, new)
 
