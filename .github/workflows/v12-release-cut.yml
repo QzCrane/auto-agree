@@ -1,0 +1,61 @@
+name: v12-release-cut
+
+on:
+  pull_request:
+    types: [opened, reopened, synchronize]
+
+permissions:
+  contents: write
+
+jobs:
+  cut:
+    if: >-
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      github.event.pull_request.head.ref == 'migration/v12-release-cut' &&
+      github.event.pull_request.base.ref == 'main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+      - name: Verify exact release transaction
+        env:
+          EXPECTED_BASE: 51ff072ab2cd5e0694815791060a5910edbc28c7
+          EVENT_BASE: ${{ github.event.pull_request.base.sha }}
+          EVENT_HEAD: ${{ github.event.pull_request.head.sha }}
+        run: |
+          test "$EVENT_BASE" = "$EXPECTED_BASE"
+          test "$(git rev-parse HEAD)" = "$EVENT_HEAD"
+          test "$(git merge-base HEAD origin/main)" = "$EXPECTED_BASE"
+          test "$(git show "$EXPECTED_BASE":extension/manifest.json | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>{process.stdout.write(JSON.parse(s).version)})")" = "11.0.0"
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '24'
+          cache: npm
+      - name: Install locked development dependencies
+        env:
+          PUPPETEER_SKIP_DOWNLOAD: 'true'
+        run: npm ci --ignore-scripts
+      - name: Apply exact v12 generation cut
+        run: node tools/v12_release_cut.mjs
+      - name: Verify product candidate
+        run: |
+          npm test
+          python tools/package_extension.py --check
+          git diff --check
+          test "$(node -p "require('./extension/manifest.json').version")" = "12.0.0"
+          test "$(node -p "require('./package.json').version")" = "12.0.0"
+          test "$(node -p "require('./package-lock.json').version")" = "12.0.0"
+          test "$(node -p "require('./package-lock.json').packages[''].version")" = "12.0.0"
+          test "$(git diff --name-only | sort | tr '\n' ' ')" = "extension/manifest.json extension/runtime-kernel.js package-lock.json package.json "
+      - name: Remove migration transport and commit product-only result
+        run: |
+          rm .github/workflows/v12-release-cut.yml tools/v12_release_cut.mjs
+          git add -A
+          test "$(git diff --cached --name-only | sort | tr '\n' ' ')" = "extension/manifest.json extension/runtime-kernel.js package-lock.json package.json "
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -m "release: cut 12.0.0 generation"
+          git push origin HEAD:migration/v12-release-cut
