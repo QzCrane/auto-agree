@@ -1,0 +1,146 @@
+{
+  "schemaVersion": 1,
+  "records": [
+    {
+      "version": "2.0.0",
+      "benchmarkId": "mutation-30000-tail-v3-historical-v2-comparison",
+      "evidenceClass": "synthetic-in-page-retrospective",
+      "source": "docs/verification/v3.md",
+      "metrics": { "observerMedianMs": 23.2, "agreementMedianMs": 142.3 }
+    },
+    {
+      "version": "3.0.0",
+      "benchmarkId": "mutation-30000-tail-v3",
+      "evidenceClass": "synthetic-in-page",
+      "source": "docs/verification/v3.md",
+      "environment": { "chromium": "144.0.7559.96" },
+      "repetitions": 5,
+      "metrics": { "observerMedianMs": 0.1, "observerMaxMs": 0.5, "agreementMedianMs": 5.9 }
+    },
+    {
+      "version": "3.0.0",
+      "benchmarkId": "attribute-mutation-1500-v3",
+      "evidenceClass": "synthetic-in-page",
+      "source": "docs/verification/v3.md",
+      "repetitions": 7,
+      "metrics": { "medianMs": 0.95, "maxMs": 1.3 }
+    },
+    {
+      "version": "4.0.0",
+      "benchmarkId": "direct-engine-5000-checkbox-v4",
+      "evidenceClass": "synthetic-in-page",
+      "source": "docs/verification/v4.md",
+      "metrics": { "medianMs": 123.0, "historicalV3MedianMs": 1554.3 }
+    },
+    {
+      "version": "4.0.0",
+      "benchmarkId": "production-tail-login-5000-v4",
+      "evidenceClass": "synthetic-in-page",
+      "source": "docs/verification/v4.md",
+      "repetitions": 5,
+      "metrics": { "bootstrapActivationMedianMs": 15.9, "engineToCheckedMedianMs": 22.0 }
+    },
+    {
+      "version": "5.0.0",
+      "benchmarkId": "startup-30000-v5",
+      "evidenceClass": "synthetic-in-page",
+      "source": "docs/verification/v5.md",
+      "repetitions": 9,
+      "metrics": { "medianMs": 1.1, "maxMs": 3.2, "historicalV4MedianMs": 2.1 }
+    },
+    {
+      "version": "5.0.0",
+      "benchmarkId": "pipeline-tail-login-5000-v5",
+      "evidenceClass": "synthetic-in-page",
+      "source": "docs/verification/v5.md",
+      "repetitions": 9,
+      "metrics": { "medianMs": 79.1, "maxMs": 133.3, "historicalV4MedianMs": 79.7 }
+    },
+    {
+      "version": "6.0.0",
+      "benchmarkId": "pipeline-tail-login-5000-v6",
+      "evidenceClass": "synthetic-in-page",
+      "source": "docs/verification/v6.md",
+      "repetitions": 7,
+      "metrics": { "medianMs": 71.3, "maxMs": 85.7, "historicalV5MedianMs": 75.4 }
+    },
+    {
+      "version": "6.0.0",
+      "benchmarkId": "semantic-attribute-1500-visible-hidden-v6",
+      "evidenceClass": "synthetic-in-page",
+      "source": "docs/verification/v6.md",
+      "repetitions": 9,
+      "metrics": { "visibleMedianMs": 53.4, "hiddenMedianMs": 2.7, "historicalV5VisibleMedianMs": 52.4 }
+    },
+    {
+      "version": "6.0.0",
+      "benchmarkId": "pathological-aria-2mb-gate-v6",
+      "evidenceClass": "synthetic-in-page",
+      "source": "docs/verification/v6.md",
+      "metrics": { "gateStartMedianMs": 7.7, "historicalV5MedianMs": 49.0 }
+    },
+    {
+      "version": "7.0.0",
+      "benchmarkId": "cold-chain-5000-v7",
+      "evidenceClass": "synthetic-in-page",
+      "source": "docs/verification/v7.md",
+      "repetitions": 5,
+      "metrics": { "medianMs": 89.4, "historicalV6MedianMs": 86.6 }
+    },
+    {
+      "version": "7.0.0",
+      "benchmarkId": "same-frame-attribute-mutation-1500-v7",
+      "evidenceClass": "synthetic-in-page",
+      "source": "docs/verification/v7.md",
+      "repetitions": 7,
+      "metrics": { "medianMs": 30.1, "maxMs": 31.5, "historicalV6MedianMs": 38.7 }
+    },
+    {
+      "version": "8.0.0",
+      "benchmarkId": "real-unpacked-tail-login-5000-v1",
+      "harnessRevision": "v8-real-unpacked",
+      "evidenceClass": "real-unpacked-extension",
+      "source": "docs/verification/v8.md",
+      "environment": { "chrome": "149.0.7827.22", "puppeteer": "25.1.0", "nodeMajor": 24 },
+      "metrics": { "latencyMs": 286.1, "taskDurationS": 0.2662, "cpuSamples": 244, "preOptimizationLatencyMs": 330.9, "preOptimizationTaskDurationS": 0.3056, "preOptimizationCpuSamples": 306 }
+    },
+    {
+      "version": "9.0.0",
+      "benchmarkId": "real-unpacked-tail-login-5000-v1",
+      "harnessRevision": "v9-real-unpacked",
+      "evidenceClass": "real-unpacked-extension",
+      "source": "docs/verification/v9.md",
+      "environment": { "chrome": "149.0.7827.22", "puppeteer": "25.1.0", "nodeMajor": 24 },
+      "metrics": { "latencyMs": 190.9, "taskDurationS": 0.1319, "cpuSamples": 116 }
+    },
+    {
+      "version": "10.0.0",
+      "benchmarkId": "real-unpacked-tail-login-5000-v1",
+      "harnessRevision": "v10-real-unpacked",
+      "evidenceClass": "real-unpacked-extension",
+      "source": "docs/verification/v10.md",
+      "environment": { "chrome": "149.0.7827.22", "puppeteer": "25.1.0", "nodeMajor": 24 },
+      "metrics": { "latencyMs": 206.1, "taskDurationS": 0.2003, "cpuSamples": 169 }
+    },
+    {
+      "version": "11.0.0",
+      "commit": "38a51cb8b13ba554937f54c1c9e25bfc498075f4",
+      "benchmarkId": "real-unpacked-tail-login-5000-v1",
+      "harnessRevision": "v11-release-head",
+      "evidenceClass": "real-unpacked-extension-release",
+      "source": "docs/verification/v11.md + PR #26",
+      "environment": { "chrome": "149.0.7827.22", "puppeteer": "25.1.0", "nodeMajor": 24 },
+      "metrics": { "latencyMs": 183.7, "taskDurationS": 0.1794, "cpuSamples": 156 }
+    },
+    {
+      "version": "11.0.0",
+      "commit": "355f865a68a54e0de416feddcc454fa21d9939e8",
+      "benchmarkId": "real-unpacked-tail-login-5000-v1",
+      "harnessRevision": "v11-main-push",
+      "evidenceClass": "real-unpacked-extension-main",
+      "source": "GitHub Actions run 31587651834",
+      "environment": { "chrome": "149.0.7827.22", "puppeteer": "25.1.0", "nodeMajor": 24 },
+      "metrics": { "latencyMs": 212.9, "taskDurationS": 0.2076, "cpuSamples": 176 }
+    }
+  ]
+}
