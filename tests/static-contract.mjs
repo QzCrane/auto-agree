@@ -14,7 +14,7 @@ assert.equal(manifest.content_scripts[0].all_frames,true);
 assert.equal(manifest.content_scripts[0].match_about_blank,true);
 assert.equal(manifest.content_scripts[0].match_origin_as_fallback,true);
 
-const files=['runtime-kernel.js','generation-lease.js','bootstrap.js','handover-guard.js','semantic-core.js','decision-core.js','risk-core.js','gate.js','engine.js','worker.js'];
+const files=fs.readdirSync(root).filter(name=>name.endsWith('.js')).sort();
 const source=files.map(f=>fs.readFileSync(path.join(root,f),'utf8')).join('\n');
 const runtimeKernel=fs.readFileSync(path.join(root,'runtime-kernel.js'),'utf8');
 assert.match(runtimeKernel,/createBoundedFifo/,'runtime kernel must own bounded FIFO admission');
@@ -40,16 +40,28 @@ assert.match(worker,/SCHEDULER\.isStale\(/,'Worker stale semantics must delegate
 assert.equal(/const INJECTION_MAX_GLOBAL = 4|const INJECTION_MAX_PER_TAB = 2|const INJECTION_QUEUE_MAX = 64|const INJECTION_AGING_MS = 1200|const INJECTION_STALE_MS = 15000/.test(worker),false,'Worker must not retain a second numeric scheduler policy');
 assert.match(schedulerCore,/maxGlobal:\s*4/);assert.match(schedulerCore,/maxPerTab:\s*2/);assert.match(schedulerCore,/queueMax:\s*64/);assert.match(schedulerCore,/agingMs:\s*1200/);assert.match(schedulerCore,/staleMs:\s*15000/);
 assert.equal(/\bchrome\b|\bdocument\b|\bElement\b|\bNode\b/.test(schedulerCore),false,'SchedulerCore must remain browser-independent');
+
+const profileCore=fs.readFileSync(path.join(root,'profile-core.js'),'utf8');
+assert.match(worker,/importScripts\('profile-core\.js'\)/,'real Worker must load ProfileCore before profile storage operations');
+assert.match(worker,/const PROFILE = globalThis\.__AUTO_AGREE_PROFILE_CORE__/,'Worker must consume one profile governance authority');
+assert.match(worker,/PROFILE\.sanitizeProfile\(/,'stored profile data must cross the shared schema boundary');
+assert.match(worker,/PROFILE\.mergeProfiles\(/,'profile merge semantics must delegate to ProfileCore');
+assert.match(worker,/PROFILE\.flowIdentity\(/,'flow invalidation identity must delegate to ProfileCore');
+assert.match(worker,/PROFILE\.compactOriginIndex\(/,'persistent-origin bounding must delegate to ProfileCore');
+assert.equal(/function\s+(?:sanitizeLocator|locatorKey|sanitizeDescriptor|sanitizeProfile|mergeProfiles)\s*\(/.test(worker),false,'Worker must not retain a second profile schema/merge implementation');
+assert.match(profileCore,/hotCacheMax:\s*32/,'worker hot LRU bound must have one profile-governance owner');
+assert.match(profileCore,/maxOrigins:\s*256/,'persistent site-learning origin cap must have one profile-governance owner');
+assert.match(profileCore,/maxFlows:\s*8/,'per-origin flow cap must have one profile-governance owner');
+assert.match(profileCore,/ttlMs:\s*180\s*\*/,'profile TTL must remain 180 days absent new evidence');
+assert.match(profileCore,/ts > current/,'future-dated acceleration evidence must fail closed');
+assert.match(profileCore,/Number\.isFinite\(ts\)/,'profile timestamps must be finite');
+assert.equal(/\bchrome\b|\bdocument\b|\bElement\b|\bNode\b/.test(profileCore),false,'ProfileCore must remain browser-independent');
+assert.equal(/if\s*\(globalThis\.__AUTO_AGREE_PROFILE_CORE__\)\s*return/.test(profileCore),false,'stateless ProfileCore must reinstall for each isolated-world injection instead of reusing stale generation semantics');
+
 assert.match(worker,/semantic-core\.js/);assert.match(worker,/chrome\.runtime\.getManifest\(\)\.version/,'Worker generation authority must come from Chrome manifest');assert.match(worker,/documentLifecycle/);assert.match(worker,/INJECTION_AGING_MS/);assert.match(worker,/INJECTION_STALE_MS/);assert.match(worker,/onInstalled/);assert.match(worker,/allFrames:\s*true/);
 assert.match(worker,/profileOriginForSender/);
-assert.match(worker,/PROFILE_ORIGIN_MAX\s*=\s*256/,'persistent site-learning origins must remain bounded');
-assert.match(worker,/PROFILE_FLOW_MAX\s*=\s*8/,'each origin must retain at most eight verified flows');
-assert.match(worker,/PROFILE_TTL_MS\s*=\s*180\s*\*/,'verified profile TTL must remain 180 days absent new evidence');
-assert.match(worker,/PROFILE_CACHE_MAX\s*=\s*32/,'worker hot LRU must remain bounded independently of persistent origin cap');
 assert.match(worker,/PROFILE_INDEX_KEY/);assert.match(worker,/LEGACY_PROFILE_INDEX_KEYS/,'legacy profile index migration must remain supported');
 assert.match(worker,/chrome\.storage\.session/,'session hot profile layer must remain present');
-assert.match(worker,/locatorKey/,'flow identity must include its exact DOM\/Shadow locator');
-assert.match(worker,/\$\{fingerprint\}\|\$\{locatorKey\(locator\)\}/,'profile merge identity must be fingerprint + locator');
 assert.match(worker,/storageWriteChain = storageWriteChain\.then\(task, task\)/,'profile writes must serialize without swallowing the current operation error');
 assert.match(worker,/protectAndRehydrateTab/,'update rehydration must separate protection from Probe recovery');
 assert.match(worker,/\['runtime-kernel\.js', 'generation-lease\.js', 'semantic-core\.js', 'handover-guard\.js'\]/,'protection phase must install the cooperative generation lease and shared semantics before handover guard');
@@ -57,7 +69,7 @@ assert.match(worker,/await scheduleInjection\(target, \['bootstrap\.js'\], 3\)/,
 assert.equal(/\['handover-guard\.js', 'bootstrap\.js'\]/.test(worker),false,'guard and bootstrap must never share the update injection phase');
 assert.equal(/\bmessage\.origin\b/.test(worker),false,'profile storage identity must come from MessageSender, not message.origin');
 assert.match(worker,/\['runtime-kernel\.js', 'generation-lease\.js', 'semantic-core\.js', 'gate\.js'\]/,'every dynamically injected Gate world must carry the cooperative generation lease');
-assert.match(worker,/\['runtime-kernel\.js', 'generation-lease\.js', 'semantic-core\.js', 'handover-guard\.js', 'decision-core\.js', 'risk-core\.js', 'engine\.js'\]/,'every Engine-capable world must carry both cooperative lease and handover guard');
+assert.match(worker,/\['runtime-kernel\.js', 'generation-lease\.js', 'semantic-core\.js', 'handover-guard\.js', 'decision-core\.js', 'profile-core\.js', 'risk-core\.js', 'engine\.js'\]/,'every Engine-capable world must carry lease, policy, fresh ProfileCore and handover guard');
 
 const guard=fs.readFileSync(path.join(root,'handover-guard.js'),'utf8');
 assert.match(guard,/__AUTO_AGREE_SEMANTIC__/,'handover guard must consume the shared semantic core');
@@ -108,7 +120,13 @@ assert.match(gate,/__AUTO_AGREE_SEMANTIC__/);
 assert.ok(gate.indexOf('if (!CORE || CORE.version !== VERSION) return;') < gate.indexOf('globalThis.__AUTO_AGREE_GATE__ = VERSION;'),'Gate sentinel must be assigned only after dependencies are valid');
 const engine=fs.readFileSync(path.join(root,'engine.js'),'utf8');
 assert.match(engine,/authorizeHandoverClick/);assert.match(engine,/__AUTO_AGREE_DECISION__/,'Engine must consume the pure decision authority');assert.match(engine,/evidenceForCandidate/,'Engine must map browser snapshots into EvidenceIR before policy');assert.equal(/function\s+buildSemanticGraph\s*\(/.test(engine),false,'Engine must not retain a private policy graph implementation');
-assert.ok(engine.indexOf('if (!CORE || CORE.version !== VERSION || !RISK || RISK.version !== VERSION) return;') < engine.indexOf('globalThis.__AUTO_AGREE_ENGINE__ = VERSION;'),'Engine sentinel must be assigned only after dependencies are valid');
+assert.match(engine,/const PROFILE = globalThis\.__AUTO_AGREE_PROFILE_CORE__/,'Engine must consume the shared profile schema authority');
+assert.match(engine,/PROFILE\.sanitizeDescriptor\(/,'Engine profile descriptors must cross the shared schema boundary');
+assert.match(engine,/PROFILE\.descriptorCompatible\([^,]+,[^,]+,\s*SEVERITY\.OPTIONAL\)/,'cached evidence compatibility must use ProfileCore with DecisionKernel severity authority');
+assert.equal(/function\s+descriptorCompatible\s*\(/.test(engine),false,'Engine must not retain a second cache-compatibility policy');
+assert.equal(/const\s+CACHE_TTL_MS\s*=\s*180|const\s+PROFILE_MAX_FLOWS\s*=\s*8/.test(engine),false,'Engine must not retain duplicate persisted-profile bounds');
+const engineDeps = 'if (!CORE || CORE.version !== VERSION || !POLICY || POLICY.version !== VERSION || !PROFILE || !RISK || RISK.version !== VERSION) return;';
+assert.ok(engine.includes(engineDeps) && engine.indexOf(engineDeps) < engine.indexOf('globalThis.__AUTO_AGREE_ENGINE__ = VERSION;'),'Engine sentinel must be assigned only after semantic, decision, profile and risk dependencies are valid');
 assert.match(engine,/credentialInvalid/);
 assert.match(engine,/oneShotUnknown/);
 assert.match(engine,/kind: 'mixed'/);
