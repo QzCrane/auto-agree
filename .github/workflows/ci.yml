@@ -73,6 +73,10 @@ jobs:
         env:
           AUTO_AGREE_HEADED: '1'
         run: xvfb-run -a node tests/e2e-tier-overflow.mjs
+      - name: Prove live Probe deep cursor survives TTL age
+        env:
+          AUTO_AGREE_HEADED: '1'
+        run: xvfb-run -a node tests/e2e-probe-live-ttl.mjs
       - name: Prove live Gate deep cursor survives TTL age
         env:
           AUTO_AGREE_HEADED: '1'
