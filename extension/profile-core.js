@@ -72,6 +72,20 @@
     };
   }
 
+  function descriptorCompatible(stored, live, optionalSeverity) {
+    if (!stored || typeof stored !== 'object') return true;
+    if (!live || typeof live !== 'object' || !Number.isFinite(optionalSeverity)) return false;
+    const historical = sanitizeDescriptor(stored);
+    const current = sanitizeDescriptor(live);
+    if (!historical || !current) return false;
+    if (historical.severity >= optionalSeverity) return false;
+    if (historical.kind !== 'unknown' && current.kind !== historical.kind) return false;
+    if (historical.legal && !current.legal) return false;
+    if (historical.required && !current.required && !current.assent) return false;
+    if (historical.linkBucket > current.linkBucket + 1) return false;
+    return true;
+  }
+
   function sanitizeFlow(flow, now = Date.now()) {
     if (!flow || typeof flow !== 'object') return null;
     const locator = sanitizeLocator(flow.locator);
@@ -146,7 +160,7 @@
       }
     }
     if (typeof origin === 'string' && origin && origin !== 'null') entries.set(origin, current);
-    const ordered = [...entries.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]));
+    const ordered = [...entries.entries()].sort((a, b) => b[1] - a[1]);
     const keep = ordered.slice(0, CONFIG.maxOrigins);
     const drop = ordered.slice(CONFIG.maxOrigins).map(([key]) => key);
     return { index: Object.fromEntries(keep), drop };
@@ -157,6 +171,7 @@
     sanitizeLocator,
     locatorKey,
     sanitizeDescriptor,
+    descriptorCompatible,
     sanitizeFlow,
     flowIdentity,
     sanitizeProfile,
