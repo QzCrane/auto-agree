@@ -72,6 +72,7 @@
   let walkRecoveryRef = null;
   let walkRecoveryUrgent = false;
   const shadowJobs = [];
+  let shadowRecoveryRef = null;
   const batchJobs = [];
   const walkGeneration = new WeakMap();
   const shadowGeneration = new WeakMap();
@@ -1431,23 +1432,47 @@ function enqueueRootBatch(roots, index, urgent) {
 
   function currentShadowGeneration(root) { return shadowGeneration.get(root) || 0; }
 
-  function queueShadowSweep(root) {
-    if (!broadShadowEnabled || !root || !rootConnected(root)) return;
-    shadowGeneration.set(root, currentShadowGeneration(root) + 1);
-    if (queuedShadowRoots.has(root)) return;
-    queuedShadowRoots.add(root);
-    while (shadowJobs.length >= MAX_SHADOW_JOBS) {
-      const old = shadowJobs.shift();
-      const oldRoot = old?.rootRef?.deref?.();
-      if (oldRoot) queuedShadowRoots.delete(oldRoot);
-    }
-    shadowJobs.push({
+  function makeShadowJob(root) {
+    return {
       rootRef: new WeakRef(root),
       cursorRef: null,
       started: false,
       generation: currentShadowGeneration(root),
       includeRoot: root instanceof HTMLElement
-    });
+    };
+  }
+
+  function rememberShadowRecovery(root) {
+    if (!root || !rootConnected(root)) return;
+    const current = shadowRecoveryRef?.deref?.();
+    const merged = current && rootConnected(current) ? commonWalkRecoveryRoot(current, root) : root;
+    if (!merged || !rootConnected(merged)) return;
+    shadowRecoveryRef = new WeakRef(merged);
+  }
+
+  function promoteShadowRecovery() {
+    if (shadowJobs.length || !shadowRecoveryRef) return false;
+    const root = shadowRecoveryRef.deref?.();
+    shadowRecoveryRef = null;
+    if (!root || !rootConnected(root) || queuedShadowRoots.has(root)) return false;
+    shadowGeneration.set(root, currentShadowGeneration(root) + 1);
+    queuedShadowRoots.add(root);
+    shadowJobs.push(makeShadowJob(root));
+    return true;
+  }
+
+  function queueShadowSweep(root) {
+    if (!broadShadowEnabled || !root || !rootConnected(root)) return;
+    shadowGeneration.set(root, currentShadowGeneration(root) + 1);
+    if (queuedShadowRoots.has(root)) return;
+    if (shadowJobs.length >= MAX_SHADOW_JOBS) {
+      // Existing FIFO cursors remain authoritative; compress only new excess final state.
+      rememberShadowRecovery(root);
+      scheduleBackground();
+      return;
+    }
+    queuedShadowRoots.add(root);
+    shadowJobs.push(makeShadowJob(root));
     scheduleBackground();
   }
 
@@ -1594,7 +1619,7 @@ function enqueueRootBatch(roots, index, urgent) {
   }
 
   function hasBackgroundWork() {
-    return !!(rootBatches.length || walkJobs.length || walkRecoveryRef || batchJobs.length || shadowJobs.length);
+    return !!(rootBatches.length || walkJobs.length || walkRecoveryRef || batchJobs.length || shadowJobs.length || shadowRecoveryRef);
   }
 
   async function drainBackground(generation = lifecycleGeneration) {
@@ -1603,6 +1628,7 @@ function enqueueRootBatch(roots, index, urgent) {
       let rounds = 0;
       while (!lifecyclePaused && generation === lifecycleGeneration && hasBackgroundWork() && rounds++ < 24) {
         if (!rootBatches.length && !walkJobs.length) promoteWalkRecovery();
+        if (!rootBatches.length && !walkJobs.length && !batchJobs.length && !shadowJobs.length) promoteShadowRecovery();
         if (rootBatches.length) {
           const job = rootBatches[0];
           if (!runRootBatch(job, BACKGROUND_BUDGET_MS)) rootBatches.shift();
@@ -1628,6 +1654,7 @@ function enqueueRootBatch(roots, index, urgent) {
       }
     } finally {
       if (!rootBatches.length && !walkJobs.length) promoteWalkRecovery();
+      if (!rootBatches.length && !walkJobs.length && !batchJobs.length && !shadowJobs.length) promoteShadowRecovery();
       if (backgroundEpoch === generation) backgroundQueued = false;
       if (!lifecyclePaused && generation === lifecycleGeneration && hasBackgroundWork()) scheduleBackground();
     }
@@ -1978,6 +2005,7 @@ function enqueueRootBatch(roots, index, urgent) {
     walkRecoveryRef = null;
     walkRecoveryUrgent = false;
     shadowJobs.length = 0;
+    shadowRecoveryRef = null;
     batchJobs.length = 0;
     queuedWalkRoots = new WeakSet();
     queuedShadowRoots = new WeakSet();
