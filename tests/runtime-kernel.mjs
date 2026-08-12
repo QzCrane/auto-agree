@@ -3,11 +3,12 @@ import vm from 'node:vm';
 import assert from 'node:assert/strict';
 import fc from 'fast-check';
 
+const CURRENT_VERSION = JSON.parse(fs.readFileSync('extension/manifest.json', 'utf8')).version;
 const context = vm.createContext({ console, WeakRef, performance });
 vm.runInContext(fs.readFileSync('extension/runtime-kernel.js', 'utf8'), context);
 const kernel = context.__AUTO_AGREE_RUNTIME_KERNEL__;
 assert.ok(kernel);
-assert.equal(kernel.version, '11.0.0');
+assert.equal(kernel.version, CURRENT_VERSION);
 
 {
   const lifecycle = kernel.createLifecycleState(false);
