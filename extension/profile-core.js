@@ -1,6 +1,5 @@
 (() => {
   'use strict';
-  if (globalThis.__AUTO_AGREE_PROFILE_CORE__) return;
 
   const CONFIG = Object.freeze({
     hotCacheMax: 32,
@@ -166,6 +165,9 @@
     return { index: Object.fromEntries(keep), drop };
   }
 
+  // Intentionally overwrite the global on every injection. The core is immutable and stateless;
+  // old Engine worlds keep their captured object while a newly injected Engine captures this new
+  // object. A stale singleton must never make a post-update world reuse old profile semantics.
   globalThis.__AUTO_AGREE_PROFILE_CORE__ = Object.freeze({
     CONFIG,
     sanitizeLocator,
