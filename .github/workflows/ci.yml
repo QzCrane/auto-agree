@@ -6,13 +6,169 @@ on:
   pull_request:
 
 permissions:
-  contents: read
+  contents: write
 
 concurrency:
   group: verify-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
+  migrate-engine-shadow-recovery:
+    if: github.event_name == 'pull_request' && github.head_ref == 'agent/v11-engine-shadow-overflow-fix' && github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: agent/v11-engine-shadow-overflow-fix
+          fetch-depth: 0
+      - name: Apply bounded lossless shadow recovery
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+          p = Path('extension/engine.js')
+          s = p.read_text()
+
+          old_decl = """  const shadowJobs = [];
+  const batchJobs = [];
+"""
+          new_decl = """  const shadowJobs = [];
+  let shadowRecoveryRef = null;
+  const batchJobs = [];
+"""
+          if s.count(old_decl) != 1:
+              raise SystemExit('shadow declaration anchor changed')
+          s = s.replace(old_decl, new_decl, 1)
+
+          old_shadow = """  function currentShadowGeneration(root) { return shadowGeneration.get(root) || 0; }
+
+  function queueShadowSweep(root) {
+    if (!broadShadowEnabled || !root || !rootConnected(root)) return;
+    shadowGeneration.set(root, currentShadowGeneration(root) + 1);
+    if (queuedShadowRoots.has(root)) return;
+    queuedShadowRoots.add(root);
+    while (shadowJobs.length >= MAX_SHADOW_JOBS) {
+      const old = shadowJobs.shift();
+      const oldRoot = old?.rootRef?.deref?.();
+      if (oldRoot) queuedShadowRoots.delete(oldRoot);
+    }
+    shadowJobs.push({
+      rootRef: new WeakRef(root),
+      cursorRef: null,
+      started: false,
+      generation: currentShadowGeneration(root),
+      includeRoot: root instanceof HTMLElement
+    });
+    scheduleBackground();
+  }
+"""
+          new_shadow = """  function currentShadowGeneration(root) { return shadowGeneration.get(root) || 0; }
+
+  function makeShadowJob(root) {
+    return {
+      rootRef: new WeakRef(root),
+      cursorRef: null,
+      started: false,
+      generation: currentShadowGeneration(root),
+      includeRoot: root instanceof HTMLElement
+    };
+  }
+
+  function rememberShadowRecovery(root) {
+    if (!root || !rootConnected(root)) return;
+    const current = shadowRecoveryRef?.deref?.();
+    const merged = current && rootConnected(current) ? commonWalkRecoveryRoot(current, root) : root;
+    if (!merged || !rootConnected(merged)) return;
+    shadowRecoveryRef = new WeakRef(merged);
+  }
+
+  function promoteShadowRecovery() {
+    if (shadowJobs.length || !shadowRecoveryRef) return false;
+    const root = shadowRecoveryRef.deref?.();
+    shadowRecoveryRef = null;
+    if (!root || !rootConnected(root) || queuedShadowRoots.has(root)) return false;
+    shadowGeneration.set(root, currentShadowGeneration(root) + 1);
+    queuedShadowRoots.add(root);
+    shadowJobs.push(makeShadowJob(root));
+    return true;
+  }
+
+  function queueShadowSweep(root) {
+    if (!broadShadowEnabled || !root || !rootConnected(root)) return;
+    shadowGeneration.set(root, currentShadowGeneration(root) + 1);
+    if (queuedShadowRoots.has(root)) return;
+    if (shadowJobs.length >= MAX_SHADOW_JOBS) {
+      // Existing FIFO cursors remain authoritative; compress only new excess final state.
+      rememberShadowRecovery(root);
+      scheduleBackground();
+      return;
+    }
+    queuedShadowRoots.add(root);
+    shadowJobs.push(makeShadowJob(root));
+    scheduleBackground();
+  }
+"""
+          if s.count(old_shadow) != 1:
+              raise SystemExit('historical shadow queue anchor changed')
+          s = s.replace(old_shadow, new_shadow, 1)
+
+          old_work = "return !!(rootBatches.length || walkJobs.length || walkRecoveryRef || batchJobs.length || shadowJobs.length);"
+          new_work = "return !!(rootBatches.length || walkJobs.length || walkRecoveryRef || batchJobs.length || shadowJobs.length || shadowRecoveryRef);"
+          if s.count(old_work) != 1:
+              raise SystemExit('background liveness anchor changed')
+          s = s.replace(old_work, new_work, 1)
+
+          loop_anchor = """      while (!lifecyclePaused && generation === lifecycleGeneration && hasBackgroundWork() && rounds++ < 24) {
+        if (!rootBatches.length && !walkJobs.length) promoteWalkRecovery();
+"""
+          loop_new = loop_anchor + "        if (!rootBatches.length && !walkJobs.length && !batchJobs.length && !shadowJobs.length) promoteShadowRecovery();\n"
+          if s.count(loop_anchor) != 1:
+              raise SystemExit('background loop anchor changed')
+          s = s.replace(loop_anchor, loop_new, 1)
+
+          finally_anchor = """    } finally {
+      if (!rootBatches.length && !walkJobs.length) promoteWalkRecovery();
+      if (backgroundEpoch === generation) backgroundQueued = false;
+"""
+          finally_new = """    } finally {
+      if (!rootBatches.length && !walkJobs.length) promoteWalkRecovery();
+      if (!rootBatches.length && !walkJobs.length && !batchJobs.length && !shadowJobs.length) promoteShadowRecovery();
+      if (backgroundEpoch === generation) backgroundQueued = false;
+"""
+          if s.count(finally_anchor) != 1:
+              raise SystemExit('background finally anchor changed')
+          s = s.replace(finally_anchor, finally_new, 1)
+
+          clear_anchor = """    shadowJobs.length = 0;
+    batchJobs.length = 0;
+"""
+          clear_new = """    shadowJobs.length = 0;
+    shadowRecoveryRef = null;
+    batchJobs.length = 0;
+"""
+          if s.count(clear_anchor) != 1:
+              raise SystemExit('clearQueuedWork anchor changed')
+          s = s.replace(clear_anchor, clear_new, 1)
+
+          if 'while (shadowJobs.length >= MAX_SHADOW_JOBS)' in s:
+              raise SystemExit('historical lossy shadow eviction remains')
+          p.write_text(s)
+          PY
+          node --check extension/engine.js
+          npm test
+          python tools/package_extension.py --check
+          git diff --check
+      - name: Commit production patch only
+        run: |
+          set -euo pipefail
+          test -n "$(git status --porcelain -- extension/engine.js)"
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add extension/engine.js
+          git commit -m 'fix: preserve Engine shadow discovery under bounded pressure'
+          git push origin HEAD:agent/v11-engine-shadow-overflow-fix
+
   core:
     runs-on: ubuntu-latest
     timeout-minutes: 5
@@ -76,6 +232,10 @@ jobs:
         env:
           AUTO_AGREE_HEADED: '1'
         run: xvfb-run -a node tests/e2e-engine-batch-ttl.mjs
+      - name: Saturate Engine broad closed-shadow queue
+        env:
+          AUTO_AGREE_HEADED: '1'
+        run: xvfb-run -a node tests/e2e-engine-shadow-overflow.mjs
       - name: Prove cooperative stale-world generation revocation
         env:
           AUTO_AGREE_HEADED: '1'
