@@ -1,0 +1,91 @@
+name: post-release-cleanup
+
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  cleanup:
+    if: github.event.pull_request.head.ref == 'ops/v11-post-release-cleanup'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      EXPECTED_MAIN: 355f865a68a54e0de416feddcc454fa21d9939e8
+      SELF_BRANCH: ops/v11-post-release-cleanup
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: main
+          fetch-depth: 0
+      - name: Verify release main before destructive cleanup
+        run: |
+          set -euo pipefail
+          actual="$(git ls-remote origin refs/heads/main | awk '{print $1}')"
+          echo "main=$actual"
+          test "$actual" = "$EXPECTED_MAIN"
+      - name: Delete converged development and release branches
+        run: |
+          set -euo pipefail
+          branches=(
+            agent/v9-invariant-hardening
+            agent/v10-handover-convergence
+            agent/v10-proactive-generation-revocation
+            agent/v11-authorize-rejection-discriminator
+            agent/v11-engine-batch-ttl
+            agent/v11-engine-batch-ttl-fix
+            agent/v11-engine-rootbatch-ttl
+            agent/v11-engine-rootbatch-ttl-fix
+            agent/v11-engine-shadow-artifact
+            agent/v11-engine-shadow-overflow
+            agent/v11-engine-shadow-overflow-fix
+            agent/v11-engine-walk-saturation
+            agent/v11-engine-walk-saturation-v2
+            agent/v11-event-scoped-causal-authority
+            agent/v11-gate-deep-diagnostic
+            agent/v11-gate-deep-stability
+            agent/v11-lossless-discovery
+            agent/v11-lossless-discovery-red
+            agent/v11-lossless-discovery-red-pr
+            agent/v11-lossless-discovery-work
+            agent/v11-multilingual-risk-parity
+            agent/v11-shadow-artifact-clean
+            agent/v11-structural-fuzz-recovery
+            agent/v11-tier-overflow
+            agent/v11-tier-overflow-fix
+            release/v11.0.0
+          )
+          for branch in "${branches[@]}"; do
+            case "$branch" in main|master) echo "refusing default branch" >&2; exit 1;; esac
+            if git ls-remote --exit-code --heads origin "refs/heads/$branch" >/dev/null 2>&1; then
+              echo "deleting $branch"
+              git push origin --delete "$branch"
+            else
+              echo "already absent: $branch"
+            fi
+          done
+
+          mapfile -t remaining < <(git ls-remote --heads origin | sed 's#.*refs/heads/##' | sort)
+          printf 'remaining-before-self-delete: %s\n' "${remaining[*]}"
+          test "${#remaining[@]}" -eq 2
+          test "${remaining[0]}" = main
+          test "${remaining[1]}" = "$SELF_BRANCH"
+      - name: Close cleanup PR and delete cleanup branch
+        env:
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          set -euo pipefail
+          response="$(curl -fsS -X PATCH \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            -H 'Accept: application/vnd.github+json' \
+            -H 'X-GitHub-Api-Version: 2022-11-28' \
+            "https://api.github.com/repos/$GITHUB_REPOSITORY/pulls/$PR_NUMBER" \
+            -d '{"state":"closed"}')"
+          printf '%s' "$response" | python -c 'import json,sys; d=json.load(sys.stdin); assert d["state"]=="closed"; print("cleanup PR closed")'
+          git push origin --delete "$SELF_BRANCH"
+          test -z "$(git ls-remote --heads origin | grep -v 'refs/heads/main$' || true)"
+          echo 'post-release branch cleanup: PASS; only main remains'
