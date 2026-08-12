@@ -49,8 +49,9 @@ jobs:
         run: |
           rm .github/workflows/v12-generation-test-governance.yml tools/v12_generation_test_governance.mjs
           git add -A
-          test "$(git diff --cached --name-only | sort | tr '\n' ' ')" = "tests/runtime-kernel.mjs tests/version-contract.mjs "
+          test "$(git diff --cached --name-only | sort | tr '\n' ' ')" = ".github/workflows/v12-generation-test-governance.yml tests/runtime-kernel.mjs tests/version-contract.mjs tools/v12_generation_test_governance.mjs "
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git commit -m "test: derive RuntimeKernel generation from manifest"
+          test "$(git diff --name-only 51ff072ab2cd5e0694815791060a5910edbc28c7..HEAD | sort | tr '\n' ' ')" = "tests/runtime-kernel.mjs tests/version-contract.mjs "
           git push origin HEAD:migration/v12-generation-test-governance
