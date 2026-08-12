@@ -53,6 +53,14 @@ replace_exact(
 """
 )
 
+# Broad architecture contract only asserts that Engine consumes the Guard. Exact dispatch semantics
+# belong to static-action-authority.mjs, so one invariant has one test authority.
+replace_exact(
+  'tests/static-contract.mjs',
+  "assert.match(engine,/authorizeHandoverClick/);assert.match(engine,/__AUTO_AGREE_DECISION__/,'Engine must consume the pure decision authority');",
+  "assert.match(engine,/__AUTO_AGREE_HANDOVER_GUARD__/,'Engine must consume handover action authority');assert.match(engine,/__AUTO_AGREE_DECISION__/,'Engine must consume the pure decision authority');"
+)
+
 # Strong static contract: only one Engine function may call guard.authorize or target.click.
 Path('tests/static-action-authority.mjs').write_text(r'''import fs from 'node:fs';
 import assert from 'node:assert/strict';
