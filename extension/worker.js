@@ -22,6 +22,7 @@ let injectionActive = 0;
 let injectionSeq = 0;
 let lastScheduledTab = -1;
 const VERSION = '11.0.0';
+/** @type {Promise<boolean | void>} */
 let storageWriteChain = Promise.resolve();
 let rehydratePromise = null;
 
@@ -385,7 +386,10 @@ chrome.runtime.onInstalled?.addListener?.(details => {
 void (async () => {
   try {
     const stored = await chrome.storage.session?.get(REHYDRATE_KEY);
-    if (stored?.[REHYDRATE_KEY]?.version === VERSION) await requestUpdateRehydrate();
+    const resumeMarker = stored?.[REHYDRATE_KEY];
+    if (resumeMarker && typeof resumeMarker === 'object' && 'version' in resumeMarker && resumeMarker.version === VERSION) {
+      await requestUpdateRehydrate();
+    }
   } catch (_) {}
 })();
 

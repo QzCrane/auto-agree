@@ -160,11 +160,14 @@
     if (!(el instanceof Element)) return '';
     const ids = joinNorm([el.getAttribute('aria-labelledby'), el.getAttribute('aria-describedby')], 300).split(/\s+/).filter(Boolean).slice(0, 6);
     if (!ids.length) return '';
-    const root = el.getRootNode?.() || document;
+    const root = el.getRootNode();
     const parts = [];
     for (const id of ids) {
       let ref = null;
-      try { ref = root.getElementById?.(id) || root.querySelector?.(`#${CSS.escape(id)}`); } catch (_) {}
+      try {
+        if (root instanceof Document) ref = root.getElementById(id);
+        else if (root instanceof DocumentFragment) ref = root.querySelector(`#${CSS.escape(id)}`);
+      } catch (_) {}
       if (ref instanceof Element) parts.push(directText(ref, 18, 240));
     }
     return joinNorm(parts, 420);
@@ -177,9 +180,12 @@
       try { if (p.querySelector?.(CONTROL)) return p; } catch (_) {}
       if (p.matches?.('label[for]')) {
         const id = p.getAttribute('for');
-        const root = p.getRootNode?.() || document;
+        const root = p.getRootNode();
         let target = null;
-        try { target = root.getElementById?.(id) || root.querySelector?.(`#${CSS.escape(id)}`); } catch (_) {}
+        try {
+          if (root instanceof Document) target = root.getElementById(id);
+          else if (root instanceof DocumentFragment) target = root.querySelector(`#${CSS.escape(id)}`);
+        } catch (_) {}
         if (target instanceof Element && checkboxLike(target)) return p;
       }
       if (p.matches?.('form,dialog,[role="dialog"],[aria-modal="true"]')) break;
