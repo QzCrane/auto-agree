@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import assert from 'node:assert/strict';
 
 const statistics=fs.readFileSync('tests/e2e-performance-statistics.mjs','utf8');
-const ci=fs.readFileSync('.github/workflows/ci.yml','utf8');
+const ci=fs.readFileSync('.github/workflows/ci.yml','utf8').replace(/\r\n/gu,'\n');
 
 assert.match(statistics,/AUTO_AGREE_PERF_REPETITIONS\|\|7/,'statistical harness must default to seven independent repetitions');
 assert.match(statistics,/repetitions>=5&&repetitions<=15/,'statistical harness must reject non-statistical repetition counts');
