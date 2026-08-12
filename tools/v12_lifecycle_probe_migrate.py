@@ -35,9 +35,17 @@ for old, new in [
     ('if (paused || !root) return false;', 'if (lifecycle.paused || !root) return false;'),
     ('if (gateRequested || paused || !root || queued.has(root) || !rootConnected(root)) return;', 'if (gateRequested || lifecycle.paused || !root || queued.has(root) || !rootConnected(root)) return;'),
     ('if (gateRequested || paused || eventShadow(event)) return;', 'if (gateRequested || lifecycle.paused || eventShadow(event)) return;'),
-    ('if (paused || gateRequested) return;', 'if (lifecycle.paused || gateRequested) return;'),
 ]:
     replace_exact('extension/bootstrap.js', old, new)
+replace_exact(
+    'extension/bootstrap.js',
+    """  function onMutations(records) {
+    if (paused || gateRequested) return;
+""",
+    """  function onMutations(records) {
+    if (lifecycle.paused || gateRequested) return;
+""",
+)
 
 # Handoff failure derives paused state from the browser and transitions the lifecycle generation.
 replace_exact(
