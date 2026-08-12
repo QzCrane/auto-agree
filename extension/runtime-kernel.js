@@ -121,6 +121,26 @@
   }
 
   /**
+   * Refresh age metadata when the TTL boundary is crossed. This function deliberately does not
+   * decide whether a job is live or obsolete; callers with an owner/root must use refreshLiveAge.
+   * RootBatch-like aggregate work that has no single owner may use this primitive while its normal
+   * traversal independently skips dead WeakRefs.
+   *
+   * @param {{createdAt?: number}} job
+   * @param {number} ttlMs
+   * @param {number} [now]
+   * @returns {boolean} true only when createdAt was refreshed
+   */
+  function touchExpiredAge(job, ttlMs, now = performance.now()) {
+    if (!job || !Number.isFinite(ttlMs) || ttlMs < 0) return false;
+    if (!Number.isFinite(now)) now = performance.now();
+    const createdAt = Number(job.createdAt);
+    if (Number.isFinite(createdAt) && now - createdAt <= ttlMs) return false;
+    job.createdAt = now;
+    return true;
+  }
+
+  /**
    * Age is liveness metadata, not obsolescence authority. A dead/disconnected owner returns false;
    * a live owner refreshes an expired age and preserves the caller's existing cursor/state.
    *
@@ -135,15 +155,14 @@
     let live = false;
     try { live = isLive(owner) === true; } catch (_) { return false; }
     if (!live) return false;
-    if (!Number.isFinite(now)) now = performance.now();
-    const createdAt = Number(job.createdAt);
-    if (!Number.isFinite(createdAt) || now - createdAt > ttlMs) job.createdAt = now;
+    touchExpiredAge(job, ttlMs, now);
     return true;
   }
 
   globalThis.__AUTO_AGREE_RUNTIME_KERNEL__ = Object.freeze({
     version: VERSION,
     createBoundedFifo,
+    touchExpiredAge,
     refreshLiveAge
   });
 })();
