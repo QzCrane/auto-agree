@@ -9,6 +9,13 @@ const context = vm.createContext({ console, Date, Number, Math, Map, Set, Object
 vm.runInContext(source, context);
 const core = context.__AUTO_AGREE_PROFILE_CORE__;
 assert.ok(core, 'ProfileCore must initialize');
+{
+  const reinject = vm.createContext({ console, Date, Number, Math, Map, Set, Object, String, Array, JSON, RegExp });
+  vm.runInContext(source, reinject);
+  const first = reinject.__AUTO_AGREE_PROFILE_CORE__;
+  vm.runInContext(source, reinject);
+  assert.notEqual(reinject.__AUTO_AGREE_PROFILE_CORE__, first, 'stateless ProfileCore must reinstall so a new Engine world cannot inherit a stale singleton');
+}
 assert.deepEqual(JSON.parse(JSON.stringify(core.CONFIG)), {
   hotCacheMax: 32,
   maxOrigins: 256,

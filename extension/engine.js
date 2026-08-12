@@ -10,25 +10,25 @@
   const SYNC_BUDGET_MS = 2.2;
   const BACKGROUND_BUDGET_MS = 4.0;
   const FLUSH_BUDGET_MS = 2.4;
-  const CACHE_TTL_MS = 180 * 24 * 60 * 60 * 1000;
   const MAX_BATCH_JOBS = 8;
   const MAX_ROOT_BATCHES = 8;
   const MAX_WALK_JOBS = 12;
   const MAX_SHADOW_JOBS = 8;
-  const PROFILE_MAX_FLOWS = 8;
   const PROFILE_REFRESH_MS = 7 * 24 * 60 * 60 * 1000;
   const ROOT_BATCH_TTL_MS = 3000;
   const BATCH_JOB_TTL_MS = 3000;
 
   const CORE = globalThis.__AUTO_AGREE_SEMANTIC__;
   const POLICY = globalThis.__AUTO_AGREE_DECISION__;
+  const PROFILE = globalThis.__AUTO_AGREE_PROFILE_CORE__;
   const RISK = globalThis.__AUTO_AGREE_RISK__;
-  if (!CORE || CORE.version !== VERSION || !POLICY || POLICY.version !== VERSION || !RISK || RISK.version !== VERSION) return;
+  if (!CORE || CORE.version !== VERSION || !POLICY || POLICY.version !== VERSION || !PROFILE || !RISK || RISK.version !== VERSION) return;
   if (globalThis.__AUTO_AGREE_ENGINE__) return;
   globalThis.__AUTO_AGREE_ENGINE__ = VERSION;
   const { normalize, joinNormalized, compactSemantic, hasNonLatin, assessText, fastSemantic } = CORE;
   const { containsNegative, containsAttestation, severityFor, SEVERITY } = RISK;
   const { decideEvidence } = POLICY;
+  const { ttlMs: CACHE_TTL_MS, maxFlows: PROFILE_MAX_FLOWS } = PROFILE.CONFIG;
   const { LEGAL, ASSENT, READ_WORD, REQUIRED, VALIDATION, AUTH, PROCEED, FAST_TEXT, CREDENTIAL, COMPACT_LEGAL, COMPACT_ASSENT } = CORE.patterns;
   const { TRANSACTION_ACTION } = RISK.patterns;
 
@@ -726,25 +726,15 @@
   }
 
   function behaviorDescriptor(s) {
-    return {
+    return PROFILE.sanitizeDescriptor({
       kind: s?.state?.kind || 'unknown',
       severity: Number(s?.severity?.level || 0),
       legal: !!s?.assessment?.legal,
       assent: !!s?.assessment?.assent,
       required: !!s?.required,
       auth: !!s?.context?.auth,
-      linkBucket: Math.min(2, Math.floor(Number(s?.links || 0) / 2))
-    };
-  }
-
-  function descriptorCompatible(stored, live) {
-    if (!stored || typeof stored !== 'object') return true;
-    if (Number(stored.severity || 0) >= SEVERITY.OPTIONAL) return false;
-    if (stored.kind && stored.kind !== 'unknown' && live.kind !== stored.kind) return false;
-    if (stored.legal && !live.legal) return false;
-    if (stored.required && !live.required && !live.assent) return false;
-    if (Number(stored.linkBucket || 0) > Number(live.linkBucket || 0) + 1) return false;
-    return true;
+      linkBucket: Math.floor(Number(s?.links || 0) / 2)
+    });
   }
 
   function profileMessage(type, profile = null, attempt = 0) {
@@ -1870,7 +1860,7 @@ function enqueueRootBatch(roots, index, urgent) {
       if (!(el instanceof Element) || !isCheckboxLike(el)) continue;
       const snap = snapshotCandidate(el);
       const liveDescriptor = behaviorDescriptor(snap);
-      if (!descriptorCompatible(flow.descriptor, liveDescriptor)) { recordCacheFailure(flow); continue; }
+      if (!PROFILE.descriptorCompatible(flow.descriptor, liveDescriptor, SEVERITY.OPTIONAL)) { recordCacheFailure(flow); continue; }
       const decision = decisionFor(snap);
       if (decision.accept) processCandidate(el, true);
       else recordCacheFailure(flow);

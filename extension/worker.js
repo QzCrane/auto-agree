@@ -333,7 +333,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   const map = isGate ? gateInflight : engineInflight;
   const files = isGate
     ? ['runtime-kernel.js', 'generation-lease.js', 'semantic-core.js', 'gate.js']
-    : ['runtime-kernel.js', 'generation-lease.js', 'semantic-core.js', 'handover-guard.js', 'decision-core.js', 'risk-core.js', 'engine.js'];
+    : ['runtime-kernel.js', 'generation-lease.js', 'semantic-core.js', 'handover-guard.js', 'decision-core.js', 'profile-core.js', 'risk-core.js', 'engine.js'];
   let promise = map.get(key);
   if (!promise) {
     promise = scheduleInjection(target, files, isGate ? 1 : 2).finally(() => map.delete(key));

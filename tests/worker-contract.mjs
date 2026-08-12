@@ -40,7 +40,7 @@ const sender={tab:{id:7},frameId:3,documentId:'doc-1',documentLifecycle:'active'
 await message({type:'AUTO_AGREE_GATE'},sender);
 await message({type:'AUTO_AGREE_ACTIVATE'},sender);
 assert.equal(JSON.stringify(calls[0].files),JSON.stringify(['runtime-kernel.js','generation-lease.js','semantic-core.js','gate.js']));
-assert.equal(JSON.stringify(calls[1].files),JSON.stringify(['runtime-kernel.js','generation-lease.js','semantic-core.js','handover-guard.js','decision-core.js','risk-core.js','engine.js']));
+assert.equal(JSON.stringify(calls[1].files),JSON.stringify(['runtime-kernel.js','generation-lease.js','semantic-core.js','handover-guard.js','decision-core.js','profile-core.js','risk-core.js','engine.js']));
 assert.equal(JSON.stringify(calls[0].target),JSON.stringify({tabId:7,documentIds:['doc-1']}));
 assert.equal(calls[0].world,'ISOLATED');
 assert.equal(calls[0].injectImmediately,true);

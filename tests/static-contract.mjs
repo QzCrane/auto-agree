@@ -56,6 +56,7 @@ assert.match(profileCore,/ttlMs:\s*180\s*\*/,'profile TTL must remain 180 days a
 assert.match(profileCore,/ts > current/,'future-dated acceleration evidence must fail closed');
 assert.match(profileCore,/Number\.isFinite\(ts\)/,'profile timestamps must be finite');
 assert.equal(/\bchrome\b|\bdocument\b|\bElement\b|\bNode\b/.test(profileCore),false,'ProfileCore must remain browser-independent');
+assert.equal(/if\s*\(globalThis\.__AUTO_AGREE_PROFILE_CORE__\)\s*return/.test(profileCore),false,'stateless ProfileCore must reinstall for each isolated-world injection instead of reusing stale generation semantics');
 
 assert.match(worker,/semantic-core\.js/);assert.match(worker,/chrome\.runtime\.getManifest\(\)\.version/,'Worker generation authority must come from Chrome manifest');assert.match(worker,/documentLifecycle/);assert.match(worker,/INJECTION_AGING_MS/);assert.match(worker,/INJECTION_STALE_MS/);assert.match(worker,/onInstalled/);assert.match(worker,/allFrames:\s*true/);
 assert.match(worker,/profileOriginForSender/);
@@ -68,7 +69,7 @@ assert.match(worker,/await scheduleInjection\(target, \['bootstrap\.js'\], 3\)/,
 assert.equal(/\['handover-guard\.js', 'bootstrap\.js'\]/.test(worker),false,'guard and bootstrap must never share the update injection phase');
 assert.equal(/\bmessage\.origin\b/.test(worker),false,'profile storage identity must come from MessageSender, not message.origin');
 assert.match(worker,/\['runtime-kernel\.js', 'generation-lease\.js', 'semantic-core\.js', 'gate\.js'\]/,'every dynamically injected Gate world must carry the cooperative generation lease');
-assert.match(worker,/\['runtime-kernel\.js', 'generation-lease\.js', 'semantic-core\.js', 'handover-guard\.js', 'decision-core\.js', 'risk-core\.js', 'engine\.js'\]/,'every Engine-capable world must carry both cooperative lease and handover guard');
+assert.match(worker,/\['runtime-kernel\.js', 'generation-lease\.js', 'semantic-core\.js', 'handover-guard\.js', 'decision-core\.js', 'profile-core\.js', 'risk-core\.js', 'engine\.js'\]/,'every Engine-capable world must carry lease, policy, fresh ProfileCore and handover guard');
 
 const guard=fs.readFileSync(path.join(root,'handover-guard.js'),'utf8');
 assert.match(guard,/__AUTO_AGREE_SEMANTIC__/,'handover guard must consume the shared semantic core');
@@ -119,7 +120,13 @@ assert.match(gate,/__AUTO_AGREE_SEMANTIC__/);
 assert.ok(gate.indexOf('if (!CORE || CORE.version !== VERSION) return;') < gate.indexOf('globalThis.__AUTO_AGREE_GATE__ = VERSION;'),'Gate sentinel must be assigned only after dependencies are valid');
 const engine=fs.readFileSync(path.join(root,'engine.js'),'utf8');
 assert.match(engine,/authorizeHandoverClick/);assert.match(engine,/__AUTO_AGREE_DECISION__/,'Engine must consume the pure decision authority');assert.match(engine,/evidenceForCandidate/,'Engine must map browser snapshots into EvidenceIR before policy');assert.equal(/function\s+buildSemanticGraph\s*\(/.test(engine),false,'Engine must not retain a private policy graph implementation');
-assert.ok(engine.indexOf('if (!CORE || CORE.version !== VERSION || !RISK || RISK.version !== VERSION) return;') < engine.indexOf('globalThis.__AUTO_AGREE_ENGINE__ = VERSION;'),'Engine sentinel must be assigned only after dependencies are valid');
+assert.match(engine,/const PROFILE = globalThis\.__AUTO_AGREE_PROFILE_CORE__/,'Engine must consume the shared profile schema authority');
+assert.match(engine,/PROFILE\.sanitizeDescriptor\(/,'Engine profile descriptors must cross the shared schema boundary');
+assert.match(engine,/PROFILE\.descriptorCompatible\([^,]+,[^,]+,\s*SEVERITY\.OPTIONAL\)/,'cached evidence compatibility must use ProfileCore with DecisionKernel severity authority');
+assert.equal(/function\s+descriptorCompatible\s*\(/.test(engine),false,'Engine must not retain a second cache-compatibility policy');
+assert.equal(/const\s+CACHE_TTL_MS\s*=\s*180|const\s+PROFILE_MAX_FLOWS\s*=\s*8/.test(engine),false,'Engine must not retain duplicate persisted-profile bounds');
+const engineDeps = 'if (!CORE || CORE.version !== VERSION || !POLICY || POLICY.version !== VERSION || !PROFILE || !RISK || RISK.version !== VERSION) return;';
+assert.ok(engine.includes(engineDeps) && engine.indexOf(engineDeps) < engine.indexOf('globalThis.__AUTO_AGREE_ENGINE__ = VERSION;'),'Engine sentinel must be assigned only after semantic, decision, profile and risk dependencies are valid');
 assert.match(engine,/credentialInvalid/);
 assert.match(engine,/oneShotUnknown/);
 assert.match(engine,/kind: 'mixed'/);
