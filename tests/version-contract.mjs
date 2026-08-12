@@ -28,7 +28,7 @@ assert.match(worker, /const\s+VERSION\s*=\s*chrome\.runtime\.getManifest\(\)\.ve
 const productionJs = fs.readdirSync(EXTENSION).filter(name => name.endsWith('.js')).sort();
 assert.deepEqual(
   productionJs,
-  ['bootstrap.js','decision-core.js','engine.js','gate.js','generation-lease.js','handover-guard.js','risk-core.js','runtime-kernel.js','semantic-core.js','worker.js'],
+  ['bootstrap.js','decision-core.js','engine.js','gate.js','generation-lease.js','handover-guard.js','risk-core.js','runtime-kernel.js','scheduler-core.js','semantic-core.js','worker.js'],
   'version contract must cover the complete production JavaScript closure'
 );
 for (const file of productionJs) {
