@@ -56,6 +56,7 @@
   const pendingVisibility = new Set();
   const pendingEntryByElement = new WeakMap();
   let pendingRescueTimer = 0;
+  let pendingRescueToken = 0;
   let pendingRescuePhase = 0;
   const contextIndex = new WeakMap();
   const indexedRefs = new WeakMap();
@@ -67,7 +68,7 @@
   const contextTxnRefs = new Set();
   const contextTxnRefByKey = new WeakMap();
   let contextTxnScheduled = false;
-  let contextTxnGeneration = 0;
+  let contextTxnToken = 0;
   const intentState = new WeakMap();
   const dirtyRoots = new Set();
   const urgentRoots = new Set();
@@ -93,20 +94,21 @@
   let queuedWalkRoots = new WeakSet();
   let queuedShadowRoots = new WeakSet();
   let flushQueued = false;
+  let flushToken = 0;
   let backgroundQueued = false;
-  let backgroundEpoch = 0;
+  let backgroundToken = 0;
   let broadShadowEnabled = false;
   let meaningfulCandidateSeen = false;
   let initialRescueTimer = 0;
   let siteProfile = null;
-  let lifecyclePaused = false;
-  let lifecycleGeneration = 0;
+  const lifecycle = KERNEL.createLifecycleState(false);
   let engineEventsAttached = false;
   let lifecycleEventsAttached = false;
 
   const discoveryObserver = new MutationObserver(records => onMutations(records, false));
   const contextObserver = new MutationObserver(records => onMutations(records, true));
   const resizeObserver = typeof ResizeObserver === 'function' ? new ResizeObserver(entries => {
+    if (lifecycle.paused) return;
     for (const resizeEntry of entries) {
       const blocker = resizeEntry.target;
       if (!(resizeEntry.contentRect.width > 0 || resizeEntry.contentRect.height > 0)) continue;
@@ -312,9 +314,14 @@
     return key;
   }
 
-  function commitContextTransaction(generation) {
-    if (generation !== lifecycleGeneration || lifecyclePaused) { contextTxnScheduled = false; contextTxnRefs.clear(); return; }
+  function commitContextTransaction(token) {
+    if (!lifecycle.isCurrent(token)) {
+      if (contextTxnToken === token) { contextTxnScheduled = false; contextTxnRefs.clear(); contextTxnToken = 0; }
+      return;
+    }
+    if (contextTxnToken !== token) return;
     contextTxnScheduled = false;
+    contextTxnToken = 0;
     for (const ref of [...contextTxnRefs]) {
       contextTxnRefs.delete(ref);
       const key = ref?.deref?.();
@@ -334,9 +341,9 @@
     contextTxnRefs.add(ref);
     if (contextTxnScheduled) return key;
     contextTxnScheduled = true;
-    const generation = lifecycleGeneration;
-    contextTxnGeneration = generation;
-    const commit = () => commitContextTransaction(generation);
+    const token = lifecycle.capture();
+    contextTxnToken = token;
+    const commit = () => commitContextTransaction(token);
     if (typeof requestAnimationFrame === 'function' && document.visibilityState === 'visible') requestAnimationFrame(commit);
     else queueMicrotask(commit);
     return key;
@@ -493,11 +500,19 @@
   function visuallyActive(el) { return visualState(el).visible; }
 
   function schedulePendingRescue() {
-    if (pendingRescueTimer || !pendingVisibility.size) return;
+    if (lifecycle.paused || pendingRescueTimer || !pendingVisibility.size) return;
     const delays = [140, 520, 1300];
     const phase = Math.min(pendingRescuePhase, delays.length - 1);
+    const token = lifecycle.capture();
+    pendingRescueToken = token;
     pendingRescueTimer = setTimeout(() => {
+      if (!lifecycle.isCurrent(token)) {
+        if (pendingRescueToken === token) pendingRescueTimer = 0;
+        return;
+      }
+      if (pendingRescueToken !== token) return;
       pendingRescueTimer = 0;
+      pendingRescueToken = 0;
       pendingRescuePhase++;
       recheckPending();
       if (pendingVisibility.size && pendingRescuePhase < delays.length) schedulePendingRescue();
@@ -738,11 +753,11 @@
         chrome.runtime.sendMessage({ type, profile }, response => {
           const failed = !!chrome.runtime.lastError || !response?.ok;
           if (!failed) return resolve(response.profile ?? true);
-          if (attempt >= 2 || lifecyclePaused) return resolve(null);
+          if (attempt >= 2 || lifecycle.paused) return resolve(null);
           setTimeout(() => resolve(profileMessage(type, profile, attempt + 1)), 60 * (2 ** attempt));
         });
       } catch (_) {
-        if (attempt >= 2 || lifecyclePaused) return resolve(null);
+        if (attempt >= 2 || lifecycle.paused) return resolve(null);
         setTimeout(() => resolve(profileMessage(type, profile, attempt + 1)), 60 * (2 ** attempt));
       }
     });
@@ -805,7 +820,7 @@
 
   function armVerifier(s, before, attempt = 0) {
     stopVerifier(s.control);
-    const verifier = { observer: null, listeners: [], timer: 0, done: false, controlRef: new WeakRef(s.control), generation: lifecycleGeneration };
+    const verifier = { observer: null, listeners: [], timer: 0, done: false, controlRef: new WeakRef(s.control), token: lifecycle.capture() };
     clickVerifiers.set(s.control, verifier);
     activeVerifiers.add(verifier);
 
@@ -824,7 +839,7 @@
 
     const check = () => {
       if (verifier.done) return;
-      if (lifecyclePaused || verifier.generation !== lifecycleGeneration) { stopVerifier(s.control); return; }
+      if (!lifecycle.isCurrent(verifier.token)) { stopVerifier(s.control); return; }
       succeed();
     };
     const targets = [...new Set([s.control, s.row, s.input].filter(x => x instanceof Element))];
@@ -843,7 +858,7 @@
     queueMicrotask(check);
     requestAnimationFrame?.(() => check());
     verifier.timer = setTimeout(() => {
-      if (lifecyclePaused || verifier.generation !== lifecycleGeneration) { stopVerifier(s.control); return; }
+      if (!lifecycle.isCurrent(verifier.token)) { stopVerifier(s.control); return; }
       if (succeed() || verifier.done) return;
       stopVerifier(s.control);
       const fresh = snapshotCandidate(s.control);
@@ -900,10 +915,10 @@
 
     if (deferredClicks.has(s.control)) return true;
     deferredClicks.add(s.control);
-    const generation = lifecycleGeneration;
+    const token = lifecycle.capture();
     const run = () => {
       deferredClicks.delete(s.control);
-      if (lifecyclePaused || generation !== lifecycleGeneration) return;
+      if (!lifecycle.isCurrent(token)) return;
       if (!(s.control instanceof Element) || !s.control.isConnected) return;
       const fresh = snapshotCandidate(s.control);
       const decision = decisionFor(fresh);
@@ -1077,7 +1092,7 @@
         addEventListener('DOMContentLoaded', () => {
           const current = ref?.deref?.();
           if (current instanceof Element) parserDeferredAnchors.delete(current);
-          if (!lifecyclePaused && current instanceof Element && current.isConnected) processAgreementAnchor(current, true);
+          if (!lifecycle.paused && current instanceof Element && current.isConnected) processAgreementAnchor(current, true);
         }, { once: true });
       }
       return;
@@ -1155,7 +1170,7 @@
   }
 
   function onSlotChange(event) {
-    if (lifecyclePaused) return;
+    if (lifecycle.paused) return;
     const slot = event.target;
     if (!(slot instanceof HTMLSlotElement)) return;
     bumpContext(slot);
@@ -1594,11 +1609,11 @@ function enqueueRootBatch(roots, index, urgent) {
     return !!(rootBatches.length || walkJobs.length || walkWork.hasRecovery || batchJobs.length || shadowJobs.length || shadowWork.hasRecovery);
   }
 
-  async function drainBackground(generation = lifecycleGeneration) {
-    if (lifecyclePaused || generation !== lifecycleGeneration) { if (backgroundEpoch === generation) backgroundQueued = false; return; }
+  async function drainBackground(token = lifecycle.capture()) {
+    if (!lifecycle.isCurrent(token)) { if (backgroundToken === token) backgroundQueued = false; return; }
     try {
       let rounds = 0;
-      while (!lifecyclePaused && generation === lifecycleGeneration && hasBackgroundWork() && rounds++ < 24) {
+      while (lifecycle.isCurrent(token) && hasBackgroundWork() && rounds++ < 24) {
         if (!rootBatches.length && !walkJobs.length) promoteWalkRecovery();
         if (!rootBatches.length && !walkJobs.length && !batchJobs.length && !shadowJobs.length) promoteShadowRecovery();
         if (rootBatches.length) {
@@ -1621,38 +1636,40 @@ function enqueueRootBatch(roots, index, urgent) {
         }
         if (hasBackgroundWork()) {
           await yieldMain();
-          if (lifecyclePaused || generation !== lifecycleGeneration) break;
+          if (!lifecycle.isCurrent(token)) break;
         }
       }
     } finally {
       if (!rootBatches.length && !walkJobs.length) promoteWalkRecovery();
       if (!rootBatches.length && !walkJobs.length && !batchJobs.length && !shadowJobs.length) promoteShadowRecovery();
-      if (backgroundEpoch === generation) backgroundQueued = false;
-      if (!lifecyclePaused && generation === lifecycleGeneration && hasBackgroundWork()) scheduleBackground();
+      if (backgroundToken === token) backgroundQueued = false;
+      if (lifecycle.isCurrent(token) && hasBackgroundWork()) scheduleBackground();
     }
   }
 
   function scheduleBackground() {
-    if (backgroundQueued || lifecyclePaused) return;
+    if (backgroundQueued || lifecycle.paused) return;
     backgroundQueued = true;
-    const generation = lifecycleGeneration;
-    backgroundEpoch = generation;
+    const token = lifecycle.capture();
+    backgroundToken = token;
     if (globalThis.scheduler?.postTask) {
-      scheduler.postTask(() => drainBackground(generation), { priority: 'background' }).catch(() => { if (backgroundEpoch === generation) backgroundQueued = false; if (!lifecyclePaused && generation === lifecycleGeneration) setTimeout(scheduleBackground, 16); });
+      scheduler.postTask(() => drainBackground(token), { priority: 'background' }).catch(() => { if (backgroundToken === token) backgroundQueued = false; if (lifecycle.isCurrent(token)) setTimeout(scheduleBackground, 16); });
     } else if (typeof requestIdleCallback === 'function') {
-      requestIdleCallback(() => drainBackground(generation), { timeout: 400 });
+      requestIdleCallback(() => drainBackground(token), { timeout: 400 });
     } else {
-      setTimeout(() => drainBackground(generation), 24);
+      setTimeout(() => drainBackground(token), 24);
     }
   }
 
   function queueRoot(root, urgent = false) {
-    if (!root || lifecyclePaused) return;
+    if (!root || lifecycle.paused) return;
     walkGeneration.set(root, currentWalkGeneration(root) + 1);
     (urgent ? urgentRoots : dirtyRoots).add(root);
     if (flushQueued) return;
     flushQueued = true;
-    queueMicrotask(flushRoots);
+    const token = lifecycle.capture();
+    flushToken = token;
+    queueMicrotask(() => flushRoots(token));
   }
 
   function hasAncestorInSet(node, set) {
@@ -1664,9 +1681,14 @@ function enqueueRootBatch(roots, index, urgent) {
     return false;
   }
 
-  function flushRoots() {
+  function flushRoots(token) {
+    if (!lifecycle.isCurrent(token)) {
+      if (flushToken === token) flushQueued = false;
+      return;
+    }
+    if (flushToken !== token) return;
     flushQueued = false;
-    if (lifecyclePaused) { urgentRoots.clear(); dirtyRoots.clear(); return; }
+    flushToken = 0;
     const urgent = [...urgentRoots];
     const dirty = [...dirtyRoots];
     const urgentSet = new Set(urgent);
@@ -1714,7 +1736,7 @@ function enqueueRootBatch(roots, index, urgent) {
   }
 
   function onMutations(records, detailed = false) {
-    if (lifecyclePaused) return;
+    if (lifecycle.paused) return;
     const added = new Set();
     for (const record of records) {
       if (!detailed && observedContextCount && insideObservedContext(record.target)) continue;
@@ -1765,7 +1787,7 @@ function enqueueRootBatch(roots, index, urgent) {
   }
 
   function observeRoot(root) {
-    if (!root || lifecyclePaused || observedRoots.has(root)) return;
+    if (!root || lifecycle.paused || observedRoots.has(root)) return;
     observedRoots.add(root);
     if (root instanceof ShadowRoot) attachSlotHandler(root);
     try {
@@ -1781,7 +1803,7 @@ function enqueueRootBatch(roots, index, urgent) {
   }
 
   function recheckPending() {
-    if (lifecyclePaused) return;
+    if (lifecycle.paused) return;
     for (const entry of [...pendingVisibility]) {
       const el = entry?.targetRef?.deref?.();
       if (!(el instanceof Element) || !el.isConnected) { removePendingEntry(entry); continue; }
@@ -1820,7 +1842,7 @@ function enqueueRootBatch(roots, index, urgent) {
   }
 
   function preflight(event) {
-    if (lifecyclePaused) return;
+    if (lifecycle.paused) return;
     const root = eventContext(event);
     if (proceedInteraction(event)) noteIntent(event.target, 'proceed');
     recheckPending();
@@ -1901,7 +1923,7 @@ function enqueueRootBatch(roots, index, urgent) {
   function onKeyDown(event) { if (event.key === 'Enter') { noteIntent(event.target, 'enter'); preflight(event); } }
 
   function onFocusIn(event) {
-    if (lifecyclePaused) return;
+    if (lifecycle.paused) return;
     const target = event.target instanceof Element ? event.target : null;
     if (!target) return;
     const hint = joinNormalized([target.getAttribute('name'), target.getAttribute('type'), target.getAttribute('placeholder'), target.getAttribute('autocomplete')], 300);
@@ -1915,7 +1937,7 @@ function enqueueRootBatch(roots, index, urgent) {
   }
 
   function invalidateInputContext(event) {
-    if (lifecyclePaused) return;
+    if (lifecycle.paused) return;
     const target = event.target instanceof Element ? event.target : null;
     if (!target) return;
     noteIntent(target, 'input');
@@ -1927,7 +1949,7 @@ function enqueueRootBatch(roots, index, urgent) {
     processIndexedContext(root instanceof Element ? root : null);
   }
 
-  function onVisualTransition() { if (!lifecyclePaused && pendingVisibility.size) recheckPending(); }
+  function onVisualTransition() { if (!lifecycle.paused && pendingVisibility.size) recheckPending(); }
 
   function attachEngineEvents() {
     if (engineEventsAttached) return;
@@ -1979,7 +2001,9 @@ function enqueueRootBatch(roots, index, urgent) {
     queuedWalkRoots = new WeakSet();
     queuedShadowRoots = new WeakSet();
     flushQueued = false;
+    flushToken = 0;
     backgroundQueued = false;
+    backgroundToken = 0;
   }
 
   function restoreKnownShadowRoots() {
@@ -2001,9 +2025,8 @@ function enqueueRootBatch(roots, index, urgent) {
   }
 
   function pauseEngine() {
-    if (lifecyclePaused) return;
-    lifecyclePaused = true;
-    lifecycleGeneration++;
+    if (lifecycle.paused) return;
+    lifecycle.pause();
     discoveryObserver.disconnect();
     contextObserver.disconnect();
     resizeObserver?.disconnect();
@@ -2017,19 +2040,20 @@ function enqueueRootBatch(roots, index, urgent) {
     }
     if (pendingRescueTimer) clearTimeout(pendingRescueTimer);
     pendingRescueTimer = 0;
+    pendingRescueToken = 0;
     pendingRescuePhase = 0;
     if (initialRescueTimer) clearTimeout(initialRescueTimer);
     initialRescueTimer = 0;
     stopAllVerifiers();
     contextTxnRefs.clear();
     contextTxnScheduled = false;
+    contextTxnToken = 0;
     clearQueuedWork();
   }
 
   function resumeEngine() {
-    if (!lifecyclePaused || document.prerendering || document.visibilityState === 'hidden') return;
-    lifecyclePaused = false;
-    lifecycleGeneration++;
+    if (!lifecycle.paused || document.prerendering || document.visibilityState === 'hidden') return;
+    lifecycle.resume();
     candidateMemo = new WeakMap();
     clickMemo = new WeakMap();
     observedRoots = new WeakSet();
@@ -2098,16 +2122,16 @@ function enqueueRootBatch(roots, index, urgent) {
     // UI shells. Existing far-away document content is not rescanned merely because a login form
     // has no Terms checkbox; later DOM insertions are already covered by discoveryObserver.
     if (seedRoot) {
-      const generation = lifecycleGeneration;
+      const token = lifecycle.capture();
       initialRescueTimer = setTimeout(() => {
         initialRescueTimer = 0;
-        if (lifecyclePaused || generation !== lifecycleGeneration) return;
+        if (!lifecycle.isCurrent(token)) return;
         if (!meaningfulCandidateSeen) queueSeedShells(seedRoot);
       }, 420);
     }
   }
 
   attachLifecycleEvents();
-  if (document.visibilityState === 'hidden' || document.prerendering) lifecyclePaused = true;
+  if (document.visibilityState === 'hidden' || document.prerendering) lifecycle.pause();
   else boot();
 })();
