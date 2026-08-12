@@ -2,12 +2,13 @@ import fs from 'node:fs';
 import vm from 'node:vm';
 import assert from 'node:assert/strict';
 const source=fs.readFileSync('extension/worker.js','utf8');
+const CURRENT_VERSION=JSON.parse(fs.readFileSync('extension/manifest.json','utf8')).version;
 
 function makeHarness(){
   let listener; let now=0; const pending=[]; const started=[]; const local=new Map(),session=new Map();
   const area=map=>({async get(keys){const o={};for(const k of Array.isArray(keys)?keys:[keys])if(map.has(k))o[k]=map.get(k);return o;},async set(o){for(const[k,v]of Object.entries(o))map.set(k,v);},async remove(keys){for(const k of Array.isArray(keys)?keys:[keys])map.delete(k);}});
   let active=0,maxGlobal=0;const activeByTab=new Map();let maxPerTab=0;
-  const chrome={runtime:{onMessage:{addListener(fn){listener=fn;}},onInstalled:{addListener(){}}},storage:{local:area(local),session:area(session)},tabs:{async query(){return[];}},scripting:{executeScript(spec){started.push(spec);active++;maxGlobal=Math.max(maxGlobal,active);const tab=spec.target.tabId,n=(activeByTab.get(tab)||0)+1;activeByTab.set(tab,n);maxPerTab=Math.max(maxPerTab,n);return new Promise(resolve=>pending.push(()=>{active--;const m=(activeByTab.get(tab)||1)-1;if(m)activeByTab.set(tab,m);else activeByTab.delete(tab);resolve([]);}));}}};
+  const chrome={runtime:{getManifest(){return {version:CURRENT_VERSION};},onMessage:{addListener(fn){listener=fn;}},onInstalled:{addListener(){}}},storage:{local:area(local),session:area(session)},tabs:{async query(){return[];}},scripting:{executeScript(spec){started.push(spec);active++;maxGlobal=Math.max(maxGlobal,active);const tab=spec.target.tabId,n=(activeByTab.get(tab)||0)+1;activeByTab.set(tab,n);maxPerTab=Math.max(maxPerTab,n);return new Promise(resolve=>pending.push(()=>{active--;const m=(activeByTab.get(tab)||1)-1;if(m)activeByTab.set(tab,m);else activeByTab.delete(tab);resolve([]);}));}}};
   const FakeDate={now:()=>now};
   vm.runInNewContext(source,{chrome,console,Promise,Map,Set,Date:FakeDate,Error,Number,String,Array,Object,JSON,Math,setTimeout,clearTimeout});
   const send=(type,tab,doc)=>new Promise(resolve=>listener({type},{tab:{id:tab},frameId:0,documentId:doc,documentLifecycle:'active'},resolve));

@@ -1,7 +1,9 @@
 (() => {
   'use strict';
-  if (globalThis.__AUTO_AGREE_PROBE__) return;
-  globalThis.__AUTO_AGREE_PROBE__ = '11.0.0';
+  const KERNEL = globalThis.__AUTO_AGREE_RUNTIME_KERNEL__;
+  const VERSION = KERNEL?.version;
+  if (!KERNEL || !VERSION || globalThis.__AUTO_AGREE_PROBE__) return;
+  globalThis.__AUTO_AGREE_PROBE__ = VERSION;
 
   // This file is intentionally tiny and cheap: it only decides whether a frame deserves the
   // richer semantic gate. It never clicks, never interprets consent, and never scans unbounded DOM.

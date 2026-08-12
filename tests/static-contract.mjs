@@ -8,14 +8,19 @@ assert.equal(manifest.manifest_version,3);
 assert.match(manifest.version,/^\d+\.\d+\.\d+$/,'manifest must carry a semantic release version; exact generation coherence belongs to version-contract');
 assert.deepEqual([...manifest.permissions].sort(),['scripting','storage']);
 assert.deepEqual(manifest.host_permissions,['<all_urls>']);
-assert.deepEqual(manifest.content_scripts[0].js,['generation-lease.js','bootstrap.js']);
+assert.deepEqual(manifest.content_scripts[0].js,['runtime-kernel.js','generation-lease.js','bootstrap.js']);
 assert.equal(manifest.content_scripts[0].world,'ISOLATED');
 assert.equal(manifest.content_scripts[0].all_frames,true);
 assert.equal(manifest.content_scripts[0].match_about_blank,true);
 assert.equal(manifest.content_scripts[0].match_origin_as_fallback,true);
 
-const files=['generation-lease.js','bootstrap.js','handover-guard.js','semantic-core.js','risk-core.js','gate.js','engine.js','worker.js'];
+const files=['runtime-kernel.js','generation-lease.js','bootstrap.js','handover-guard.js','semantic-core.js','risk-core.js','gate.js','engine.js','worker.js'];
 const source=files.map(f=>fs.readFileSync(path.join(root,f),'utf8')).join('\n');
+const runtimeKernel=fs.readFileSync(path.join(root,'runtime-kernel.js'),'utf8');
+assert.match(runtimeKernel,/createBoundedFifo/,'runtime kernel must own bounded FIFO admission');
+assert.match(runtimeKernel,/refreshLiveAge/,'runtime kernel must own live-age semantics');
+assert.match(runtimeKernel,/new WeakRef\(mergedScope\)/,'bounded recovery must remain weak');
+assert.equal(/queue\.shift\(\)/.test(runtimeKernel),false,'kernel admission must never evict an old FIFO job');
 const forbidden=[['network fetch',/\bfetch\s*\(/],['XMLHttpRequest',/\bXMLHttpRequest\b/],['WebSocket',/\bWebSocket\b/],['eval',/\beval\s*\(/],['dynamic Function',/\bnew\s+Function\b/],['polling interval',/\bsetInterval\s*\(/],['whole-page wildcard scan',/querySelectorAll\s*\(\s*['"]\*['"]\s*\)/],['debugger permission\/API',/chrome\.debugger|['"]debugger['"]/]];
 for(const[name,re]of forbidden)assert.equal(re.test(source),false,`forbidden ${name}`);
 
@@ -26,7 +31,7 @@ assert.match(lease,/version === VERSION/,'generation lease must fail closed on v
 assert.equal(/addEventListener\s*\(/.test(lease),false,'generation lease must not add global event listeners');
 
 const worker=fs.readFileSync(path.join(root,'worker.js'),'utf8');
-assert.match(worker,/semantic-core\.js/);assert.match(worker,/documentLifecycle/);assert.match(worker,/INJECTION_AGING_MS/);assert.match(worker,/INJECTION_STALE_MS/);assert.match(worker,/onInstalled/);assert.match(worker,/allFrames:\s*true/);
+assert.match(worker,/semantic-core\.js/);assert.match(worker,/chrome\.runtime\.getManifest\(\)\.version/,'Worker generation authority must come from Chrome manifest');assert.match(worker,/documentLifecycle/);assert.match(worker,/INJECTION_AGING_MS/);assert.match(worker,/INJECTION_STALE_MS/);assert.match(worker,/onInstalled/);assert.match(worker,/allFrames:\s*true/);
 assert.match(worker,/profileOriginForSender/);
 assert.match(worker,/PROFILE_ORIGIN_MAX\s*=\s*256/,'persistent site-learning origins must remain bounded');
 assert.match(worker,/PROFILE_FLOW_MAX\s*=\s*8/,'each origin must retain at most eight verified flows');
@@ -38,12 +43,12 @@ assert.match(worker,/locatorKey/,'flow identity must include its exact DOM\/Shad
 assert.match(worker,/\$\{fingerprint\}\|\$\{locatorKey\(locator\)\}/,'profile merge identity must be fingerprint + locator');
 assert.match(worker,/storageWriteChain = storageWriteChain\.then\(task, task\)/,'profile writes must serialize without swallowing the current operation error');
 assert.match(worker,/protectAndRehydrateTab/,'update rehydration must separate protection from Probe recovery');
-assert.match(worker,/\['generation-lease\.js', 'semantic-core\.js', 'handover-guard\.js'\]/,'protection phase must install the cooperative generation lease and shared semantics before handover guard');
+assert.match(worker,/\['runtime-kernel\.js', 'generation-lease\.js', 'semantic-core\.js', 'handover-guard\.js'\]/,'protection phase must install the cooperative generation lease and shared semantics before handover guard');
 assert.match(worker,/await scheduleInjection\(target, \['bootstrap\.js'\], 3\)/,'bootstrap must be a later phase after protection resolves');
 assert.equal(/\['handover-guard\.js', 'bootstrap\.js'\]/.test(worker),false,'guard and bootstrap must never share the update injection phase');
 assert.equal(/\bmessage\.origin\b/.test(worker),false,'profile storage identity must come from MessageSender, not message.origin');
-assert.match(worker,/\['generation-lease\.js', 'semantic-core\.js', 'gate\.js'\]/,'every dynamically injected Gate world must carry the cooperative generation lease');
-assert.match(worker,/\['generation-lease\.js', 'semantic-core\.js', 'handover-guard\.js', 'risk-core\.js', 'engine\.js'\]/,'every Engine-capable world must carry both cooperative lease and handover guard');
+assert.match(worker,/\['runtime-kernel\.js', 'generation-lease\.js', 'semantic-core\.js', 'gate\.js'\]/,'every dynamically injected Gate world must carry the cooperative generation lease');
+assert.match(worker,/\['runtime-kernel\.js', 'generation-lease\.js', 'semantic-core\.js', 'handover-guard\.js', 'risk-core\.js', 'engine\.js'\]/,'every Engine-capable world must carry both cooperative lease and handover guard');
 
 const guard=fs.readFileSync(path.join(root,'handover-guard.js'),'utf8');
 assert.match(guard,/__AUTO_AGREE_SEMANTIC__/,'handover guard must consume the shared semantic core');

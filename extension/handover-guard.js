@@ -1,6 +1,8 @@
 (() => {
   'use strict';
-  const VERSION = '11.0.0';
+  const KERNEL = globalThis.__AUTO_AGREE_RUNTIME_KERNEL__;
+  const VERSION = KERNEL?.version;
+  if (!KERNEL || !VERSION) return;
   if (globalThis.__AUTO_AGREE_HANDOVER_GUARD__?.version === VERSION) return;
 
   const CORE = globalThis.__AUTO_AGREE_SEMANTIC__;

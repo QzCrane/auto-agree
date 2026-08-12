@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import assert from 'node:assert/strict';
 
 const engine = fs.readFileSync('extension/engine.js', 'utf8');
+const kernel = fs.readFileSync('extension/runtime-kernel.js', 'utf8');
 const probe = fs.readFileSync('extension/bootstrap.js', 'utf8');
 const gate = fs.readFileSync('extension/gate.js', 'utf8');
 const tierE2e = fs.readFileSync('tests/e2e-tier-overflow.mjs', 'utf8');
@@ -25,24 +26,16 @@ assert.equal(
   'Engine walk pressure must not evict an older unfinished FIFO cursor'
 );
 assert.match(engine, /MAX_WALK_JOBS\s*=\s*12/, 'Engine walk recovery must preserve the hard walk-job cap');
-assert.match(engine, /let\s+walkRecoveryRef\s*=\s*null/, 'Engine needs a weak final-state walk recovery scope');
-assert.match(engine, /let\s+walkRecoveryUrgent\s*=\s*false/, 'Engine walk recovery must preserve urgent intent separately');
-assert.match(engine, /function\s+rememberWalkRecovery\s*\(/, 'Engine excess walk roots must remain recoverable');
-assert.match(engine, /function\s+promoteWalkRecovery\s*\(/, 'Engine walk recovery must re-enter ordinary bounded traversal');
-assert.match(engine, /function\s+admitWalkJob\s*\(/, 'Engine walk admission policy must be centralized');
-assert.match(engine, /walkRecoveryRef\s*=\s*new WeakRef\(merged\)/, 'Engine walk recovery must remain weak');
-assert.match(
-  engine,
-  /if\s*\(walkJobs\.length\s*>=\s*MAX_WALK_JOBS\)\s*\{[\s\S]{0,260}rememberWalkRecovery\(root,\s*job\.urgent\)[\s\S]{0,120}return;/,
-  'Engine must preserve existing FIFO cursors and compress only new excess walk roots'
-);
-assert.match(
-  engine,
-  /if\s*\(walkJobs\.length\s*\|\|\s*!walkRecoveryRef\)\s*return\s+false/,
-  'Engine walk recovery must not overtake ordinary FIFO work'
-);
-assert.match(engine, /function\s+hasBackgroundWork\s*\(\)[\s\S]{0,220}walkRecoveryRef/, 'background liveness must include pending walk recovery');
-assert.match(engine, /walkRecoveryRef\s*=\s*null;\s*walkRecoveryUrgent\s*=\s*false;\s*shadowJobs\.length\s*=\s*0/, 'Engine lifecycle retirement must clear walk recovery state');
+assert.match(engine, /const\s+walkWork\s*=\s*KERNEL\.createBoundedFifo/, 'Engine walk must use the shared bounded-work authority');
+assert.match(engine, /capacity:\s*MAX_WALK_JOBS/, 'Engine walk kernel capacity must remain the proven 12-job cap');
+assert.match(engine, /commonWalkRecoveryRoot\(current, next\)/, 'Engine retains domain-specific final-state coalescing');
+assert.match(engine, /meta:\s*!!currentUrgent\s*\|\|\s*!!nextUrgent/, 'walk recovery must preserve urgent intent monotonically');
+assert.match(engine, /walkWork\.admit\(job, root, !!job\.urgent\)/, 'Engine walk admission must route through the shared kernel');
+assert.match(engine, /walkWork\.promote\(/, 'Engine walk recovery must re-enter ordinary traversal through the kernel');
+assert.match(engine, /walkWork\.hasRecovery/, 'background liveness must include kernel-owned walk recovery');
+assert.match(engine, /walkWork\.clear\(\)/, 'lifecycle retirement must clear kernel-owned walk work');
+assert.match(kernel, /if \(queue\.length >= capacity\) return \{ admitted: false, recovered: remember\(scope, meta\) \};/, 'kernel overflow must compress only the new scope');
+assert.match(kernel, /recoveryRef = new WeakRef\(mergedScope\)/, 'shared recovery must remain weak');
 assert.match(engine, /admitWalkJob\(root,\s*job\)/, 'Engine processSubtree must use bounded lossless walk admission');
 assert.match(engineWalkE2e, /const\s+ROOTS\s*=\s*20/, 'Engine walk saturation fixture must exceed the 12-job cap materially');
 assert.match(engineWalkE2e, /const\s+NODES\s*=\s*900/, 'Engine walk saturation roots must require background continuation');

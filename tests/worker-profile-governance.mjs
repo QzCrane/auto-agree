@@ -14,7 +14,7 @@ function harness({failLocalSet=false}={}){
     async remove(keys){for(const k of Array.isArray(keys)?keys:[keys])map.delete(k);}
   });
   const chrome={
-    runtime:{onMessage:{addListener(fn){listener=fn;}},onInstalled:{addListener(){}}},
+    runtime:{getManifest(){return {version:CURRENT_VERSION};},onMessage:{addListener(fn){listener=fn;}},onInstalled:{addListener(){}}},
     tabs:{async query(){return[];}},
     scripting:{async executeScript(){return[];}},
     storage:{local:area(local,{failSet:failLocalSet}),session:area(session)}
