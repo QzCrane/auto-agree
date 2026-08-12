@@ -6,23 +6,22 @@ on:
   pull_request:
 
 permissions:
-  contents: write
+  contents: read
 
 concurrency:
   group: verify-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
-  migrate-engine-shadow-recovery:
-    if: github.event_name == 'pull_request' && github.head_ref == 'agent/v11-engine-shadow-overflow-fix' && github.actor != 'github-actions[bot]'
+  build-shadow-patch-artifact:
+    if: github.event_name == 'pull_request' && github.head_ref == 'agent/v11-engine-shadow-overflow-fix'
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@v6
         with:
-          ref: agent/v11-engine-shadow-overflow-fix
           fetch-depth: 0
-      - name: Apply bounded lossless shadow recovery
+      - name: Apply bounded lossless shadow recovery without writing repository
         run: |
           set -euo pipefail
           python - <<'PY'
@@ -122,10 +121,9 @@ jobs:
           loop_anchor = """      while (!lifecyclePaused && generation === lifecycleGeneration && hasBackgroundWork() && rounds++ < 24) {
         if (!rootBatches.length && !walkJobs.length) promoteWalkRecovery();
 """
-          loop_new = loop_anchor + "        if (!rootBatches.length && !walkJobs.length && !batchJobs.length && !shadowJobs.length) promoteShadowRecovery();\n"
           if s.count(loop_anchor) != 1:
               raise SystemExit('background loop anchor changed')
-          s = s.replace(loop_anchor, loop_new, 1)
+          s = s.replace(loop_anchor, loop_anchor + "        if (!rootBatches.length && !walkJobs.length && !batchJobs.length && !shadowJobs.length) promoteShadowRecovery();\n", 1)
 
           finally_anchor = """    } finally {
       if (!rootBatches.length && !walkJobs.length) promoteWalkRecovery();
@@ -156,18 +154,14 @@ jobs:
           p.write_text(s)
           PY
           node --check extension/engine.js
-          npm test
-          python tools/package_extension.py --check
           git diff --check
-      - name: Commit production patch only
-        run: |
-          set -euo pipefail
-          test -n "$(git status --porcelain -- extension/engine.js)"
-          git config user.name 'github-actions[bot]'
-          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add extension/engine.js
-          git commit -m 'fix: preserve Engine shadow discovery under bounded pressure'
-          git push origin HEAD:agent/v11-engine-shadow-overflow-fix
+          git diff -- extension/engine.js
+      - uses: actions/upload-artifact@v4
+        with:
+          name: shadow-patched-engine
+          path: extension/engine.js
+          if-no-files-found: error
+          retention-days: 1
 
   core:
     runs-on: ubuntu-latest
