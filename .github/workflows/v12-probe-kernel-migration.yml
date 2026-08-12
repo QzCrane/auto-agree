@@ -29,7 +29,9 @@ jobs:
           PUPPETEER_SKIP_DOWNLOAD: 'true'
         run: npm ci --ignore-scripts
       - name: Apply exact Probe migration
-        run: python tools/v12_probe_kernel_migrate.py
+        run: |
+          python tools/v12_probe_kernel_migrate.py
+          python tools/v12_probe_kernel_cleanup_migrate.py
       - name: Verify migrated tree before commit
         run: |
           npm test
