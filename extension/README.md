@@ -6,13 +6,17 @@ Load it from `chrome://extensions` → Developer mode → Load unpacked.
 
 Runtime order:
 
-1. `generation-lease.js` and then `bootstrap.js` are declared by the manifest in all matching frames. The lease is isolated-world local and removes that generation's programmatic `.click()` authority when its extension Runtime is invalidated or version-mismatched; Probe itself never clicks.
+1. `generation-lease.js` and then `bootstrap.js` are declared by the manifest in all matching frames. The lease is isolated-world local and removes that generation's programmatic `.click()` authority when its Runtime is invalidated or version-mismatched; Probe itself never clicks.
 2. `worker.js` rejects explicitly inactive document lifecycles and schedules `generation-lease.js` + `semantic-core.js` + `gate.js` after Probe evidence.
-3. If Gate accepts, Worker schedules `generation-lease.js` + `semantic-core.js` + `handover-guard.js` + `risk-core.js` + `engine.js` with bounded global/per-tab concurrency, queue aging, stale eviction and Engine admission priority.
-4. Probe/Gate handoff is retryable across unexpected Worker termination; profile messages are idempotently retried and the Worker derives their storage origin from `MessageSender`, never from content-provided origin text.
-5. On extension update/reload, Worker uses a persisted session marker and high-priority bounded `tabs.query()` + `scripting.executeScript()` rehydration. It first installs `generation-lease.js` + `semantic-core.js` + `handover-guard.js` into accessible frames, and only after that phase resolves does it inject `bootstrap.js`.
-6. The cooperative generation lease protects v10→future stale Auto Agree `.click()` calls; the handover guard remains the compatibility firewall for older non-cooperative generations such as v9. Trusted browser input is not turned into general script authority.
-7. Site-learning persistence remains bounded: 256 origins, 8 flows/origin, 180-day TTL, 32-entry Worker hot LRU, session/local storage layers and fingerprint+locator flow identity.
+3. If Gate accepts, Worker schedules `generation-lease.js` + `semantic-core.js` + `handover-guard.js` + `risk-core.js` + `engine.js` with bounded global/per-tab injection concurrency, queue aging, stale eviction and Engine admission priority.
+4. Probe/Gate handoff is retryable across unexpected Worker termination; profile operations are idempotently retryable and storage origin is derived from `MessageSender`, never from content-provided origin text.
+5. On extension update/reload, Worker uses a persisted session marker and high-priority bounded `tabs.query()` + `scripting.executeScript()` rehydration. It first installs `generation-lease.js` + `semantic-core.js` + `handover-guard.js` into accessible frames; only after protection resolves does it inject `bootstrap.js`.
+6. The cooperative generation lease protects v11→future stale Auto Agree `.click()` calls. The handover guard remains the compatibility firewall for historical non-cooperative generations. Trusted browser input is not converted into general script authority.
+7. Site-learning persistence remains bounded: 256 origins, 8 flows/origin, 180-day TTL, 32-entry Worker hot LRU, session/local storage layers, fingerprint+exact-locator flow identity, serialized writes and propagated persistence errors.
+8. Probe/Gate/Engine discovery queues keep hard representation caps. Connected correctness work is preserved through FIFO/liveness semantics or weak final-state recovery; no queue repair uses an unbounded synchronous document scan.
+9. `tests/version-contract.mjs` requires manifest/package plus all eight production JavaScript generation sentinels to describe one coherent runtime generation.
+
+The v11 release is physically tested as a non-reloaded **v10→v11** transition. A separate manifest-only **v11→v12** probe verifies that a surviving stale v11 isolated world loses automated and direct `.click()` authority while trusted browser input remains functional.
 
 The deterministic package tool derives its JavaScript payload from the complete production `extension/*.js` set so a newly referenced runtime module cannot be absent from the ZIP while the load-unpacked tree still works.
 
