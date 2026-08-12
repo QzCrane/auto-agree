@@ -21,13 +21,15 @@
   const CORE = globalThis.__AUTO_AGREE_SEMANTIC__;
   const POLICY = globalThis.__AUTO_AGREE_DECISION__;
   const PROFILE = globalThis.__AUTO_AGREE_PROFILE_CORE__;
+  const DOM = globalThis.__AUTO_AGREE_DOM_CORE__;
   const RISK = globalThis.__AUTO_AGREE_RISK__;
-  if (!CORE || CORE.version !== VERSION || !POLICY || POLICY.version !== VERSION || !PROFILE || !RISK || RISK.version !== VERSION) return;
+  if (!CORE || CORE.version !== VERSION || !POLICY || POLICY.version !== VERSION || !PROFILE || !DOM || DOM.version !== VERSION || !RISK || RISK.version !== VERSION) return;
   if (globalThis.__AUTO_AGREE_ENGINE__) return;
   globalThis.__AUTO_AGREE_ENGINE__ = VERSION;
   const { normalize, joinNormalized, compactSemantic, hasNonLatin, assessText, fastSemantic } = CORE;
   const { containsNegative, containsAttestation, severityFor, SEVERITY } = RISK;
   const { decideEvidence, decideClasslessEvidence } = POLICY;
+  const { composedParent, rootQueryById } = DOM;
   const { ttlMs: CACHE_TTL_MS, maxFlows: PROFILE_MAX_FLOWS } = PROFILE.CONFIG;
   const { LEGAL, ASSENT, READ_WORD, REQUIRED, VALIDATION, AUTH, PROCEED, FAST_TEXT, CREDENTIAL, COMPACT_LEGAL, COMPACT_ASSENT } = CORE.patterns;
   const { TRANSACTION_ACTION } = RISK.patterns;
@@ -174,16 +176,6 @@
     return normalize(parts.join(' '), maxChars);
   }
 
-  function rootQueryById(el, id) {
-    if (!id || !(el instanceof Element)) return null;
-    const root = el.getRootNode();
-    try {
-      if (root instanceof Document) return root.getElementById(id);
-      if (root instanceof DocumentFragment) return root.querySelector(`#${CSS.escape(id)}`);
-      return null;
-    } catch (_) { return null; }
-  }
-
   function labelFor(input) {
     if (!(input instanceof HTMLInputElement)) return null;
     if (input.labels?.length) return input.labels[0];
@@ -220,14 +212,6 @@
     }
     pushPart(parts, boundedText(el, budget.left, 120), budget);
     return normalize(parts.join(' '), maxChars);
-  }
-
-  function composedParent(el) {
-    if (!(el instanceof Element)) return null;
-    if (el.assignedSlot instanceof Element) return el.assignedSlot;
-    if (el.parentElement) return el.parentElement;
-    const root = el.getRootNode?.();
-    return root instanceof ShadowRoot && root.host instanceof Element ? root.host : null;
   }
 
   function ancestorList(el, limit = 9) {
