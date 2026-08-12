@@ -29,7 +29,7 @@ jobs:
           PUPPETEER_SKIP_DOWNLOAD: 'true'
         run: npm ci --ignore-scripts
       - name: Apply exact SchedulerCore migration
-        run: python tools/v12_scheduler_core_migrate.py
+        run: python tools/v12_scheduler_core_migrate_wrapper.py
       - name: Verify migrated tree before commit
         run: |
           npm test
