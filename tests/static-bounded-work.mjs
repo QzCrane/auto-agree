@@ -86,22 +86,20 @@ assert.equal(
   'Gate deep pressure must not evict existing FIFO cursors to admit newer work'
 );
 assert.match(gate, /MAX_DEEP_JOBS\s*=\s*10/, 'Gate deep recovery must preserve the hard deep-job cap');
-assert.match(gate, /let\s+deepRecoveryRef\s*=\s*null/, 'Gate needs a weak deep final-state recovery representation');
-assert.match(gate, /let\s+deepRecoveryComposite\s*=\s*false/, 'Gate must remember composite authority separately from recovery scope');
-assert.match(gate, /function\s+rememberDeepRecovery\s*\(/, 'Gate deep overflow must retain recoverable final state');
-assert.match(gate, /function\s+promoteDeepRecovery\s*\(/, 'Gate deep recovery must re-enter bounded background traversal');
-assert.match(gate, /deepRecoveryRef\s*=\s*new WeakRef\(merged\)/, 'Gate deep recovery must remain weak');
-assert.match(gate, /deepRecoveryComposite\s*=\s*sameScope\s*\?[^:]+:\s*false/, 'coalescing distinct Gate scopes must fail closed on composite authority');
+assert.match(gate, /const\s+deepWork\s*=\s*KERNEL\.createBoundedFifo/, 'Gate deep work must use the shared bounded FIFO authority');
+assert.match(gate, /capacity:\s*MAX_DEEP_JOBS/, 'Gate shared deep FIFO capacity must remain ten');
+assert.match(gate, /const\s+merged\s*=\s*commonDeepRecoveryRoot\(current, next\)/, 'Gate retains domain-specific final-state coalescing');
+assert.match(gate, /const\s+sameScope\s*=\s*merged\s*===\s*current\s*&&\s*merged\s*===\s*next/, 'Gate must distinguish exact-scope recovery from broader coalescing');
 assert.match(
   gate,
-  /if\s*\(deepJobs\.length\s*>=\s*MAX_DEEP_JOBS\)\s*\{[\s\S]{0,500}rememberDeepRecovery\(root,\s*allowComposite\)[\s\S]{0,250}return;/,
-  'Gate must compress only new excess roots while preserving existing FIFO cursors'
+  /meta:\s*sameScope\s*\?\s*\(!!currentComposite\s*&&\s*!!nextComposite\)\s*:\s*false/,
+  'coalescing distinct Gate scopes must fail closed on composite authority'
 );
-assert.equal(
-  /rememberDeepRecovery\(droppedRoot,\s*dropped\?\.allowComposite\)/.test(gate),
-  false,
-  'Gate must not remove an old live cursor and defer it through recovery'
-);
+assert.match(gate, /deepWork\.admit\(job, root, !!allowComposite\)/, 'new Gate deep work must route through shared admission');
+assert.match(gate, /deepWork\.promote\(/, 'Gate deep recovery must re-enter bounded background traversal through the kernel');
+assert.match(gate, /deepWork\.hasRecovery/, 'Gate must expose pending weak recovery to promotion');
+assert.match(gate, /deepWork\.clear\(\)/, 'Gate activation/lifecycle retirement must clear kernel-owned deep work');
+assert.equal(/deepRecoveryRef|deepRecoveryComposite|rememberDeepRecovery/.test(gate), false, 'Gate must not retain a second private deep recovery authority');
 assert.match(gate, /if\s*\(!batchJobs\.length\s*&&\s*!deepJobs\.length\)\s*promoteDeepRecovery\(\)/, 'Gate recovery must be promoted only after ordinary bounded work drains');
 
 // A deep slice that enters with no remaining background budget has not started. Marking the job

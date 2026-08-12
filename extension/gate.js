@@ -36,10 +36,17 @@
   let paused = false;
   let lifecycleEpoch = 0;
   const batchJobs = [];
-  const deepJobs = [];
   const deepQueued = new WeakSet();
-  let deepRecoveryRef = null;
-  let deepRecoveryComposite = false;
+  const deepWork = KERNEL.createBoundedFifo({
+    capacity: MAX_DEEP_JOBS,
+    isLive: rootConnected,
+    coalesce: (current, next, currentComposite, nextComposite) => {
+      const merged = commonDeepRecoveryRoot(current, next);
+      const sameScope = merged === current && merged === next;
+      return { scope: merged, meta: sameScope ? (!!currentComposite && !!nextComposite) : false };
+    }
+  });
+  const deepJobs = deepWork.queue;
   let localChecked = new WeakSet();
 
   function rootConnected(root) {
@@ -224,9 +231,7 @@
     detachLifecycle();
     batchJobs.length = 0;
     for (const job of deepJobs) releaseDeep(job);
-    deepJobs.length = 0;
-    deepRecoveryRef = null;
-    deepRecoveryComposite = false;
+    deepWork.clear();
     chrome.runtime.sendMessage({ type: 'AUTO_AGREE_ACTIVATE', reason }, response => {
       if (!chrome.runtime.lastError && response?.ok) { handoffRetry = 0; return; }
       requested = false;
@@ -275,43 +280,24 @@
     return document.documentElement;
   }
 
-  function rememberDeepRecovery(root, allowComposite) {
-    if (!root || !rootConnected(root)) return;
-    const current = deepRecoveryRef?.deref?.();
-    if (!current || !rootConnected(current)) {
-      deepRecoveryRef = new WeakRef(root);
-      deepRecoveryComposite = !!allowComposite;
-      return;
-    }
-    const merged = commonDeepRecoveryRoot(current, root);
-    const sameScope = merged === current && merged === root;
-    deepRecoveryRef = new WeakRef(merged);
-    deepRecoveryComposite = sameScope ? (deepRecoveryComposite && !!allowComposite) : false;
-  }
-
   function promoteDeepRecovery() {
-    if (deepJobs.length || !deepRecoveryRef) return false;
-    const root = deepRecoveryRef.deref?.();
-    const allowComposite = deepRecoveryComposite;
-    deepRecoveryRef = null;
-    deepRecoveryComposite = false;
-    if (!root || !rootConnected(root) || deepQueued.has(root)) return false;
-    deepQueued.add(root);
-    deepJobs.push({ rootRef: new WeakRef(root), cursorRef: null, started: false, flags: 0, allowComposite, createdAt: performance.now() });
-    return true;
+    if (deepJobs.length || !deepWork.hasRecovery) return false;
+    return deepWork.promote((root, allowComposite) => {
+      if (!root || !rootConnected(root) || deepQueued.has(root)) return null;
+      deepQueued.add(root);
+      return { rootRef: new WeakRef(root), cursorRef: null, started: false, flags: 0, allowComposite: !!allowComposite, createdAt: performance.now() };
+    });
   }
 
   function queueDeep(root, allowComposite = true) {
     if (requested || paused || !root || deepQueued.has(root) || !rootConnected(root)) return;
-    if (deepJobs.length >= MAX_DEEP_JOBS) {
-      // Preserve older live FIFO cursors. Only the new excess final state is compressed into the
-      // bounded weak recovery scope, so queue pressure cannot make age/order a correctness oracle.
-      rememberDeepRecovery(root, allowComposite);
+    const job = { rootRef: new WeakRef(root), cursorRef: null, started: false, flags: 0, allowComposite: !!allowComposite, createdAt: performance.now() };
+    const result = deepWork.admit(job, root, !!allowComposite);
+    if (!result.admitted) {
       scheduleBackground();
       return;
     }
     deepQueued.add(root);
-    deepJobs.push({ rootRef: new WeakRef(root), cursorRef: null, started: false, flags: 0, allowComposite, createdAt: performance.now() });
     scheduleBackground();
   }
 
@@ -616,10 +602,8 @@ if (scope instanceof Element && scope !== el) queueDeep(scope, true);
 
   function clearGateWork() {
     for (const job of deepJobs) releaseDeep(job);
-    deepJobs.length = 0;
+    deepWork.clear();
     batchJobs.length = 0;
-    deepRecoveryRef = null;
-    deepRecoveryComposite = false;
     backgroundRunning = false;
   }
 
