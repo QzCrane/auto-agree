@@ -27,7 +27,7 @@
   globalThis.__AUTO_AGREE_ENGINE__ = VERSION;
   const { normalize, joinNormalized, compactSemantic, hasNonLatin, assessText, fastSemantic } = CORE;
   const { containsNegative, containsAttestation, severityFor, SEVERITY } = RISK;
-  const { decideEvidence } = POLICY;
+  const { decideEvidence, decideClasslessEvidence } = POLICY;
   const { ttlMs: CACHE_TTL_MS, maxFlows: PROFILE_MAX_FLOWS } = PROFILE.CONFIG;
   const { LEGAL, ASSENT, READ_WORD, REQUIRED, VALIDATION, AUTH, PROCEED, FAST_TEXT, CREDENTIAL, COMPACT_LEGAL, COMPACT_ASSENT } = CORE.patterns;
   const { TRANSACTION_ACTION } = RISK.patterns;
@@ -1063,11 +1063,30 @@
     const linkScore = linkEvidence(activeRow);
     const effective = expandedAssessment.score >= info.assessment.score ? expandedAssessment : info.assessment;
     const effectiveText = effective === expandedAssessment ? expandedText : info.text;
-    const enough = (effective.legal && effective.assent) ||
-      (effective.legal && (effective.required || effective.validation)) ||
-      (effective.legal && context.auth && (linkScore >= 2 || context.gatingScore > 0));
+    const classlessSeverity = consentSeverity(effectiveText, context);
+    const classlessEvidence = {
+      disabled: false,
+      stateKind: 'unknown',
+      blocked: !!effective.blocked,
+      severity: classlessSeverity,
+      baseScore: Number(effective.score || 0),
+      legal: !!effective.legal,
+      assent: !!effective.assent,
+      required: !!(effective.required || effective.validation),
+      auth: !!context.auth,
+      transaction: !!context.transaction,
+      actionGated: context.gatingScore > 0,
+      legalLinks: linkScore,
+      controlConfidence: 2,
+      eligible: !!effective.eligible,
+      gatingScore: Number(context.gatingScore || 0)
+    };
+    const classlessDecision = decideClasslessEvidence(classlessEvidence);
     const vs = visualState(activeRow);
-    if (!enough || !cheapActive(activeRow) || !vs.visible) { if (enough) pend(activeRow, vs.blocker || activeRow); return; }
+    if (!classlessDecision.accept || !cheapActive(activeRow) || !vs.visible) {
+      if (classlessDecision.accept) pend(activeRow, vs.blocker || activeRow);
+      return;
+    }
     const visual = preciseGeometryTarget(activeRow, anchor);
     if (!visual) return;
 
@@ -1101,9 +1120,11 @@
       confidence: 2,
       required: false,
       disabled: false,
-      risky: false
+      severity: classlessSeverity,
+      risky: classlessSeverity.level >= SEVERITY.OPTIONAL
     };
-    if (!(pseudo.state.known && pseudo.state.checked)) performClick(pseudo, visual, urgent);
+    const finalClasslessDecision = decideClasslessEvidence({ ...classlessEvidence, stateKind: pseudo.state.kind });
+    if (finalClasslessDecision.accept && !(pseudo.state.known && pseudo.state.checked)) performClick(pseudo, visual, urgent);
   }
 
   function ownHint(el) {

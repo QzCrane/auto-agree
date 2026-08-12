@@ -1,0 +1,27 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Classless DecisionKernel policy</title>
+<style>
+  body { font: 16px sans-serif; padding: 24px; }
+  .row { display: flex; align-items: center; gap: 10px; margin: 22px 0; }
+  .square { display: inline-block; width: 18px; height: 18px; border: 1px solid currentColor; box-sizing: border-box; flex: 0 0 auto; }
+  .copy { display: inline-block; }
+</style>
+<input id="password-seed" type="password" autocomplete="current-password" aria-label="Password">
+<div id="routine-row" class="row">
+  <span id="routine-square" class="square"></span>
+  <span id="routine-copy" class="copy">I have read and agree to the Terms of Service</span>
+</div>
+<div id="risk-row" class="row">
+  <span id="risk-square" class="square"></span>
+  <span id="risk-copy" class="copy">I have read and agree to the Terms of Service and accept automatic renewal</span>
+</div>
+<script>
+  for (const id of ['routine-square','risk-square']) {
+    const el = document.getElementById(id);
+    el.dataset.clicks = '0';
+    el.addEventListener('click', () => {
+      el.dataset.clicks = String(Number(el.dataset.clicks || 0) + 1);
+    });
+  }
+</script>

@@ -68,13 +68,17 @@
     return Object.freeze({ facts, nodes, edges });
   }
 
+  function severityForEvidence(evidence) {
+    return evidence.severity && typeof evidence.severity === 'object'
+      ? evidence.severity
+      : { level: SEVERITY.CONSEQUENTIAL, kind: 'invalid' };
+  }
+
   /** @param {EvidenceIR} evidence */
   function decideEvidence(evidence) {
     const graph = buildSemanticGraph(evidence);
     const f = graph.facts;
-    const severity = evidence.severity && typeof evidence.severity === 'object'
-      ? evidence.severity
-      : { level: SEVERITY.CONSEQUENTIAL, kind: 'invalid' };
+    const severity = severityForEvidence(evidence);
 
     if (evidence.disabled || evidence.stateKind === 'mixed' || f.severity >= SEVERITY.OPTIONAL || evidence.blocked) {
       return { accept: false, score: -100, severity, graph };
@@ -92,10 +96,33 @@
     return { accept, score, severity, graph };
   }
 
+  /**
+   * Classless geometry fallback has weaker control identity than the normal CandidateSnapshot path.
+   * It therefore has a deliberately smaller authority surface: only the historical explicit
+   * agreement/mandatory/auth-gated relations may authorize the one-shot visual target. Generic
+   * score/eligible escape hatches are intentionally unavailable.
+   *
+   * @param {EvidenceIR} evidence
+   */
+  function decideClasslessEvidence(evidence) {
+    const graph = buildSemanticGraph(evidence);
+    const f = graph.facts;
+    const severity = severityForEvidence(evidence);
+    if (evidence.disabled || evidence.stateKind === 'mixed' || f.severity >= SEVERITY.OPTIONAL || evidence.blocked) {
+      return { accept: false, score: -100, severity, graph };
+    }
+    const explicitLegalAssent = f.legal && f.assent;
+    const explicitMandatoryLegal = f.legal && f.required;
+    const terseAuthLegal = f.legal && f.auth && (f.legalLinks >= 2 || f.actionGated);
+    const accept = explicitLegalAssent || explicitMandatoryLegal || terseAuthLegal;
+    return { accept, score: accept ? 1 : 0, severity, graph };
+  }
+
   globalThis.__AUTO_AGREE_DECISION__ = Object.freeze({
     version: VERSION,
     SEVERITY,
     buildSemanticGraph,
-    decideEvidence
+    decideEvidence,
+    decideClasslessEvidence
   });
 })();
