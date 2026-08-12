@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import vm from 'node:vm';
 import assert from 'node:assert/strict';
 
-const source=fs.readFileSync('extension/scheduler-core.js','utf8')+'\n'+fs.readFileSync('extension/worker.js','utf8');
+const source=fs.readFileSync('extension/scheduler-core.js','utf8')+'\n'+fs.readFileSync('extension/profile-core.js','utf8')+'\n'+fs.readFileSync('extension/worker.js','utf8');
 const CURRENT_VERSION=JSON.parse(fs.readFileSync('extension/manifest.json','utf8')).version;
 
 function harness({failLocalSet=false}={}){
@@ -26,7 +26,7 @@ function harness({failLocalSet=false}={}){
   return{local,session,send};
 }
 
-function flow(i,{fingerprint=`/login|flow-${i}`,selector=`#agree-${i}`,ts=Date.now()+i}={}){
+function flow(i,{fingerprint=`/login|flow-${i}`,selector=`#agree-${i}`,ts=Date.now()}={}){
   return {
     fingerprint,
     locator:{hosts:[],selector},
@@ -39,7 +39,7 @@ function json(value){return JSON.parse(JSON.stringify(value));}
 
 // Serialized concurrent writes preserve the newest eight independent flows for one origin.
 const a=harness();
-const base=Date.now();
+const base=Date.now()-1000;
 await Promise.all(Array.from({length:64},(_,i)=>a.send({type:'AUTO_AGREE_PROFILE_PUT',profile:profile(flow(i,{ts:base+i}))})));
 const read=await a.send({type:'AUTO_AGREE_PROFILE_GET'});
 assert.equal(read.ok,true);
@@ -69,6 +69,12 @@ const index=b.local.get('__auto_agree_profile_index__');
 assert.equal(Object.keys(index||{}).length,256,'persistent origin index must remain hard-bounded');
 const storedOrigins=[...b.local.keys()].filter(key=>key.startsWith('site:'));
 assert.ok(storedOrigins.length<=256,'evicted origins must have their persistent profile removed');
+
+// Future-dated acceleration evidence is rejected instead of pinning itself at the head forever.
+const d=harness();
+const future=profile(flow(1,{fingerprint:'/login|future',selector:'#future',ts:Date.now()+60_000}));
+await d.send({type:'AUTO_AGREE_PROFILE_PUT',profile:future});
+assert.equal(d.local.has('site:https://example.test'),false,'future profile data must not enter persistent storage');
 
 // Persistence failure is a real operation failure, never an apparent ok response.
 const c=harness({failLocalSet:true});
