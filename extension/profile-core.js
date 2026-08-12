@@ -11,6 +11,7 @@
     maxHosts: 8,
     maxHostLength: 360,
     maxKindLength: 32,
+    maxLinkBucket: 2,
     maxSuccesses: 100000,
     maxFailures: 1000
   });
@@ -61,16 +62,16 @@
     const kind = rawKind && rawKind.length <= CONFIG.maxKindLength && !CONTROL.test(rawKind) ? rawKind : 'unknown';
     return {
       kind,
-      // Severity taxonomy belongs to DecisionKernel. ProfileCore only makes the numeric field total
-      // and non-negative; the caller supplies the authoritative OPTIONAL threshold to compatibility.
+      // Severity taxonomy belongs to DecisionKernel. ProfileCore makes only the persisted numeric
+      // representation total/non-negative; the authoritative OPTIONAL threshold is supplied by it.
       severity: Math.max(0, Math.ceil(finiteNumber(descriptor.severity, 0))),
       legal: !!descriptor.legal,
       assent: !!descriptor.assent,
       required: !!descriptor.required,
       auth: !!descriptor.auth,
-      // Link-bucket extraction belongs to the live Engine adapter. Persisted malformed values are
-      // rounded upward so cache acceleration becomes more conservative rather than less.
-      linkBucket: Math.max(0, Math.ceil(finiteNumber(descriptor.linkBucket, 0)))
+      // linkBucket itself is a profile-compatibility representation, so its compact 0..2 bound is
+      // owned here rather than duplicated in Engine and Worker.
+      linkBucket: boundedNumber(descriptor.linkBucket, 0, CONFIG.maxLinkBucket, 0)
     };
   }
 
