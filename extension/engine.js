@@ -21,12 +21,14 @@
   const BATCH_JOB_TTL_MS = 3000;
 
   const CORE = globalThis.__AUTO_AGREE_SEMANTIC__;
+  const POLICY = globalThis.__AUTO_AGREE_DECISION__;
   const RISK = globalThis.__AUTO_AGREE_RISK__;
-  if (!CORE || CORE.version !== VERSION || !RISK || RISK.version !== VERSION) return;
+  if (!CORE || CORE.version !== VERSION || !POLICY || POLICY.version !== VERSION || !RISK || RISK.version !== VERSION) return;
   if (globalThis.__AUTO_AGREE_ENGINE__) return;
   globalThis.__AUTO_AGREE_ENGINE__ = VERSION;
   const { normalize, joinNormalized, compactSemantic, hasNonLatin, assessText, fastSemantic } = CORE;
   const { containsNegative, containsAttestation, severityFor, SEVERITY } = RISK;
+  const { decideEvidence } = POLICY;
   const { LEGAL, ASSENT, READ_WORD, REQUIRED, VALIDATION, AUTH, PROCEED, FAST_TEXT, CREDENTIAL, COMPACT_LEGAL, COMPACT_ASSENT } = CORE.patterns;
   const { TRANSACTION_ACTION } = RISK.patterns;
 
@@ -580,49 +582,29 @@
     return { control: el, row, input, text, assessment, context, links, state, confidence, required, disabled, severity, risky: severity.level >= SEVERITY.OPTIONAL };
   }
 
-  function buildSemanticGraph(s) {
+  function evidenceForCandidate(s) {
     const a = s.assessment;
-    const facts = Object.freeze({
+    return {
+      disabled: !!s.disabled,
+      stateKind: s.state.kind,
+      blocked: !!a.blocked,
+      severity: s.severity,
+      baseScore: Number(a.score || 0),
       legal: !!a.legal,
       assent: !!a.assent,
       required: !!(a.required || a.validation || s.required),
       auth: !!s.context.auth,
       transaction: !!s.context.transaction,
-      actionGated: s.context.gatingScore > 0,
-      legalLinks: s.links,
-      controlConfidence: s.confidence,
-      severity: s.severity.level
-    });
-    const nodes = [
-      { id: 'control', kind: 'control' },
-      { id: 'row', kind: 'semantic-row' },
-      { id: 'context', kind: 'context' },
-      { id: 'action', kind: 'proceed-action' }
-    ];
-    const edges = [
-      ['control', 'described-by', 'row'],
-      ['row', 'contained-in', 'context']
-    ];
-    if (facts.actionGated || facts.required) edges.push(['control', 'gates', 'action']);
-    if (facts.legalLinks) edges.push(['row', 'references-legal', 'context']);
-    return Object.freeze({ facts, nodes, edges });
+      actionGated: Number(s.context.gatingScore || 0) > 0,
+      legalLinks: Number(s.links || 0),
+      controlConfidence: Number(s.confidence || 0),
+      eligible: !!a.eligible,
+      gatingScore: Number(s.context.gatingScore || 0)
+    };
   }
 
   function decisionFor(s) {
-    const graph = buildSemanticGraph(s);
-    const f = graph.facts;
-    if (s.disabled || s.state.kind === 'mixed' || f.severity >= SEVERITY.OPTIONAL || s.assessment.blocked) return { accept: false, score: -100, severity: s.severity, graph };
-    const a = s.assessment;
-    let score = a.score + f.legalLinks + s.context.gatingScore + (f.auth ? 2 : 0) + Math.min(f.controlConfidence, 5);
-    if (f.required) score += 4;
-
-    const explicitLegalAssent = f.legal && f.assent;
-    const explicitMandatoryLegal = f.legal && f.required;
-    const terseAuthLegal = f.legal && f.auth && f.controlConfidence >= 4 && (f.legalLinks >= 2 || f.required || f.actionGated);
-    const assentWithLegalLinks = f.assent && f.legalLinks >= 2 && f.controlConfidence >= 3;
-    const relationalGate = f.legal && (f.assent || f.required) && (f.auth || f.actionGated) && f.controlConfidence >= 3;
-    const accept = explicitLegalAssent || explicitMandatoryLegal || terseAuthLegal || assentWithLegalLinks || relationalGate || (a.eligible && score >= 12);
-    return { accept, score, severity: s.severity, graph };
+    return decideEvidence(evidenceForCandidate(s));
   }
 
   function bucketFor(context) {
