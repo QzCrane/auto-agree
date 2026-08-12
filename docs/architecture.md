@@ -1,265 +1,312 @@
 # Architecture
 
+Auto Agree is a lazy, evidence-gated MV3 extension. The architecture is organized around **authority separation**: discovery, semantic classification, decision policy, persisted acceleration, automated action, lifecycle control and Chrome side effects are intentionally different responsibilities.
+
 ## System invariant
 
-Auto Agree minimizes routine access friction **subject to a stricter constraint**: it must not convert a meaningful legal, financial, factual, optional, or attestation decision into an automatic click.
+The product may automatically act only when current browser evidence proves a **routine mandatory access agreement**. Optional, consequential or attestation semantics are fail-closed. Historical success, CSS shape, a loaded module, a version sentinel, or a stale decision can never create click authority by itself.
 
-The runtime therefore treats three concerns independently:
-
-- **cost** — unrelated frames should remain cheap;
-- **recall** — routine mandatory access agreements should not be lost because of framework structure or bounded scheduling;
-- **authority/safety** — optional or consequential consent and stale generations must not gain click authority.
-
-A performance optimization is invalid if it silently weakens either recall or authority.
-
-## Runtime generation and tiers
-
-v11 has one coherent runtime generation across the manifest/package and eight JavaScript surfaces: Probe, Gate, generation lease, semantic core, risk core, handover guard, Engine, and Worker. `tests/version-contract.mjs` makes this a machine invariant; a mixed-generation runtime is not a valid release state.
+## Runtime dependency graph
 
 ```mermaid
-sequenceDiagram
-  participant Page
-  participant Lease as generation-lease.js
-  participant Guard as handover-guard.js
-  participant Probe as bootstrap.js
-  participant Worker as worker.js
-  participant Core as semantic-core.js
-  participant Gate as gate.js
-  participant Risk as risk-core.js
-  participant Engine as engine.js
+flowchart TD
+  RK[RuntimeKernel]
+  GL[Generation Lease]
+  P[Probe / bootstrap]
+  SC[Semantic Core]
+  G[Gate]
+  DOM[DomCore]
+  HG[Handover Guard]
+  AA[ActionAuthority]
+  DK[DecisionKernel]
+  PC[ProfileCore]
+  RC[Risk Core]
+  E[Engine]
+  SK[SchedulerCore]
+  W[MV3 Worker]
 
-  Page->>Lease: install realm-local generation authority before Probe
-  opt page survives an extension update
-    Worker->>Lease: install/refresh current lease
-    Worker->>Core: install current shared semantics
-    Worker->>Guard: establish historical-generation firewall
-    Worker->>Probe: rehydrate only after protection resolves
-  end
+  RK --> GL
+  RK --> P
+  RK --> SC
+  RK --> G
+  RK --> DOM
+  RK --> HG
+  RK --> AA
+  RK --> DK
+  RK --> RC
+  RK --> E
 
-  Page->>Probe: bounded DOM/auth/legal changes
-  alt weak or unrelated evidence
-    Probe-->>Page: remain asleep
-  else suspicious local evidence
-    Probe->>Worker: AUTO_AGREE_GATE
-    Worker->>Lease: refresh exact frame/document lease
-    Worker->>Core: inject shared semantics
-    Worker->>Gate: inject Gate
-    Gate->>Gate: bounded evidence/co-occurrence decision
-    alt insufficient evidence
-      Gate-->>Page: remain/retire without Engine
-    else accepted
-      Gate->>Worker: AUTO_AGREE_ACTIVATE
-      Worker->>Lease: refresh current generation authority
-      Worker->>Core: refresh shared semantics
-      Worker->>Guard: refresh historical-generation firewall
-      Worker->>Risk: lazy inject high-consequence semantics
-      Worker->>Engine: lazy inject full Engine
-      Engine->>Engine: graph + severity + live state
-      alt routine authority proven
-        Engine->>Guard: one-shot current-generation authorization
-        Engine->>Lease: synchronous runtime-generation check at click primitive
-        Engine->>Page: verified activation
-      else meaningful or ambiguous consent
-        Engine-->>Page: no click
-      end
-    end
-  end
+  P -->|AUTO_AGREE_GATE| W
+  SC --> G
+  G -->|AUTO_AGREE_ACTIVATE| W
+  DOM --> HG
+  SC --> HG
+  GL --> AA
+  HG --> AA
+  DK --> RC
+  SC --> E
+  DOM --> E
+  DK --> E
+  PC --> E
+  RC --> E
+  AA --> E
+  SK --> W
+  PC --> W
+  W --> G
+  W --> E
 ```
 
-`generation-lease.js` is present before Probe and in every dynamically injected Gate/Engine/update-protection closure. It owns no discovery, semantics, polling, network activity, or global event listener. Its single responsibility is to ensure Auto Agree's own isolated-world `HTMLElement.prototype.click()` remains usable only while `chrome.runtime.getManifest().version` matches the generation that installed the lease.
+## Module authorities
 
-`handover-guard.js` solves a separate compatibility problem: pages can retain **historical non-cooperative isolated worlds** across an extension update. The guard protects current agreement controls from those worlds while keeping trusted user input and tightly bounded same-event page delegation functional.
+### `runtime-kernel.js`
 
-## Semantic authority
+RuntimeKernel is the single isolated-world **birth-generation** authority and the shared browser-independent lifetime/work substrate.
 
-### Shared semantic core and lazy risk core
+It owns:
 
-`semantic-core.js` contains bounded normalization and legal/assent/auth primitives needed by Gate, Engine, and handover protection. `risk-core.js` contains optional/consequential/attestation rules and is loaded only when Gate has justified Engine activation.
+- one `VERSION` literal for the isolated execution generation;
+- lifecycle epoch/state primitives used by Probe, Gate and Engine;
+- bounded FIFO admission and hard capacity enforcement;
+- live-age refresh semantics;
+- weak final-state recovery helpers.
 
-This prevents:
+It does **not** own DOM semantics, consent policy, Chrome storage or Worker scheduling policy. Other isolated runtime modules snapshot `KERNEL.version`; they do not carry independent release-number literals.
 
-1. Gate/Engine/handover legal vocabularies from drifting independently;
-2. high-consequence semantic cost from being loaded in every merely suspicious frame.
+### `generation-lease.js`
 
-### Multilingual safety parity
+Generation Lease wraps the current isolated realm's `HTMLElement.prototype.click`. Immediately before dispatch it synchronously checks whether the realm's compiled RuntimeKernel generation still equals `chrome.runtime.getManifest().version`.
 
-Language support is an **authority boundary**, not only a recall feature. A language family supported for routine Terms/Privacy assent must also carry fail-closed native-language evidence for representative optional, financial, medical, biometric, arbitration/rights, subscription, employment, and factual/age consent.
+This is a cooperative physical revocation mechanism for Auto Agree generations that shipped the lease. It does not patch the page MAIN world and does not replace the historical-generation firewall.
 
-Localized risk patterns may raise severity and suppress automation; they cannot create authority. Routine and risk semantics both have bounded compact forms so DOM fragmentation cannot turn one side of the safety boundary into a weaker recognizer.
+### `bootstrap.js` — Probe
 
-## Semantic graph
+Probe is the always-present micro tier. It performs bounded local discovery for co-occurring authentication/legal evidence and requests Gate only when richer work is justified.
 
-Engine evaluates a relationship graph rather than treating one checkbox label as an isolated string:
+Probe never owns consent severity or click policy. Pressure recovery keeps hard queue bounds while retaining weak final-state convergence for connected work.
+
+### `semantic-core.js`
+
+Semantic Core owns bounded normalization and shared routine legal/assent/authentication vocabulary. Gate, Engine and Handover Guard consume it so those tiers cannot silently maintain divergent Terms/Privacy semantics.
+
+It deliberately does not own the severity lattice; DecisionKernel is the sole severity authority.
+
+### `gate.js` — Semantic Gate
+
+Gate performs a bounded evidence scan after Probe activation. Its only product decision is whether the document/frame should receive the Engine-capable runtime closure.
+
+Gate owns its low-cost text/attribute budgets and bounded traversal state. Those budgets are intentionally not unified with Engine or Guard scanners because the tiers have different latency and security obligations.
+
+### `dom-core.js`
+
+DomCore is a deliberately tiny topology adapter. It owns exactly two shared mechanisms:
+
+- composed-tree parent resolution across slots / Shadow hosts;
+- root-scoped IDREF lookup for Document / DocumentFragment roots.
+
+DomCore is prohibited by static contract from becoming a TreeWalker/textContent/full-scan policy bucket. Engine and Guard still own their distinct bounded text extraction behavior.
+
+### `handover-guard.js`
+
+Handover Guard is the event/cross-generation firewall. It protects two cases that Generation Lease cannot collapse into one mechanism:
+
+1. non-cooperative historical generations that never shipped a lease;
+2. same-generation synthetic action that lacks a consumed current Engine authorization or a live trusted-event causal lease.
+
+Direct Engine authorization is one-shot and expires at the next microtask checkpoint if unused. Trusted-event causal authority is bound to the exact delegated control and exact source `Event`, and remains valid only while browser dispatch is live (`eventPhase != Event.NONE`). Broad/wide containers, proceed actions and ambiguous wrappers fail closed.
+
+A stale Guard becomes passive toward later legitimate generations after its own extension Runtime is invalidated.
+
+### `action-authority.js`
+
+ActionAuthority is the **single automated action protocol**, not a semantic policy engine.
+
+For one `HTMLElement` target it requires, in order:
+
+1. matching/current Generation Lease and `lease.current() === true`;
+2. matching/current Handover Guard and `guard.authorize(target) === true`;
+3. exactly one `target.click()` attempt.
+
+Missing/mismatched dependencies, rejection or exception return `false`. The patched Generation Lease click performs another synchronous generation check at the physical primitive, closing the update race between authorization and dispatch.
+
+ActionAuthority does not decide whether a candidate is routine and does not treat `.click()` return as success. Engine's live verifier owns observable success.
+
+### `decision-core.js` — DecisionKernel
+
+DecisionKernel is pure/browser-independent policy. It owns:
+
+- the sole severity lattice: ROUTINE, PRIVACY, OPTIONAL, CONSEQUENTIAL, ATTESTATION;
+- `EvidenceIR -> Decision` policy for standard controls;
+- the weaker explicitly modeled classless policy path.
+
+Engine extracts browser facts; DecisionKernel decides whether those facts can become automated action authority. Risk Core imports this severity lattice rather than defining another copy.
+
+### `risk-core.js`
+
+Risk Core is Engine-only and lazy. It classifies optional/consequential/attestation semantics such as marketing, financial authorization, medical consent, arbitration/waivers, biometric/facial recognition, auto-renewal and factual attestations.
+
+Routine-language support and fail-closed risk coverage share an executable 23-family test corpus. v12 fixed Chinese `自动续费` / `自動續費` / continuous-subscription semantics so they cannot remain merely optional while other supported languages classify automatic renewal as consequential.
+
+### `profile-core.js`
+
+ProfileCore is browser-independent persisted-acceleration governance. It owns:
+
+- profile/locator/descriptor sanitization;
+- flow identity;
+- profile merge semantics;
+- descriptor compatibility;
+- bounded origin-index compaction;
+- resource limits: 256 origins, 8 flows/origin, 180-day TTL, 32-entry Worker hot cache.
+
+Finite timestamps/counters and future-dated evidence are fail-closed. Semantic severity thresholds are passed from DecisionKernel instead of being duplicated here.
+
+Profile data can nominate a likely current locator. Engine must still snapshot current DOM state, re-check compatibility/semantics/DecisionKernel policy and use ActionAuthority. Cache is never authority.
+
+### `engine.js`
+
+Engine is the browser adapter and verifier. It owns:
+
+- candidate/row/context extraction;
+- ARIA/native-label/Shadow evidence extraction;
+- context indexing and mutation transactions;
+- bounded ordinary/root/sibling/Shadow work;
+- browser state reading and mixed/unknown-state handling;
+- mapping browser snapshots into DecisionKernel EvidenceIR;
+- profile acceleration use and learning feedback;
+- ActionAuthority invocation;
+- MutationObserver/event/timer-based verification that the control actually became checked.
+
+The two automated action sites—initial attempt and one bounded retry for explicit false native/ARIA/data states—both route through ActionAuthority. Classless unknown-state controls remain one-shot.
+
+### `scheduler-core.js`
+
+SchedulerCore is pure Worker injection policy. It owns global/per-tab concurrency, bounded queue admission, priority aging, stale semantics, fair tab tie rotation and preemption selection.
+
+### `worker.js`
+
+The MV3 Worker is the Chrome API adapter. It owns:
+
+- dynamic `chrome.scripting.executeScript` calls;
+- transient injection queues whose policy comes from SchedulerCore;
+- MessageSender lifecycle/origin validation;
+- persistent `storage.local` + `storage.session` profile state governed by ProfileCore;
+- serialized profile mutations;
+- update rehydration of already-open tabs.
+
+Worker globals are not correctness authority; the Worker may terminate between events.
+
+## Physical injection closures
+
+### Static content-script world
+
+Manifest content scripts install:
 
 ```text
-Control --described-by--> Semantic Row --contained-in--> Context
-   |                                              |
-   +---------------- gates -----------------------+--> Proceed Action
-Semantic Row --references-legal--> legal links/context
+runtime-kernel.js
+→ generation-lease.js
+→ bootstrap.js
 ```
 
-Current facts include legal/assent/required evidence, auth context, transaction context, action gating, legal-link strength, control confidence, live control state, and severity.
+This runs at `document_start`, in all matching frames, in the ISOLATED world.
 
-The graph is rebuilt from live DOM evidence before action. A learned profile can accelerate locator discovery but cannot manufacture semantic facts or click authority.
+### Gate-capable world
 
-## Mutation transaction and intent prewarm
-
-Detailed context mutations are coalesced into a lifecycle-generation-owned transaction. Within one render burst, a context is invalidated once and its indexed candidates are re-evaluated once.
-
-Intent prewarm uses existing bounded events only:
-
-- credential focus;
-- credential input/change;
-- Enter;
-- interaction with a proceed action.
-
-There is no mousemove tracking or polling loop. Rising intent prewarms only the relevant context and candidate index.
-
-## Lossless bounded discovery
-
-Probe, Gate, and Engine use hard queue/object caps and time slicing so hostile or framework-heavy DOM churn cannot create unbounded retained work. ADR 0012 defines the governing invariant:
+Worker injection:
 
 ```text
-hard representation cap
-!=
-permission to forget live semantic work
+runtime-kernel.js
+→ generation-lease.js
+→ semantic-core.js
+→ gate.js
 ```
 
-A representation may disappear without recovery only when its work is complete, disconnected, generation-obsolete/superseded, or another bounded representation is already authoritative for the same live final state.
+### Engine-capable world
 
-### Probe
+Worker injection:
 
-`MAX_DEEP = 4` remains hard. Excess live roots are weakly coalesced into a final-state recovery scope and re-enter ordinary bounded traversal after admitted work drains. The extension does not replace the cap with a synchronous whole-document scan.
+```text
+runtime-kernel.js
+→ generation-lease.js
+→ semantic-core.js
+→ dom-core.js
+→ handover-guard.js
+→ action-authority.js
+→ decision-core.js
+→ profile-core.js
+→ risk-core.js
+→ engine.js
+```
 
-### Gate
+Every consumer validates required versions before publishing its own sentinel.
 
-Gate has two separately bounded representations:
+### Update rehydration protection
 
-- `MAX_BATCH_JOBS = 6` — large-batch pressure recovers through the batch's weak live owner and the existing bounded deep path;
-- `MAX_DEEP_JOBS = 10` — existing FIFO cursors remain in place and only **new excess** live roots are weakly coalesced into final-state recovery.
+For already-open tabs, update protection is installed before Probe recovery:
 
-Composite evidence authority is tracked separately; when distinct scopes merge to a broader recovery ancestor, composite authority fails closed rather than being widened accidentally.
+```text
+runtime-kernel.js
+→ generation-lease.js
+→ semantic-core.js
+→ dom-core.js
+→ handover-guard.js
+```
 
-`JOB_TTL_MS = 2400` is a scheduling/liveness bound, not an obsolescence oracle. Connected Gate batch/deep work crossing the age refreshes liveness and continues its existing state. Only dead/disconnected work may retire for that reason.
+Only after that protection resolves does Worker inject `bootstrap.js`. ActionAuthority is Engine-only and is not needed merely to protect a historical page.
 
-A deep slice that enters after its background budget is already exhausted is not considered started. `started=true` is set only when a node is actually processed, preventing the next slice from confusing a null cursor with completion.
+## Decision pipeline
 
-### Engine RootBatch
+A normal candidate proceeds through:
 
-`MAX_ROOT_BATCHES = 8` remains hard. Same-parent overflow coalesces to bounded `queueRoot(parent)` final-state work; mixed roots remain weakly represented rather than being silently dropped.
+```text
+bounded DOM evidence
+→ semantic row/context + current control state
+→ Risk Core severity
+→ EvidenceIR
+→ DecisionKernel
+→ visibility/current-state revalidation
+→ ActionAuthority
+→ DOM event/state verifier
+→ bounded ProfileCore learning feedback
+```
 
-`ROOT_BATCH_TTL_MS = 3000` does not delete a live RootBatch by age alone. A live batch refreshes its liveness timestamp and continues from its existing `index`.
+Important asymmetries:
 
-### Engine walk jobs
+- DecisionKernel acceptance permits an action **attempt**, not success.
+- ActionAuthority returning `true` means the authorized click primitive was invoked, not that the page honored it.
+- Profile success history narrows discovery but cannot bypass live policy.
+- Trusted browser input is outside Engine authorization and must remain usable.
 
-`MAX_WALK_JOBS = 12` remains hard. Existing FIFO walk cursors stay authoritative. A **new excess** root is weakly coalesced into `walkRecoveryRef`; recovery is promoted only after ordinary RootBatch/walk work drains. Urgency is retained separately from the weak DOM scope.
+## Lifecycle and bounded work
 
-### Engine mutation/sibling batches
+Probe, Gate and Engine each own domain-specific observers/listeners/queues but use RuntimeKernel lifecycle epochs. Hidden/frozen/prerender states invalidate scheduled tokens and detach/quiesce tier-owned resources. Resume creates a new current epoch and re-establishes work from live DOM rather than trusting stale asynchronous callbacks.
 
-`MAX_BATCH_JOBS = 8` and `BATCH_JOB_TTL_MS = 3000` remain hard. Large MutationRecord NodeLists are represented as weak sibling ranges rather than retained in full.
+A bounded work item may be retired only when it is complete, dead/disconnected, generation-obsolete/superseded, or another bounded representation is already authoritative. Age alone does not delete connected work whose final state has not converged.
 
-A missing/dead owner can retire the job. A connected owner that merely crosses the TTL cannot: liveness age is refreshed and the job continues its current `currentRef`, `subjob`, and `reachedLast` state.
+Current hard policies include:
 
-### Engine broad closed-Shadow discovery
+- Probe deep excess → weak final-state recovery;
+- Gate deep → old FIFO cursor before new excess recovery;
+- Gate batch → weak live-owner recovery;
+- Engine RootBatch → bounded final-state convergence and live-index preservation;
+- Engine walk → old FIFO + weak excess-root recovery;
+- Engine sibling range → preserve current range/subjob across live age;
+- broad closed-Shadow discovery → old FIFO + weak excess-root recovery.
 
-`MAX_SHADOW_JOBS = 8` remains hard. Existing FIFO shadow cursors remain authoritative; new excess broad-sweep roots are weakly coalesced into `shadowRecoveryRef`.
+## Release identity
 
-Shadow recovery is promoted only after RootBatch, walk, mutation-batch, and ordinary shadow work drain. `hasBackgroundWork()` includes recovery, and lifecycle retirement clears it.
+v12 has fewer independent version surfaces than the historical v11 model:
 
-This path matters specifically for closed ShadowRoots on ordinary hosts that ordinary `probeShadow(host, false)` intentionally cannot open. Broad discovery may use `chrome.dom.openOrClosedShadowRoot`, but queue pressure cannot silently erase the only representation capable of discovering such a target.
+- **release metadata:** manifest + package + package-lock top-level + package-lock root package;
+- **isolated-world birth generation:** the single RuntimeKernel literal;
+- **other isolated modules:** derive `KERNEL.version`;
+- **Worker:** derives `chrome.runtime.getManifest().version`;
+- **current-generation tests:** derive the candidate manifest.
 
-### Ownership and lifecycle of recovery
+`tests/version-contract.mjs` machine-enforces this model. A release-number literal in another production module is a contract failure.
 
-All scheduled recovery state is lifecycle-owned. DOM roots/cursors are weakly held across scheduling yields; no TreeWalker is retained across a yield. Pause/freeze/BFCache retirement clears ordinary and recovery queues. No bounded-work repair introduced an unbounded synchronous fallback or a strong ownership chain to detached DOM.
+## Packaging
 
-## Worker injection scheduler
+`extension/` is the canonical executable root. The deterministic packager derives the JavaScript closure from current production files rather than a second manual module list. Version/packaging tests therefore fail if a new runtime dependency exists in source but is omitted from the archive.
 
-The Worker separately bounds dynamic code injection:
+## Non-goals
 
-- maximum 4 injections globally;
-- maximum 2 per tab;
-- queue length 64;
-- Engine has higher ordinary base priority than Gate;
-- update protection/rehydration has higher priority than ordinary Gate/Engine work;
-- waiting jobs gain bounded aging priority;
-- equal-score work rotates away from the most recently scheduled tab when another eligible tab exists;
-- stale queued jobs are rejected before consuming a slot;
-- a high-priority Engine request can evict a younger lower-priority queued Gate request when the scheduler is full.
-
-This queue is transient by design. Unexpected MV3 Worker termination is tolerated because Probe/Gate handoff is replayable and durable correctness state is not stored solely in Worker globals.
-
-## Document lifecycle and profile governance
-
-`MessageSender.documentLifecycle` is a Worker-side defense in depth. Explicit prerender/cached/pending-deletion senders cannot schedule Gate/Engine/profile work. Unknown lifecycle is tolerated only for API compatibility.
-
-State ownership is split deliberately:
-
-- **durable:** verified site learning and update-rehydration marker → `chrome.storage`;
-- **transient/replayable:** injection queues/maps and hot cache → Worker globals.
-
-v11 preserves the verified profile governance:
-
-- maximum 256 persistent origins;
-- maximum 8 flows/origin;
-- 180-day TTL;
-- 32-entry Worker hot LRU;
-- `storage.session` + `storage.local`;
-- flow identity = fingerprint + exact DOM/Shadow locator;
-- serialized concurrent writes;
-- persistence errors propagate to the caller.
-
-Profile origin is derived from Chrome `MessageSender.origin`/`url`, never trusted from content-provided payload text.
-
-## Extension update rehydration
-
-An extension update can replace the Worker while already-open pages retain prior isolated worlds. v11 rehydrates each accessible tab in two ordered phases:
-
-1. `generation-lease.js` + `semantic-core.js` + `handover-guard.js` in all accessible frames at elevated priority;
-2. `bootstrap.js` only after protection resolves.
-
-If protection fails for a tab, protection is retried and Probe is **not** started for that tab. Discovery therefore never intentionally starts before the current action boundary exists.
-
-The formal v10→v11 real-browser transition proved that a full v10 isolated world and a full v11 isolated world can remain simultaneously observable without page reload. The current v11 world owns routine action; stale/protected negative cases remain zero-click.
-
-The independent future-generation probe replaced the same unpacked v11 path with manifest-only v12 while keeping the page alive. The old v11 JavaScript execution context remained observable, but its generation lease reported non-current authority; stale automation and direct stale-world `.click()` both produced zero DOM clicks while trusted browser input still succeeded once.
-
-## Click authority
-
-### Direct current-Engine authorization
-
-Immediately before `.click()`, current Engine asks the current handover guard to authorize the exact target/ancestor chain. Authorization is one-shot and microtask-bounded.
-
-A real-browser negative discriminator also proves the **event boundary itself** remains fail-closed: replacing the public API object with `authorize() => false` caused two Engine attempts (initial + bounded retry) but zero DOM click effect, while a subsequent trusted browser click succeeded exactly once. Therefore v11 does not add a redundant speculative branch merely because Engine does not inspect the return value.
-
-### Local causal delegation
-
-A trusted user event or already-authorized current Engine click may enter a small local control wrapper whose page handler synchronously delegates to a descendant `.click()`.
-
-Authority is bound to:
-
-- the exact delegated control;
-- the exact source `Event`;
-- the live duration of browser dispatch (`sourceEvent.eventPhase != Event.NONE`);
-- one consumption.
-
-Bubble cleanup is an eager optimization, not the authority boundary. `stopPropagation()` therefore cannot preserve a token into a later task. Broad form/dialog/page containers and proceed actions are excluded; ambiguous wrappers with multiple candidate controls fail closed.
-
-## Release-transition identity
-
-The update harness stages the exact PR base and derives previous/current versions from their manifests. It does not hardcode a historical release pair.
-
-Old/current worlds are identified primarily by **execution-context ID**, not version text. That supports both major transitions (v10→v11) and same-version hotfix/reload tests where two observable contexts can carry equal version strings.
-
-## Packaging and permissions
-
-`extension/` is the canonical production root. The deterministic package derives its executable JavaScript closure from the actual `extension/*.js` set, not from a second hand-maintained runtime list.
-
-This means a newly referenced guard/lease/runtime module cannot be omitted while a ZIP shape/CRC check still reports success.
-
-Permissions remain:
-
-- `scripting`;
-- `storage`;
-- `<all_urls>` host access required for the product's cross-site login role.
-
-There is no debugger permission, telemetry/network client, remote code, eval, polling interval, or wildcard whole-page scan in the production closure.
+Auto Agree does not attempt to control Chrome-owned UI, opaque Canvas/WebGL interfaces without usable DOM/accessibility evidence, arbitrary historical JavaScript side effects, or semantics intentionally placed outside every finite bounded sample of an unbounded string. The safety model is a tested browser/extension mechanism, not a universal browser theorem.

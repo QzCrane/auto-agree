@@ -14,43 +14,56 @@ Auto-click is allowed only when **live evidence** classifies the action as low-d
 
 It refuses marketing, cookies, remember-me, auto-renewal, payment/debit authorization, loans/credit, investment/trading authorization, insurance purchase/application, medical consent, employment contracts, e-signatures, arbitration/rights/class-action waivers, biometric/facial recognition consent, guarantees/powers of attorney, CAPTCHA, and age/identity/factual attestations.
 
-The decision is based on **what action the user would authorize**, not what industry the site belongs to.
+The decision is based on **what action the user would authorize**, not what industry the site belongs to. Language support is fail-closed: every routine-supported language family is paired with native-language optional, consequential, attestation and high-consequence suppressors.
 
-Language support is also fail-closed: if a language family is supported for routine assent, representative native-language optional/consequential/attestation evidence must also be able to suppress automation.
-
-## Architecture
+## v12 architecture
 
 ```mermaid
 flowchart LR
-  L[Generation lease\nall Auto Agree worlds] --> P[Micro Probe\nall matching frames]
-  P -->|co-occurring auth/legal evidence| G[Semantic Gate]
-  G -->|evidence accepted| R[Risk Core]
-  R --> E[Decision Engine]
-  E --> S[Semantic graph + severity + live state]
-  S -->|routine authority proven| C[Verified click]
-  S -->|optional / consequential / attestation| B[Block]
-  E --> V[Bounded local behavioral learning]
-  W[MV3 Worker] --> G
-  W --> R
-  W --> E
-  W --> V
-  U[Update rehydration] --> H[Historical-generation handover guard]
-  H --> P
-  E -. one-shot current authorization .-> H
-  E -. synchronous generation check .-> L
+  RK[RuntimeKernel\nversion + lifecycle + bounded FIFO] --> P[Micro Probe]
+  RK --> G[Semantic Gate]
+  RK --> E[Engine]
+  L[Generation Lease] --> P
+  P -->|auth/legal co-occurrence| G
+  SC[Semantic Core] --> G
+  G -->|activation evidence| W[MV3 Worker]
+  W -->|Engine-capable isolated world| E
+  DC[DecisionKernel\nsole severity/click policy] --> E
+  PC[ProfileCore\nbounded acceleration schema] --> E
+  RC[Risk Core\nEngine-only risk classifier] --> E
+  DOM[DomCore\ncomposed parent + root IDREF] --> E
+  HG[Handover Guard\nhistorical/trusted-event firewall] --> AA[ActionAuthority]
+  L --> AA
+  AA -->|authorized one-shot attempt| E
+  E -->|live DOM verifier| OK[Success]
+  E -->|optional/consequential/attestation| BLOCK[Block]
+  WS[SchedulerCore] --> W
+  PC --> W
 ```
 
-The always-present Probe is deliberately small and never decides consent. Richer code is injected only into the exact document/frame that earns it. Gate and Engine share one semantic base; high-consequence rules are deferred to an Engine-only risk core.
+The modules are deliberately separated by authority:
 
-The **cooperative generation lease** is isolated-world local. It checks the current manifest generation at the programmatic click primitive and makes stale Auto Agree `.click()` calls no-ops before DOM dispatch. It does not patch the page MAIN world; trusted browser input remains normal.
+- **RuntimeKernel** owns one isolated-world birth generation, lifecycle epochs, bounded FIFO admission, live-age refresh and weak recovery primitives.
+- **Generation Lease** owns cooperative stale-generation physical revocation of Auto Agree's isolated-world `HTMLElement.prototype.click`.
+- **Probe** is always present but never decides consent.
+- **Semantic Core** owns bounded legal/assent normalization shared by Gate/Engine/Guard.
+- **Gate** decides only whether richer code is worth injecting.
+- **DomCore** owns two topology-only primitives (`composedParent`, root-scoped IDREF lookup); it is forbidden from becoming a text scanner or policy layer.
+- **Handover Guard** owns trusted-event causal delegation and the firewall against unauthorized historical synthetic agreement clicks.
+- **ActionAuthority** is the only Engine automated-click protocol: current generation → Guard authorization → one `.click()` attempt. It does not decide semantic policy or declare DOM success.
+- **DecisionKernel** is the sole severity lattice and EvidenceIR/classless acceptance authority.
+- **Risk Core** classifies optional/consequential/attestation semantics using the DecisionKernel severity lattice.
+- **ProfileCore** owns bounded persisted-profile schema, merge/identity/compatibility and origin/flow limits. Historical success may accelerate discovery but never creates click authority.
+- **Engine** extracts live browser evidence, asks DecisionKernel for policy, invokes ActionAuthority, and separately verifies the observable DOM state.
+- **SchedulerCore** owns Worker injection scheduling policy; the Worker owns Chrome APIs, transient queue execution, persistent profile storage and update rehydration.
 
-The handover guard remains the compatibility firewall for historical non-cooperative generations. It blocks stale agreement-like synthetic clicks while preserving tightly bounded same-event delegation used by real custom controls. Causal delegation is bound to the exact delegated control and exact live source `Event`; `stopPropagation()` cannot extend that authority into a later task.
+Dynamic Engine injection is ordered so lease/semantics/DomCore/Guard/ActionAuthority/policy/profile/risk dependencies exist before Engine starts. Update protection installs the current lease + semantics + DomCore + Guard before rehydrating Probe into already-open tabs.
 
 Bounded discovery follows one hard rule:
 
-> **a queue/object cap is not permission to forget live semantic work.**
+> **A queue/object cap is not permission to forget live semantic work.**
 
-Probe, Gate and Engine keep their hard caps while using weak final-state recovery, FIFO preservation and live-work lifetime semantics. No repair raises the cap or falls back to an unbounded synchronous page scan.
+Probe, Gate and Engine keep hard resource caps while preserving connected final state through FIFO ownership, weak recovery and lifecycle-aware retirement. No recovery path raises a cap or falls back to an unbounded whole-page scan.
 
 See [Architecture](docs/architecture.md), [Decision model](docs/decision-model.md), [Security model](docs/security-model.md), and [Testing](docs/testing.md).
 
@@ -68,31 +81,38 @@ Do not run multiple independent Auto Agree installs/versions simultaneously: sep
 ## Repository layout
 
 ```text
-extension/              only load-unpacked production root
+extension/                  canonical load-unpacked production root
   manifest.json
-  generation-lease.js   realm-local cooperative generation click authority
-  bootstrap.js          always-present micro Probe
-  handover-guard.js     historical-generation/update firewall
-  semantic-core.js      shared bounded legal/assent semantics
-  risk-core.js          Engine-only consent severity/risk semantics
-  gate.js               semantic activation Gate
-  engine.js             decision, verification, bounded DOM/Shadow discovery, learning
-  worker.js             fair injection scheduler + restart/update persistence
+  runtime-kernel.js         single isolated birth generation + lifecycle/bounded-work primitives
+  generation-lease.js      cooperative stale-generation click revocation
+  bootstrap.js             always-present micro Probe
+  semantic-core.js         shared bounded legal/assent semantics
+  gate.js                  semantic activation Gate
+  dom-core.js              topology-only composed-parent / root-IDREF primitives
+  handover-guard.js         historical-generation + trusted-event firewall
+  action-authority.js       sole automated click protocol
+  decision-core.js          pure EvidenceIR/classless policy + sole severity lattice
+  profile-core.js           bounded persisted-profile governance
+  risk-core.js              Engine-only optional/consequential/attestation classifier
+  engine.js                 browser evidence extraction + verification + bounded discovery
+  scheduler-core.js         pure Worker injection scheduling policy
+  worker.js                 Chrome injection/storage/update adapter
 
-tests/                  deterministic contracts + real-browser harnesses/fixtures
-tools/                  deterministic packaging utility
+tests/                      auto-discovered deterministic gates + explicit real-Chrome E2E
+tools/                      deterministic packaging utility
 docs/
   architecture.md
   decision-model.md
   history.md
   security-model.md
   testing.md
-  decisions/            architecture decision records
-  verification/         version-by-version engineering evidence
+  decisions/
+  performance/
+  verification/
 .github/workflows/ci.yml
 ```
 
-Obsolete implementations are intentionally absent from the production tree. Git history preserves old source; `extension/` is not a historical museum.
+Obsolete implementations are intentionally absent from the production tree. Git history and the verification archive preserve historical evidence; `extension/` contains only the current executable closure.
 
 ## Verification
 
@@ -103,32 +123,41 @@ npm test
 python tools/package_extension.py --check
 ```
 
-The v11 release gate includes:
+v12 CI has **three independent jobs**:
 
-- coherent manifest/package + **8 runtime JavaScript generation sentinels** through `version-contract`;
-- 10,188 deterministic consent/risk assertions;
-- 644 multilingual semantic-fragmentation assertions;
-- real unpacked-extension Chrome E2E with actual MV3 Worker and dynamic injection;
-- deterministic **300-case** structural fuzz with FP=0, FN=0, duplicate=0;
-- repeated Worker termination/restart and update rehydration;
-- Probe/Gate saturation, including Gate deep **5 independent attempts** and a >2.4-second live-TTL discriminator;
-- Engine walk saturation at `MAX_WALK_JOBS=12`;
-- Engine RootBatch >3-second live-TTL preservation;
-- Engine 140-sibling mutation-batch >3-second live-TTL preservation;
-- Engine broad closed-Shadow saturation at `MAX_SHADOW_JOBS=8` using a plain `DIV` closed-root host;
-- rejected current-Engine authorization → zero automated DOM effect while trusted input still works;
-- real **v10.0.0 → v11.0.0** non-reloaded update with old/new isolated worlds simultaneously observable;
-- real **v11.0.0 → v12.0.0** manifest-generation probe proving stale v11 automatic and direct isolated-world `.click()` authority is revoked while trusted input remains usable;
-- 5,000-checkbox DevTools CPU profile capture;
-- deterministic package verification from the full production JavaScript closure.
+1. **core** — `tests/run-core.mjs` automatically discovers every deterministic root `tests/*.mjs` gate except `e2e-*` and itself, executes each in a fresh Node process, then runs TypeScript and deterministic package verification;
+2. **unpacked-e2e** — real headed Chrome for Testing with the actual unpacked MV3 extension, Worker, dynamic injection, lifecycle/queue/Shadow/authority/update discriminators;
+3. **performance** — seven independent fresh Chrome processes running the unchanged real-unpacked 5,000-checkbox tail-login profile harness and emitting raw runs plus median/p90/max.
 
-First clean v11 release-candidate profile on Chrome for Testing 149.0.7827.22: **200.9 ms latency / 0.1945 s TaskDuration / 168 samples**, below the broad `<1000 ms` / `<0.8 s` release ceilings.
+The v12 release candidate physically proved:
 
-Detailed evidence: [v11 verification report](docs/verification/v11.md).
+- **27 auto-discovered deterministic gates**, including the previously omitted 6,000-case classless DecisionKernel property gate;
+- DecisionKernel differential/safety testing (7,500 cases), SchedulerCore (12,500), RuntimeKernel lifecycle/queue/lifetime (5,500 generated sequences), ProfileCore/compatibility (10,500), consent-model generation (10,020 + 3,500), 23-language risk parity, and exhaustive routine/risk fragmentation samples;
+- deterministic **300-case** real-Chrome structural fuzz with false positives = 0, false negatives = 0, duplicate toggles = 0;
+- hard Probe/Gate/Engine saturation and live-TTL preservation, including closed ShadowRoot recovery;
+- three-layer automated-action proof: rejected ActionAuthority dispatches no synthetic click; a direct isolated synthetic click is independently blocked by Handover Guard; trusted browser input remains usable;
+- real **11.0.0 → 12.0.0** non-reloaded update with full old/new isolated contexts simultaneously observable;
+- real **12.0.0 → 13.0.0** future-generation probe with stale automated clicks = 0, direct stale isolated `.click()` = 0, trusted click = 1;
+- deterministic package `AutoAgree-v12.0.0.zip`, canonical candidate sha256 `1cee531a26272160df70909815089a80d1d45814ce3d138d7dd2c2efbc00e859`;
+- statistical real-unpacked candidate performance on Chrome 149.0.7827.22 / Puppeteer 25.1.0 / Node 24: latency median **259.1 ms**, p90 **288.2 ms**, max **288.5 ms**; TaskDuration median **0.2524 s**, p90 **0.2803 s**, max **0.2812 s** across seven raw runs.
+
+Hosted GitHub runners exhibit measurable execution-regime variance, so one CI profile is not treated as a deterministic cross-machine microbenchmark and does not justify speculative product optimization by itself.
+
+Detailed evidence: [v12 verification report](docs/verification/v12.md).
 
 ## Site learning
 
-Successful structure can accelerate later discovery, but cache is never click authority. The Worker preserves bounded governance: at most 256 origins, 8 flows/origin, 180-day TTL, 32 hot entries, `storage.session` + persistent `storage.local`, exact fingerprint+locator identity, serialized writes, and propagated persistence failures.
+Learning is bounded acceleration only. Current governance is machine-enforced by ProfileCore:
+
+- at most 256 persistent origins;
+- at most 8 flows per origin;
+- 180-day TTL;
+- 32-entry Worker hot LRU plus `storage.session` and `storage.local`;
+- validated fingerprint + exact DOM/Shadow locator identity;
+- finite/bounded descriptors and timestamps;
+- serialized mutations and explicit persistence failures.
+
+Cached evidence is always revalidated against current DOM state, current semantics and DecisionKernel policy before ActionAuthority can be reached.
 
 ## Permissions
 
@@ -140,19 +169,21 @@ Only:
 
 No `debugger`, cookies, history, `webRequest`, downloads, proxy, clipboard, `nativeMessaging`, telemetry, remote model, network client or remote-code path is used.
 
-`<all_urls>` is the required host scope for a tool whose stated job is to operate on arbitrary websites; rich scripts are still lazy-injected only after evidence gating.
+`<all_urls>` is the host scope required for arbitrary-site coverage; rich scripts are still lazy-injected only after evidence gating.
 
 ## Development principles
 
 1. False-positive cost is higher than false-negative cost.
 2. Cache accelerates discovery; cache is never authority to click.
-3. Hard resource bounds stay hard, but live correctness work needs bounded recovery rather than silent loss.
-4. Mutation callbacks enqueue bounded work; they do not perform full semantic analysis.
-5. Background/frozen/BFCache pages quiesce and scheduled DOM ownership stays weak.
-6. No unbounded subtree stringification, wildcard page scan, polling loop, remote model or telemetry.
-7. A proposed optimization is rejected when profiling or safety evidence does not justify its added complexity/permission surface.
-8. A sentinel, version string, loaded module or green narrow test proves presence—not exclusive authority or preservation of unrelated invariants.
-9. The packaged ZIP must contain the same production runtime closure as the canonical `extension/` root.
-10. A release head is not mergeable until exact-head canonical CI and a same-SHA unpacked-E2E rerun are both green.
+3. One invariant should have one policy owner; adapters may expose browser side effects but must not duplicate policy.
+4. Hard resource bounds remain hard; live correctness work uses bounded recovery rather than silent loss.
+5. Mutation callbacks enqueue bounded work instead of performing unbounded semantic analysis.
+6. Background/frozen/BFCache pages quiesce and scheduled DOM ownership stays weak.
+7. No unbounded subtree stringification, wildcard page scan, polling loop, remote model or telemetry.
+8. Performance changes require repeated evidence; a single hosted-runner sample is not enough to justify complexity.
+9. A sentinel/module/version or green narrow test proves only what that evidence actually covers.
+10. The packaged ZIP must contain the same executable closure as `extension/`.
+11. Deterministic tests self-register; adding a new root non-`e2e-*` gate must not require a second manual package-script edit.
+12. A release head is mergeable only after exact-head core/full-Chrome/performance success and same-SHA rerun evidence.
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) and [CHANGELOG.md](CHANGELOG.md).
