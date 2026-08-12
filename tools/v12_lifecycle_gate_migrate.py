@@ -32,7 +32,8 @@ if text.count(old) != 1:
     raise SystemExit('Gate lifecycle declaration anchor changed')
 text = text.replace(old, new)
 
-# Simple guards with unambiguous counts.
+# Simple guards with exact audited counts. The generic requested+paused form includes activate,
+# onMutations and startObserver, so it is intentionally replaced as one closed set.
 replacements = [
     ('if (requested || paused) return;', 'if (requested || lifecycle.paused) return;', 3),
     ('if (requested || paused || !root || deepQueued.has(root) || !rootConnected(root)) return;', 'if (requested || lifecycle.paused || !root || deepQueued.has(root) || !rootConnected(root)) return;', 1),
@@ -125,17 +126,6 @@ new = """        if ((batchJobs.length || deepJobs.length) && globalThis.schedul
 """
 if text.count(old) != 1:
     raise SystemExit('Gate background exit/schedule anchor changed')
-text = text.replace(old, new)
-
-# Mutation guard is unique as a full function prefix.
-old = """  function onMutations(records) {
-    if (requested || paused) return;
-"""
-new = """  function onMutations(records) {
-    if (requested || lifecycle.paused) return;
-"""
-if text.count(old) != 1:
-    raise SystemExit('Gate mutation lifecycle anchor changed')
 text = text.replace(old, new)
 
 old = """  function pauseGate() {
