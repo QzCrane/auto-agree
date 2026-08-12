@@ -38,6 +38,7 @@ From v3 onward, detailed version reports were produced during the corresponding 
 | pre-v11 Engine walk hardening | [v11-engine-walk-overflow.md](v11-engine-walk-overflow.md) | real-Chrome proof and repair of `MAX_WALK_JOBS=12` oldest-cursor loss under saturation |
 | pre-v11 Engine RootBatch lifetime hardening | [v11-engine-rootbatch-live-ttl.md](v11-engine-rootbatch-live-ttl.md) | real-Chrome proof that a still-live RootBatch cannot be retired solely because renderer delay crossed `ROOT_BATCH_TTL_MS=3000` |
 | pre-v11 Engine sibling-batch lifetime hardening | [v11-engine-batch-live-ttl.md](v11-engine-batch-live-ttl.md) | real-Chrome proof that a connected `enqueueSiblingRange` job cannot be retired solely because renderer delay crossed `BATCH_JOB_TTL_MS=3000` |
+| pre-v11 Engine broad closed-Shadow hardening | [v11-engine-shadow-overflow.md](v11-engine-shadow-overflow.md) | real-Chrome proof and repair of `MAX_SHADOW_JOBS=8` oldest-cursor loss when a unique routine agreement exists only in a closed ShadowRoot on a plain host |
 
 These hardening records do not claim a separate v11 release. They record correctness defects found while the production runtime still reports `10.0.0`, their real-browser falsification/repair evidence, and the stronger invariants required before the formal v11 version cut.
 

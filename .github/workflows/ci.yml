@@ -76,6 +76,10 @@ jobs:
         env:
           AUTO_AGREE_HEADED: '1'
         run: xvfb-run -a node tests/e2e-engine-batch-ttl.mjs
+      - name: Saturate Engine broad closed-shadow queue
+        env:
+          AUTO_AGREE_HEADED: '1'
+        run: xvfb-run -a node tests/e2e-engine-shadow-overflow.mjs
       - name: Prove cooperative stale-world generation revocation
         env:
           AUTO_AGREE_HEADED: '1'
