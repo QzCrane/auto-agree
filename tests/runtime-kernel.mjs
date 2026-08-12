@@ -40,13 +40,18 @@ assert.equal(kernel.version, '11.0.0');
 }
 
 {
-  const owner = { live: true };
   const job = { createdAt: 100 };
-  assert.equal(kernel.refreshLiveAge(job, 50, owner, item => item.live, 200), true);
-  assert.equal(job.createdAt, 200, 'live expired work refreshes age');
+  assert.equal(kernel.touchExpiredAge(job, 50, 120), false, 'age below TTL is not rewritten');
+  assert.equal(job.createdAt, 100);
+  assert.equal(kernel.touchExpiredAge(job, 50, 200), true, 'expired age metadata refreshes');
+  assert.equal(job.createdAt, 200);
+
+  const owner = { live: true };
+  assert.equal(kernel.refreshLiveAge(job, 50, owner, item => item.live, 300), true);
+  assert.equal(job.createdAt, 300, 'live expired work refreshes age');
   owner.live = false;
   assert.equal(kernel.refreshLiveAge(job, 50, owner, item => item.live, 400), false);
-  assert.equal(job.createdAt, 200, 'dead work does not refresh itself');
+  assert.equal(job.createdAt, 300, 'dead work does not refresh itself');
 }
 
 fc.assert(
@@ -92,4 +97,23 @@ fc.assert(
   { seed: 0xB0A1DED, numRuns: 1500, verbose: 2 }
 );
 
-console.log('runtime-kernel: PASS (deterministic + 1500 fast-check sequences)');
+fc.assert(
+  fc.property(
+    fc.integer({ min: 1, max: 10000 }),
+    fc.integer({ min: 0, max: 10000 }),
+    fc.boolean(),
+    (ttl, elapsed, live) => {
+      const owner = { live };
+      const job = { createdAt: 1000 };
+      const now = 1000 + elapsed;
+      const result = kernel.refreshLiveAge(job, ttl, owner, item => item.live, now);
+      assert.equal(result, live, 'liveness, not age, decides whether the owner-backed job remains valid');
+      if (!live) assert.equal(job.createdAt, 1000, 'dead work must never refresh age metadata');
+      else if (elapsed > ttl) assert.equal(job.createdAt, now, 'live work crossing TTL refreshes age');
+      else assert.equal(job.createdAt, 1000, 'live work below TTL preserves its original age');
+    }
+  ),
+  { seed: 0xB0A1DEE, numRuns: 1000, verbose: 2 }
+);
+
+console.log('runtime-kernel: PASS (deterministic + 2500 fast-check sequences)');
