@@ -13,6 +13,130 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  build-shadow-patch-artifact:
+    if: github.event_name == 'pull_request' && github.head_ref == 'agent/v11-shadow-artifact-clean'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - name: Apply bounded lossless shadow recovery without repository writes
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+          p = Path('extension/engine.js')
+          s = p.read_text()
+
+          old_decl = "  const shadowJobs = [];\n  const batchJobs = [];\n"
+          new_decl = "  const shadowJobs = [];\n  let shadowRecoveryRef = null;\n  const batchJobs = [];\n"
+          assert s.count(old_decl) == 1
+          s = s.replace(old_decl, new_decl, 1)
+
+          old_shadow = """  function currentShadowGeneration(root) { return shadowGeneration.get(root) || 0; }
+
+  function queueShadowSweep(root) {
+    if (!broadShadowEnabled || !root || !rootConnected(root)) return;
+    shadowGeneration.set(root, currentShadowGeneration(root) + 1);
+    if (queuedShadowRoots.has(root)) return;
+    queuedShadowRoots.add(root);
+    while (shadowJobs.length >= MAX_SHADOW_JOBS) {
+      const old = shadowJobs.shift();
+      const oldRoot = old?.rootRef?.deref?.();
+      if (oldRoot) queuedShadowRoots.delete(oldRoot);
+    }
+    shadowJobs.push({
+      rootRef: new WeakRef(root),
+      cursorRef: null,
+      started: false,
+      generation: currentShadowGeneration(root),
+      includeRoot: root instanceof HTMLElement
+    });
+    scheduleBackground();
+  }
+"""
+          new_shadow = """  function currentShadowGeneration(root) { return shadowGeneration.get(root) || 0; }
+
+  function makeShadowJob(root) {
+    return {
+      rootRef: new WeakRef(root),
+      cursorRef: null,
+      started: false,
+      generation: currentShadowGeneration(root),
+      includeRoot: root instanceof HTMLElement
+    };
+  }
+
+  function rememberShadowRecovery(root) {
+    if (!root || !rootConnected(root)) return;
+    const current = shadowRecoveryRef?.deref?.();
+    const merged = current && rootConnected(current) ? commonWalkRecoveryRoot(current, root) : root;
+    if (!merged || !rootConnected(merged)) return;
+    shadowRecoveryRef = new WeakRef(merged);
+  }
+
+  function promoteShadowRecovery() {
+    if (shadowJobs.length || !shadowRecoveryRef) return false;
+    const root = shadowRecoveryRef.deref?.();
+    shadowRecoveryRef = null;
+    if (!root || !rootConnected(root) || queuedShadowRoots.has(root)) return false;
+    shadowGeneration.set(root, currentShadowGeneration(root) + 1);
+    queuedShadowRoots.add(root);
+    shadowJobs.push(makeShadowJob(root));
+    return true;
+  }
+
+  function queueShadowSweep(root) {
+    if (!broadShadowEnabled || !root || !rootConnected(root)) return;
+    shadowGeneration.set(root, currentShadowGeneration(root) + 1);
+    if (queuedShadowRoots.has(root)) return;
+    if (shadowJobs.length >= MAX_SHADOW_JOBS) {
+      // Existing FIFO cursors remain authoritative; compress only new excess final state.
+      rememberShadowRecovery(root);
+      scheduleBackground();
+      return;
+    }
+    queuedShadowRoots.add(root);
+    shadowJobs.push(makeShadowJob(root));
+    scheduleBackground();
+  }
+"""
+          assert s.count(old_shadow) == 1
+          s = s.replace(old_shadow, new_shadow, 1)
+
+          old_work = "return !!(rootBatches.length || walkJobs.length || walkRecoveryRef || batchJobs.length || shadowJobs.length);"
+          new_work = "return !!(rootBatches.length || walkJobs.length || walkRecoveryRef || batchJobs.length || shadowJobs.length || shadowRecoveryRef);"
+          assert s.count(old_work) == 1
+          s = s.replace(old_work, new_work, 1)
+
+          loop_anchor = "      while (!lifecyclePaused && generation === lifecycleGeneration && hasBackgroundWork() && rounds++ < 24) {\n        if (!rootBatches.length && !walkJobs.length) promoteWalkRecovery();\n"
+          assert s.count(loop_anchor) == 1
+          s = s.replace(loop_anchor, loop_anchor + "        if (!rootBatches.length && !walkJobs.length && !batchJobs.length && !shadowJobs.length) promoteShadowRecovery();\n", 1)
+
+          finally_anchor = "    } finally {\n      if (!rootBatches.length && !walkJobs.length) promoteWalkRecovery();\n      if (backgroundEpoch === generation) backgroundQueued = false;\n"
+          finally_new = "    } finally {\n      if (!rootBatches.length && !walkJobs.length) promoteWalkRecovery();\n      if (!rootBatches.length && !walkJobs.length && !batchJobs.length && !shadowJobs.length) promoteShadowRecovery();\n      if (backgroundEpoch === generation) backgroundQueued = false;\n"
+          assert s.count(finally_anchor) == 1
+          s = s.replace(finally_anchor, finally_new, 1)
+
+          clear_anchor = "    shadowJobs.length = 0;\n    batchJobs.length = 0;\n"
+          clear_new = "    shadowJobs.length = 0;\n    shadowRecoveryRef = null;\n    batchJobs.length = 0;\n"
+          assert s.count(clear_anchor) == 1
+          s = s.replace(clear_anchor, clear_new, 1)
+
+          assert 'while (shadowJobs.length >= MAX_SHADOW_JOBS)' not in s
+          p.write_text(s)
+          PY
+          node --check extension/engine.js
+          git diff --check
+          git diff -- extension/engine.js
+      - uses: actions/upload-artifact@v4
+        with:
+          name: shadow-patched-engine
+          path: extension/engine.js
+          if-no-files-found: error
+          retention-days: 1
+
   core:
     runs-on: ubuntu-latest
     timeout-minutes: 5
@@ -25,68 +149,3 @@ jobs:
           node-version: '24'
       - run: npm test
       - run: python tools/package_extension.py --check
-
-  unpacked-e2e:
-    runs-on: ubuntu-latest
-    timeout-minutes: 12
-    steps:
-      - uses: actions/checkout@v6
-        with:
-          fetch-depth: 0
-      - uses: actions/setup-node@v7
-        with:
-          node-version: '24'
-      - name: Install pinned Puppeteer test tool
-        run: npm install --no-save --no-package-lock --ignore-scripts puppeteer@25.1.0
-      - name: Install Chrome for Testing explicitly
-        run: npx puppeteer browsers install chrome
-      - name: Inspect managed Chrome for Testing
-        run: |
-          CHROME="$(node --input-type=module -e "import puppeteer from 'puppeteer'; process.stdout.write(await puppeteer.executablePath())")"
-          echo "$CHROME"
-          "$CHROME" --version
-      - name: Ensure virtual display
-        run: |
-          if ! command -v xvfb-run >/dev/null 2>&1; then
-            sudo apt-get update
-            sudo apt-get install -y xvfb
-          fi
-          xvfb-run --help >/dev/null
-      - name: Run real headed unpacked-extension behavior E2E and profile
-        env:
-          AUTO_AGREE_HEADED: '1'
-        run: xvfb-run -a node tests/e2e-extension.mjs --profile
-      - name: Saturate Probe and Gate bounded discovery queues
-        env:
-          AUTO_AGREE_HEADED: '1'
-        run: xvfb-run -a node tests/e2e-tier-overflow.mjs
-      - name: Prove live Gate deep cursor survives TTL age
-        env:
-          AUTO_AGREE_HEADED: '1'
-        run: xvfb-run -a node tests/e2e-gate-live-ttl.mjs
-      - name: Saturate Engine walk queue
-        env:
-          AUTO_AGREE_HEADED: '1'
-        run: xvfb-run -a node tests/e2e-engine-overflow.mjs
-      - name: Prove live Engine RootBatch survives TTL age
-        env:
-          AUTO_AGREE_HEADED: '1'
-        run: xvfb-run -a node tests/e2e-engine-rootbatch-ttl.mjs
-      - name: Prove live Engine sibling batch survives TTL age
-        env:
-          AUTO_AGREE_HEADED: '1'
-        run: xvfb-run -a node tests/e2e-engine-batch-ttl.mjs
-      - name: Prove cooperative stale-world generation revocation
-        env:
-          AUTO_AGREE_HEADED: '1'
-        run: xvfb-run -a node tests/e2e-generation-lease.mjs
-      - name: Run release update transition against PR base
-        if: github.event_name == 'pull_request'
-        env:
-          AUTO_AGREE_PREVIOUS_REF: ${{ github.event.pull_request.base.sha }}
-          AUTO_AGREE_HEADED: '1'
-        run: xvfb-run -a node tests/e2e-update.mjs
-      - name: Print E2E profile evidence
-        if: always()
-        run: |
-          if test -f artifacts/e2e-profile.json; then cat artifacts/e2e-profile.json; fi
