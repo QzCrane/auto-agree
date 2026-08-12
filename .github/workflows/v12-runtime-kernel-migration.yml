@@ -29,7 +29,9 @@ jobs:
           PUPPETEER_SKIP_DOWNLOAD: 'true'
         run: npm ci --ignore-scripts
       - name: Apply exact runtime-kernel migration
-        run: python tools/v12_runtime_kernel_migrate.py
+        run: |
+          python tools/v12_runtime_kernel_migrate.py
+          python tools/v12_runtime_kernel_harness_migrate.py
       - name: Verify migrated tree before commit
         run: |
           npm test
