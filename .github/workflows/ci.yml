@@ -6,107 +6,13 @@ on:
   pull_request:
 
 permissions:
-  contents: write
+  contents: read
 
 concurrency:
   group: verify-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
-  normalize-release-tests:
-    if: github.event_name == 'pull_request' && github.head_ref == 'release/v11.0.0' && github.actor != 'github-actions[bot]'
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
-    steps:
-      - uses: actions/checkout@v6
-        with:
-          ref: release/v11.0.0
-          fetch-depth: 0
-      - uses: actions/setup-node@v7
-        with:
-          node-version: '24'
-      - name: Normalize current-generation tests and audit stale literals
-        run: |
-          set -euo pipefail
-          python - <<'PY'
-          from pathlib import Path
-
-          e2e = Path('tests/e2e-extension.mjs')
-          s = e2e.read_text()
-          replacements = [
-              (
-                  "const HEADED=process.env.AUTO_AGREE_HEADED==='1';",
-                  "const CURRENT_VERSION=JSON.parse(fs.readFileSync(path.join(EXTENSION,'manifest.json'),'utf8')).version;\nconst HEADED=process.env.AUTO_AGREE_HEADED==='1';"
-              ),
-              (
-                  "const ext=await autoAgreeExtension(browser); assert.equal(ext.version,'10.0.0');",
-                  "const ext=await autoAgreeExtension(browser); assert.equal(ext.version,CURRENT_VERSION);"
-              ),
-              (
-                  "return worlds.some(world=>world.handover==='10.0.0'&&world.engine==='10.0.0');",
-                  "return worlds.some(world=>world.handover===CURRENT_VERSION&&world.engine===CURRENT_VERSION);"
-              ),
-              (
-                  "return worlds.some(world=>world.engine==='10.0.0');",
-                  "return worlds.some(world=>world.engine===CURRENT_VERSION);"
-              ),
-          ]
-          for old,new in replacements:
-              if s.count(old) != 1:
-                  raise SystemExit(f'e2e-extension expected exactly one occurrence: {old}')
-              s = s.replace(old,new,1)
-          e2e.write_text(s)
-
-          wc = Path('tests/worker-contract.mjs')
-          s = wc.read_text()
-          marker = "import assert from 'node:assert/strict';\n"
-          if s.count(marker) != 1:
-              raise SystemExit('worker-contract import marker mismatch')
-          s = s.replace(marker, marker + "\nconst CURRENT_VERSION=JSON.parse(fs.readFileSync('extension/manifest.json','utf8')).version;\n", 1)
-          old = "const profile={version:'10.0.0',flows:[{fingerprint:'/login|form'"
-          new = "const profile={version:CURRENT_VERSION,flows:[{fingerprint:'/login|form'"
-          if s.count(old) != 1:
-              raise SystemExit('worker-contract profile version mismatch')
-          wc.write_text(s.replace(old,new,1))
-
-          wg = Path('tests/worker-profile-governance.mjs')
-          s = wg.read_text()
-          marker = "const source=fs.readFileSync('extension/worker.js','utf8');\n"
-          if s.count(marker) != 1:
-              raise SystemExit('worker-profile-governance source marker mismatch')
-          s = s.replace(marker, marker + "const CURRENT_VERSION=JSON.parse(fs.readFileSync('extension/manifest.json','utf8')).version;\n", 1)
-          old = "function profile(...flows){return{version:'10.0.0',flows};}"
-          new = "function profile(...flows){return{version:CURRENT_VERSION,flows};}"
-          if s.count(old) != 1:
-              raise SystemExit('worker-profile-governance profile helper mismatch')
-          wg.write_text(s.replace(old,new,1))
-
-          stale=[]
-          for file in sorted(Path('tests').rglob('*.mjs')):
-              for no,line in enumerate(file.read_text().splitlines(),1):
-                  if '10.0.0' in line:
-                      stale.append((str(file),no,line.strip()))
-          if stale:
-              print('remaining test literals for old generation:')
-              for item in stale:
-                  print(f'{item[0]}:{item[1]}: {item[2]}')
-              raise SystemExit(f'{len(stale)} old-generation test literals remain')
-          PY
-          node --check tests/e2e-extension.mjs
-          node --check tests/worker-contract.mjs
-          node --check tests/worker-profile-governance.mjs
-          npm test
-          git diff --check
-      - name: Commit normalized release tests
-        run: |
-          set -euo pipefail
-          test -n "$(git status --porcelain -- tests/e2e-extension.mjs tests/worker-contract.mjs tests/worker-profile-governance.mjs)"
-          git config user.name 'github-actions[bot]'
-          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add tests/e2e-extension.mjs tests/worker-contract.mjs tests/worker-profile-governance.mjs
-          git commit -m 'test: derive current generation from manifest'
-          git push origin HEAD:release/v11.0.0
-
   core:
     runs-on: ubuntu-latest
     timeout-minutes: 5
