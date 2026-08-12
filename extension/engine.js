@@ -1,6 +1,6 @@
 (() => {
   'use strict';
-  const VERSION = '10.0.0';
+  const VERSION = '11.0.0';
   const MAX_ROW_TEXT = 1400;
   const MAX_CONTEXT_TEXT = 2200;
   const MAX_PENDING_VISIBILITY = 192;

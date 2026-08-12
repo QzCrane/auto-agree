@@ -3,7 +3,11 @@ import vm from 'node:vm';
 import assert from 'node:assert/strict';
 
 const source=fs.readFileSync('extension/generation-lease.js','utf8');
-let runtimeVersion='10.0.0';
+const currentVersion=JSON.parse(fs.readFileSync('extension/manifest.json','utf8')).version;
+const [major]=currentVersion.split('.').map(Number);
+assert.ok(Number.isInteger(major) && major >= 0,'manifest must expose a numeric major generation');
+const nextVersion=`${major+1}.0.0`;
+let runtimeVersion=currentVersion;
 let invalidated=false;
 let clicks=0;
 
@@ -17,17 +21,17 @@ const chrome={runtime:{getManifest(){
 }}};
 const context=vm.createContext({chrome,HTMLElement,Object,Reflect,Error});
 vm.runInContext(source,context);
-assert.equal(context.__AUTO_AGREE_GENERATION_LEASE__?.version,'10.0.0');
+assert.equal(context.__AUTO_AGREE_GENERATION_LEASE__?.version,currentVersion,'compiled generation lease must match the candidate manifest');
 
 const el=new HTMLElement();
 assert.equal(el.click(),'clicked');
 assert.equal(clicks,1,'current generation must retain normal click behavior');
 
-runtimeVersion='11.0.0';
+runtimeVersion=nextVersion;
 assert.equal(el.click(),undefined);
 assert.equal(clicks,1,'manifest generation mismatch must revoke stale realm click authority');
 
-runtimeVersion='10.0.0';
+runtimeVersion=currentVersion;
 invalidated=true;
 assert.equal(el.click(),undefined);
 assert.equal(clicks,1,'invalidated extension context must revoke stale realm click authority');

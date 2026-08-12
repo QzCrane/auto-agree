@@ -1,5 +1,25 @@
 # Changelog
 
+## 11.0.0 — 2026-08-12
+
+- Cut a **coherent v11 runtime generation** across Probe, Gate, generation lease, shared semantic/risk cores, handover guard, Engine, Worker, manifest and package. Added `tests/version-contract.mjs` so manifest/package and all eight runtime JavaScript sentinels must remain one generation and production JavaScript cannot carry a second stale generation literal.
+- Removed release-number magic from current-generation tests. Basic unpacked E2E, generation-lease unit modeling, Worker contract/profile governance and Worker restart/update-rehydration now derive the active generation from the manifest instead of encoding `10.0.0`.
+- Promoted multilingual risk parity into the release baseline: routine-supported language families now have native-language fail-closed optional/consequential/attestation evidence, with 10,188 deterministic consent/risk assertions and 644 fragmentation assertions.
+- Promoted the permanent **300-case real-Chrome structural fuzz** gate: false positives = 0, false negatives = 0, duplicate toggles = 0 across labels, ARIA IDREFs, custom controls, wrapper depth, fragmentation, multilingual semantics and blocked/already/disabled/mixed states.
+- Preserved hard Probe/Gate bounds while repairing silent loss. Probe deep work uses weak final-state recovery; Gate batch owners re-enter bounded traversal; Gate deep preserves old FIFO cursors and weakly coalesces only new excess state. A zero-budget Gate slice no longer marks a job started before processing its first node.
+- Preserved `JOB_TTL_MS = 2400`: connected Gate work is not deleted by age alone. The permanent browser gate crosses the TTL with a ~2.7-second renderer stall and still requires exactly-one eventual progress; Gate deep saturation is repeated on five independent pages.
+- Preserved Engine `MAX_ROOT_BATCHES = 8` and repaired both pressure and lifetime semantics. Live RootBatch work is recoverable under overflow and continues its existing index after crossing `ROOT_BATCH_TTL_MS = 3000` rather than being discarded by age alone.
+- Preserved Engine `MAX_WALK_JOBS = 12`: old FIFO cursors remain authoritative and only new excess roots are weakly coalesced into final-state walk recovery.
+- Preserved Engine mutation-batch `MAX_BATCH_JOBS = 8` and `BATCH_JOB_TTL_MS = 3000`: a connected `enqueueSiblingRange` job survives queue age while retaining its existing `currentRef` / `subjob` / `reachedLast` state. The permanent test forces the >96-node path with 140 siblings and a target at sibling 70.
+- Preserved Engine `MAX_SHADOW_JOBS = 8`: real Chrome proved oldest-job eviction could permanently lose a routine target located only in a closed ShadowRoot on a plain `DIV`. Existing Shadow FIFO cursors now remain authoritative and only new excess roots are weakly coalesced through `shadowRecoveryRef`.
+- Added a permanent rejected-authorization browser discriminator. Even when Engine's public guard API is replaced with `authorize() => false`, two automated authorization attempts produce zero DOM click effect while a subsequent trusted browser click succeeds once; the existing guard event boundary is therefore behaviorally fail-closed without a redundant Engine return-value branch.
+- Retained exact source-event causal authority: local delegated control authority is bound to the exact source `Event`, valid only while browser dispatch remains live, and cannot survive `stopPropagation()` into a later task.
+- Proved the formal **v11 → v12** cooperative generation lease in Chrome 149.0.7827.22 without page reload: stale v11 automated clicks = 0, direct stale isolated-world `.click()` = 0, trusted click = 1.
+- Proved the formal **v10 → v11** update transition with both old v10 and current v11 isolated worlds simultaneously observable and no page reload. Current routine behavior remained exactly once; mixed-state, external-IDREF stale semantics, non-English stale semantics, wide causal wrappers, ambiguous wrappers and action-inside-label negatives remained zero-click.
+- Preserved v5-v10 profile governance: 256 origins, 8 flows/origin, 180-day TTL, 32-entry hot LRU, `storage.session` + `storage.local`, fingerprint+exact-locator identity, serialized writes and propagated persistence failures.
+- Preserved deterministic package closure derived from the complete production `extension/*.js` set. Permissions remain `scripting`, `storage`, `<all_urls>`; no debugger, telemetry/network client, remote code or polling loop was added.
+- First fully clean v11 release candidate profile: **200.9 ms latency / 0.1945 s TaskDuration / 168 samples** on Chrome for Testing 149.0.7827.22, below the existing `<1000 ms` / `<0.8 s` broad ceilings.
+
 ## 10.0.0 — 2026-08-09
 
 - Added a **cooperative generation lease** to every static/dynamic Auto Agree execution world. The lease is isolated-world local and revokes that generation's `HTMLElement.prototype.click()` when `chrome.runtime.getManifest()` is invalidated or no longer matches the compiled generation.

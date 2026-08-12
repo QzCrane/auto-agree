@@ -1,7 +1,7 @@
 (() => {
   'use strict';
   if (globalThis.__AUTO_AGREE_PROBE__) return;
-  globalThis.__AUTO_AGREE_PROBE__ = '10.0.0';
+  globalThis.__AUTO_AGREE_PROBE__ = '11.0.0';
 
   // This file is intentionally tiny and cheap: it only decides whether a frame deserves the
   // richer semantic gate. It never clicks, never interprets consent, and never scans unbounded DOM.

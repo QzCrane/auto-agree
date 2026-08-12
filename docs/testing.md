@@ -1,152 +1,228 @@
 # Testing
 
-## Release gates
+## Release philosophy
 
-Two different test layers are mandatory.
+A green narrow test is not permission to waive a historical invariant. v11 uses layered evidence so semantic safety, bounded progress, lifecycle behavior, cross-generation authority, packaging, and performance are checked independently.
 
-### 1. Dependency-free deterministic core gate
+Two layers are mandatory on every release candidate:
 
-`npm test` verifies:
+1. dependency-free deterministic/core verification;
+2. real headed Chrome with the unpacked extension.
 
-- syntax of all production JavaScript, including generation/handover modules;
-- Manifest V3/permission/isolated-world/frame invariants;
-- absence of forbidden network/eval/polling/debugger/wildcard-scan paths;
-- production semantic severity properties;
-- multilingual risk parity: every routine-supported language family must also recognize native-language optional, consequential and attestation evidence conservatively;
-- multilingual fragmentation invariance: representative routine phrases remain legal+assent evidence when a DOM fragment boundary is inserted at every character position;
-- bounded-work contracts: hard queue-object caps remain in place while known Probe/Gate/Engine saturation paths retain weak recoverable final-state work instead of naked oldest-item drops;
-- Engine walk FIFO invariants: `MAX_WALK_JOBS = 12` remains hard, existing cursors cannot be evicted to admit newer work, excess roots use weak final-state recovery, recovery cannot overtake ordinary RootBatch/walk work, and lifecycle retirement clears that recovery state;
-- Gate deep FIFO/TTL invariants: older connected cursors cannot be evicted to admit newer work, live age alone cannot delete batch/deep work, the Gate-deep saturation gate remains five attempts, and the live-TTL discriminator must cross the production TTL;
-- generation-lease contract: current generation passes, version mismatch and invalidated Runtime fail closed, no global event listener is added;
-- worker exact-document injection and `documentLifecycle` rejection;
-- every dynamically injected Gate/Engine/update-protection world carries the required generation lease dependency;
-- scheduler global/per-tab bounds, priority admission, aging/fairness and stale eviction;
-- service-worker restart with persistent profile state and pending update rehydration;
-- sender-bound profile identity;
-- profile-governance invariants: 256-origin cap, 8 flows/origin, 180-day TTL, `storage.session` hot layer, fingerprint+locator identity, precise invalidation and persistence-error propagation;
-- update rehydration ordering (`generation-lease.js` + `semantic-core.js` + `handover-guard.js` before `bootstrap.js`);
-- shared-semantic handover classification including explicit ARIA IDREFs and native external labels;
-- direct current-Engine handover authorization;
-- microtask expiry of unused direct authorization;
-- local causal delegation stores the exact source `Event` and accepts a nested synthetic click only while `sourceEvent.eventPhase != Event.NONE`;
-- bounded/unique delegated-control discovery, action-root exclusion and no timer-based authorization lease;
-- release-transition CI lifecycle: the previous→current browser test is PR-scoped, stages the PR base, derives versions from manifests, and identifies old/current worlds by execution-context identity rather than one hardcoded release pair.
+Scheduling-sensitive fixes additionally require the **exact final SHA** to pass canonical CI and then rerun the entire unpacked-E2E job on that same SHA before merge.
 
-`python tools/package_extension.py --check` verifies the deterministic extension artifact. The packager derives its executable set from the complete production `extension/*.js` closure; a new runtime module therefore cannot be silently omitted merely because a second static package list was not updated.
+## 1. Deterministic/core gate
 
-### 2. Real unpacked-extension E2E
+`npm test` currently runs:
 
-CI installs a pinned Puppeteer test tool and launches the runner's real Chrome with `extension/` as an unpacked extension. This is intentionally different from older in-page Chrome-API shim tests.
+- syntax checks for every production JavaScript module;
+- Manifest V3, permission, isolated-world and frame contracts;
+- `version-contract`: manifest/package + eight runtime JavaScript sentinels must be one generation, and the production JS closure cannot contain a second runtime semver generation;
+- forbidden-path checks: no network client, eval/dynamic Function, polling interval, debugger API/permission, or wildcard whole-page scan;
+- shared semantic/risk properties;
+- multilingual risk parity;
+- multilingual fragmentation invariance;
+- Probe/Gate/Engine bounded-work static contracts;
+- Engine RootBatch/sibling-batch lifetime contracts;
+- Engine Shadow FIFO/weak-recovery contracts;
+- generation-lease behavior derived from the current manifest generation;
+- Worker injection/document-lifecycle contracts;
+- Worker scheduler global/per-tab bounds, priority, aging/fairness and stale eviction;
+- Worker restart/update rehydration with current generation derived from the manifest;
+- sender-bound profile identity and profile-governance limits;
+- shared-semantic handover behavior, ARIA IDREF/external-label handling and exact source-event causal authority;
+- PR-base/current release-transition topology and execution-context identity.
+
+The deterministic consent/risk model currently exercises **10,188 assertions**. `tests/property-semantic-fragmentation.mjs` contributes **644** representative routine/risk fragmentation assertions.
+
+`python tools/package_extension.py --check` separately verifies the deterministic release artifact. The executable set is derived from the complete production `extension/*.js` closure so a new runtime module cannot be omitted because a second manual package list was forgotten.
+
+## 2. Real unpacked-extension Chrome gate
+
+CI installs pinned Puppeteer and Chrome for Testing, then launches `extension/` as a real unpacked MV3 extension under a virtual display. The release evidence for v11 used **Chrome for Testing 149.0.7827.22**.
+
+### Main behavior/profile suite
 
 `tests/e2e-extension.mjs` covers:
 
 - ordinary routine login agreement;
 - marketing and fragmented consequential negatives;
 - TRAE-derived classless visual control;
-- native validity causality (invalid email must not make a disabled Login action look agreement-gated);
-- ARIA/data/native mixed-or-indeterminate controls remain untouched;
-- classless UNKNOWN-state controls remain one-shot beyond the normal click cooldown;
-- real iframe/all-frame injection;
-- real closed ShadowRoot discovery through the extension API path;
-- repeated forced MV3 service-worker termination before dynamic evidence appears;
-- stopped-propagation causal delegation with two required branches:
-  - synchronous descendant `click()` during the exact trusted source event -> one click;
-  - descendant `click()` in a later task after source dispatch ended -> zero clicks;
-- deterministic fixed-seed structural fuzz over **300 dynamic contexts** crossing native/external labels, ARIA IDREFs, custom controls, wrapper depth, text fragmentation, multilingual routine semantics and blocked/already-checked/disabled/mixed states; the aggregate gate requires false positives = 0, false negatives = 0 and duplicate toggles = 0;
+- native validity causality;
+- native/ARIA/data mixed or indeterminate refusal;
+- classless UNKNOWN one-shot behavior beyond normal cooldown;
+- iframe/all-frame injection;
+- real closed ShadowRoot discovery;
+- repeated forced MV3 Worker termination before dynamic evidence;
+- stopped-propagation causal delegation:
+  - synchronous descendant delegation during the exact source event → one click;
+  - later-task reuse after dispatch → zero clicks;
+- deterministic fixed-seed structural fuzz over **300 dynamic contexts**;
 - a 5,000-unrelated-checkbox tail-login profile scenario.
 
-`tests/e2e-tier-overflow.mjs` is the permanent bounded-work adversarial gate. Each case first proves the expected runtime tier and then saturates one bounded queue with the only valid agreement stored in correctness-sensitive work. It requires exactly one final activation for:
+Structural fuzz spans native/external labels, ARIA IDREFs, custom controls, wrapper depth, text fragmentation, multilingual routine semantics, blocked consent, already-checked, disabled and mixed states. Aggregate acceptance is strict:
 
-- Probe deep work at `MAX_DEEP = 4`;
-- Gate deep work at `MAX_DEEP_JOBS = 10`, repeated on **five independent pages** in every canonical run;
-- Gate large-batch work at `MAX_BATCH_JOBS = 6`.
+```text
+false positives   = 0
+false negatives   = 0
+duplicate toggles = 0
+```
 
-A queue cap is therefore tested as both a resource bound and a correctness boundary. Increasing a cap, weakening the fixture/repetition count, or replacing recovery with an unbounded synchronous document scan is not an acceptable way to make this gate green.
+### Probe/Gate bounded-work saturation
 
-`tests/e2e-gate-live-ttl.mjs` isolates lifetime semantics from overflow. It establishes a Gate-only world, queues a live deep root, then deliberately blocks the renderer for about **2.7 seconds** after the MutationObserver checkpoint. This crosses `JOB_TTL_MS = 2400` before background traversal can resume. The connected cursor must continue and produce exactly one activation; pure queue age is never sufficient evidence that correctness work is obsolete.
+`tests/e2e-tier-overflow.mjs` independently requires exactly-one eventual activation for:
 
-`tests/e2e-engine-overflow.mjs` is the permanent Engine walk-queue saturation discriminator. It first proves the full Engine is active and a seed routine agreement clicked exactly once, then appends **20 roots × 900 nodes** in one mutation burst. The only fresh routine agreement sits near the tail of an early root while enough later roots exceed `MAX_WALK_JOBS = 12`. The target must eventually activate exactly once within the fixed 9-second deadline. This couples the hard walk-job cap to eventual semantic progress: raising the cap, moving the target into an edge sample, shortening the roots or weakening the deadline is not an acceptable repair.
+- Probe deep at `MAX_DEEP = 4`;
+- Gate deep at `MAX_DEEP_JOBS = 10`;
+- Gate large batch at `MAX_BATCH_JOBS = 6`.
 
-`tests/e2e-generation-lease.mjs` is a reusable future-generation probe. It:
+The Gate-deep case runs on **five independent pages** in every canonical invocation so one favorable scheduler interleaving cannot hide the historical zero-budget/FIFO race.
 
-1. activates the current Engine and confirms that world carries the current generation lease;
-2. replaces the same unpacked extension path with a manifest-only next-major generation without reloading the page;
-3. evaluates the pre-existing old Engine execution context again;
-4. requires the old lease to report non-current authority;
-5. inserts a fresh routine agreement and requires zero automated clicks;
-6. calls `element.click()` directly inside the stale old isolated world and again requires zero clicks;
-7. performs real trusted browser input and requires exactly one click.
+`tests/e2e-gate-live-ttl.mjs` creates a Gate-only world, queues live deep work, and blocks the renderer for about **2.7 seconds**, crossing `JOB_TTL_MS = 2400`. The connected cursor must continue and activate exactly once.
 
-This distinguishes a JavaScript execution context remaining observable from that context retaining extension action authority.
+### Engine walk saturation
 
-`tests/e2e-update.mjs` separately keeps real pages alive across the PR base → current unpacked-extension replacement and proves:
+`tests/e2e-engine-overflow.mjs` activates Engine, then appends **20 roots × 900 nodes**. The unique fresh routine target is positioned so enough later roots exceed `MAX_WALK_JOBS = 12`. Exactly-one progress is required within a fixed 9-second deadline.
 
-- `previousVersion` is read from the staged PR-base manifest and `currentVersion` from the candidate manifest;
-- no page reload occurred;
+### Engine RootBatch lifetime
+
+`tests/e2e-engine-rootbatch-ttl.mjs` creates **60 roots × 420 descendants**, puts the unique target in root 42, and blocks the renderer for about **3.4 seconds**. This crosses `ROOT_BATCH_TTL_MS = 3000`; the live batch must continue from its existing index and activate exactly once.
+
+### Engine sibling/mutation-batch lifetime
+
+`tests/e2e-engine-batch-ttl.mjs` appends one MutationRecord containing **140 siblings**, forcing the `addedNodes.length > 96` / `enqueueSiblingRange` path. The only routine target is sibling **70**, outside the first-three/last-five edge path. A ~3.4-second stall crosses `BATCH_JOB_TTL_MS = 3000`; the connected range must continue exactly once.
+
+### Engine broad closed-Shadow saturation
+
+`tests/e2e-engine-shadow-overflow.mjs` creates **14 roots × 900 nodes**, materially exceeding `MAX_SHADOW_JOBS = 8`. The unique target lives near the tail of root 0 inside a **closed ShadowRoot on a plain `DIV` host**.
+
+That structure matters: ordinary `probeShadow(host, false)` cannot access the closed root, so a pass cannot be explained by ordinary DOM traversal accidentally rescuing the target. Broad Shadow discovery must preserve eventual progress through the bounded FIFO + weak-recovery mechanism.
+
+### Rejected authorization boundary
+
+`tests/e2e-authorize-rejection.mjs` replaces only the public handover API object in the real Engine isolated world with `authorize() => false`, while leaving the original guard closure/capture listeners installed.
+
+The gate requires:
+
+- Engine actually reaches the rejected authorization path;
+- initial + bounded retry synthetic attempts produce **zero DOM click effect**;
+- a subsequent trusted browser click still succeeds once.
+
+The v11 candidate observed two authorization attempts, `{checked:false, clicks:0}` after automation, then `{checked:true, clicks:1}` after trusted input.
+
+### Cooperative future-generation revocation
+
+`tests/e2e-generation-lease.mjs` is current-generation-relative:
+
+1. activate current Engine and verify current lease;
+2. replace the same unpacked path with manifest-only **next major** without page reload;
+3. evaluate the pre-existing old execution context;
+4. require old lease non-current;
+5. insert routine evidence and require zero stale automated clicks;
+6. call `.click()` directly in the stale old isolated world and require zero click;
+7. perform trusted browser input and require exactly one click.
+
+For the v11 release this physically became **v11.0.0 → v12.0.0**. Run `31586515516` recorded stale automated = 0, direct stale = 0, trusted = 1.
+
+### Real release update transition
+
+`tests/e2e-update.mjs` stages the exact PR base and keeps dormant and active pages alive while the unpacked extension path is replaced by the candidate.
+
+It proves:
+
+- previous/current versions come from their manifests;
+- no page reload;
 - a dormant old Probe can hand into current tiers;
-- an already-active old Engine world can remain simultaneously observable with a current Engine world;
-- old/current worlds are distinguished by execution-context IDs even if both report the same manifest version;
-- the current lease/semantic/guard protection closure is physically present before post-update behavior is exercised;
-- a current routine agreement receives exactly one authorized click;
-- a mixed-state agreement that historical semantics would toggle receives zero stale-generation clicks;
-- a genuine trusted browser click on a small custom Terms wrapper may still synchronously delegate one page-owned synthetic descendant click;
-- agreement semantics supplied only through external `aria-labelledby` remain protected from stale clicks;
-- non-English shared-core semantics remain protected without a private guard vocabulary;
-- a trusted action in a broad wrapper cannot authorize a distant sibling Terms control;
-- ambiguous multi-control wrappers and proceed actions inside labels fail closed as causal authority sources.
+- an already-active old Engine context can remain simultaneously observable with a current context;
+- execution-context ID, not version text, is the primary world identity;
+- current generation protection is installed before post-update behavior;
+- routine current-generation agreement → exactly one click;
+- mixed-state stale behavior → zero click;
+- trusted one-event local delegation → exactly one delegated click;
+- external ARIA-IDREF stale semantics → zero;
+- non-English stale semantics → zero;
+- wide causal wrapper → zero;
+- ambiguous wrapper → zero;
+- proceed action inside label → zero.
 
-These assertions are deliberately behavioral. Engine version sentinels alone are not accepted as proof that one generation owns the action surface.
-
-The transition step runs only for `pull_request`, using `github.event.pull_request.base.sha` as `AUTO_AGREE_PREVIOUS_REF`. Main pushes still run deterministic core plus current-version real Chrome E2E/profile, tier saturation, Gate live-TTL, Engine walk saturation and the cooperative generation probe, but do **not** replay arbitrary push history. The harness itself is version-agnostic: major releases, patch releases and same-version hotfix/reload candidates use the same state-transition machinery.
-
-With `--profile`, the real-extension E2E records a DevTools CPU profile summary and page metrics to `artifacts/e2e-profile.json`. The latency assertion is deliberately broad; the profile is the authority for deciding future micro-optimizations, not a fragile single-machine microbenchmark.
-
-## Regression corpus
-
-`tests/fixtures/regressions/` is the canonical privacy-safe structural corpus. A real-world miss or false positive must be reduced to a minimal fixture before the fix is considered closed. Do not copy credentials, session identifiers, private URLs, or unnecessary proprietary page markup into fixtures.
-
-`structural-fuzz.html` is a deterministic combinatorial corpus, not a replacement for minimal regressions. It searches interactions between structure, fragmentation, language, control representation and mutation timing that curated one-case fixtures cannot exhaustively enumerate.
-
-`probe-deep-overflow.html`, `gate-deep-overflow.html`, and `gate-batch-overflow.html` isolate bounded-work saturation. Gate fixtures keep future agreement content out of the initial DOM so Gate-only state is physically established before the adversarial mutation burst. `gate-live-ttl.html` separately supplies the Gate-only seed for the renderer-delay TTL discriminator. `engine-walk-overflow.html` supplies an already-active Engine plus the dynamic large-root mount used to isolate walk-job saturation.
-
-`causal-propagation.html` is a permanent authority-lifetime fixture, not merely a one-off reproduction. It ensures page-controlled propagation stopping cannot turn a same-event exception into future asynchronous authority.
+For PR #26 this is a real **v10.0.0 → v11.0.0** transition. Run `31586515516` observed both full v10 and full v11 isolated worlds at the same time without reloading either active or dormant page.
 
 ## Bounded-work policy
 
-Correctness-relevant work queues have two simultaneous obligations:
+Every correctness-relevant queue has two simultaneous obligations:
 
-1. a hard representation bound protects CPU/memory and prevents detached-DOM retention;
-2. live semantic final state cannot be silently forgotten merely because that representation is full or old.
+1. hard representation bounds protect CPU/memory and avoid strong retention of detached DOM;
+2. connected semantic final state cannot disappear merely because a queue is full or old.
 
-Overflow recovery therefore prefers weak final-state roots/owners, generation supersession and bounded time-sliced rescans. For Gate deep work, ADR 0014 additionally requires **old live FIFO cursors to outrank new overflow**: the existing queue remains in order and only new excess final state is compressed. Age-only TTL expiration is valid for no connected live Gate cursor; the age is refreshed and traversal continues.
+Evidence-backed current policies are:
 
-Engine walk now follows the same evidence-backed admission principle at `MAX_WALK_JOBS = 12`: existing FIFO cursors remain authoritative, only new excess roots are weakly coalesced into one final-state recovery scope, and recovery is promoted only after ordinary RootBatch/walk work drains. Urgency is tracked separately from the weak DOM scope. This mechanism was introduced only after a real Chrome discriminator proved the historical oldest-walk drop caused a permanent false negative.
+- Probe excess deep roots → weak final-state recovery;
+- Gate deep → old FIFO cursor before new excess recovery;
+- Gate batch → weak live-owner recovery;
+- connected Gate work → age refresh, not TTL deletion;
+- Engine RootBatch overflow → bounded final-state convergence;
+- connected RootBatch → age refresh, not TTL deletion;
+- Engine walk → old FIFO + `walkRecoveryRef` for new excess roots;
+- connected sibling batch → preserve current range/subjob across age;
+- broad Shadow → old FIFO + `shadowRecoveryRef` for new excess roots.
 
-A drop is valid only when work is complete, obsolete, disconnected, generation-superseded, or another bounded recovery representation is already authoritative. This policy is enforced by deterministic static contracts plus the real-browser RootBatch structural corpus, Probe/Gate saturation, Gate live-TTL and Engine walk saturation. Queue classes not yet red-proven retain their current implementation until an isolated browser test demonstrates a correctness failure.
+A drop is valid only when work is complete, dead/disconnected, generation-obsolete/superseded, or another bounded representation is already authoritative. Increasing a cap, shortening an adversarial fixture, increasing a progress timeout to mask loss, or replacing recovery with an unbounded synchronous document scan is not an equivalent repair.
 
-## Service-worker termination policy
+## Worker and profile lifecycle policy
 
-MV3 workers are expected to disappear. Tests must assume all worker globals can vanish between events. Persistent correctness state belongs in `chrome.storage`; transient queues may disappear only if content-side handoff/retry makes the operation safe to replay.
+MV3 Worker globals are transient. Tests assume the Worker can disappear between events.
 
-The profile-governance test intentionally treats cache/storage policy as a long-term invariant. A handover change is not allowed to silently change origin caps, flow identity, TTL, hot-layer semantics or persistence error behavior merely because handover-focused tests still pass.
+Persistent correctness state belongs in `chrome.storage`; transient injection queues are safe to lose only because content-side handoff is replayable. Update rehydration persists a session marker and requires protection before bootstrap.
 
-## Update-transition policy
+Profile governance remains independently gated:
 
-An extension update can replace the Worker while already-open pages still exist. v8 introduced update rehydration; v9 proved non-cooperative old/new Engine coexistence; v10 adds prior-generation cooperation for future transitions and post-merge hardening binds local delegated authority to a live source Event.
+- 256 origins;
+- 8 flows/origin;
+- 180-day TTL;
+- 32-entry hot LRU;
+- session + local storage;
+- fingerprint + exact locator identity;
+- precise invalidation;
+- serialized writes;
+- persistence failures propagate.
 
-The update gate therefore applies four independent tests:
+## Update/authority policy
 
-1. **Presence:** the current lease, shared semantics, handover guard and Engine exist where expected.
-2. **Historical revocation:** behaviors that distinguish stale prior semantics must not produce a click after the current firewall is established.
-3. **Cooperative revocation:** a current generation that later becomes stale must lose its own isolated-world `.click()` authority when its Runtime is invalidated or version-mismatched.
-4. **Compatibility without authority leakage:** trusted user interaction and legitimate one-event local wrapper delegation work exactly once, while stopped propagation cannot preserve a causal token beyond source-event dispatch.
+An update has four independent obligations:
 
-A trusted/local causal exception is confined to one **live source Event dispatch**. The delegated control maps to that exact source Event; nested use is allowed only while `eventPhase != NONE` and is one-shot. Bubble cleanup is an eager cleanup path, not the security boundary. Broad page/form containers and proceed actions are excluded, ambiguous wrappers fail closed, and no `setTimeout` lease is allowed.
+1. **presence** — current lease/shared semantics/guard/Engine are where expected;
+2. **historical protection** — old non-cooperative behavior cannot act through current controls;
+3. **cooperative revocation** — a generation that later becomes stale loses its own isolated-world click primitive;
+4. **compatibility without authority leakage** — trusted input and legitimate one-event local delegation still work.
 
-The transition harness must not hardcode a release pair. It derives base/current versions from manifests and uses execution-context IDs as the primary old/current identity. This permits the same gate to test a v10→v11 release and a v10.0.0→v10.0.0 hotfix/reload without confusing equal version text for one generation.
+Local causal authority is tied to one exact source `Event` and one exact delegated control. `sourceEvent.eventPhase != Event.NONE` is the dispatch-liveness boundary; bubble cleanup is not the security boundary. No timer lease is allowed.
 
 ## Packaging policy
 
-`extension/` is the canonical load-unpacked production root. The release ZIP must contain every production JavaScript module present there plus the manifest and runtime README. Package verification that checks only ZIP CRC/shape but can omit a newly referenced runtime module is considered a false gate.
+`extension/` is the canonical load-unpacked production root. A release ZIP must include the manifest/runtime README and every production JavaScript module present there.
 
-The v10 audit discovered exactly that failure mode in the older static package-file list. The derived production-JS closure is now part of release correctness, not optional packaging convenience.
+Package integrity that can remain green while omitting a new runtime dependency is a false gate; v10 discovered that exact failure mode, and v11 retains derived runtime-closure verification.
+
+## Performance evidence
+
+`--profile` writes `artifacts/e2e-profile.json`. Performance numbers are used for regression prioritization, not treated as cross-machine microbenchmarks.
+
+The first fully clean v11 release candidate on Chrome for Testing 149.0.7827.22 recorded:
+
+```text
+latencyMs:    200.9
+taskDuration: 0.1945 s
+samples:      168
+```
+
+The broad release ceilings remain `<1000 ms` latency and `<0.8 s` TaskDuration.
+
+## Release closure
+
+A formal release PR is mergeable only after:
+
+1. coherent version/package contracts pass;
+2. the exact documentation-complete head passes both canonical jobs;
+3. the entire unpacked-E2E job is rerun on that **same exact SHA** and passes again;
+4. diff hygiene confirms no temporary write-enabled migration workflow, trigger, or research artifact remains;
+5. the PR uses expected-head merge protection so a moved head cannot be merged on stale evidence.
