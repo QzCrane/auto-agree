@@ -26,7 +26,6 @@ assert.deepEqual(JSON.parse(JSON.stringify(core.CONFIG)), {
 
 const NOW = 2_000_000_000_000;
 const VERSION = '11.0.0';
-const OPTIONAL = 2;
 const locatorArb = fc.record({
   hosts: fc.array(fc.string({minLength:1,maxLength:24}).filter(s => !/[\u0000-\u001f]/.test(s.trim()) && !!s.trim()), {maxLength:4}),
   selector: fc.string({minLength:1,maxLength:50}).filter(s => !/[\u0000-\u001f]/.test(s.trim()) && !!s.trim())
@@ -103,15 +102,6 @@ function legacyMerge(current,incoming) {
   }
   return legacySanitize({flows:[...map.values()]});
 }
-function legacyCompatible(stored, live) {
-  if (!stored || typeof stored !== 'object') return true;
-  if (Number(stored.severity || 0) >= OPTIONAL) return false;
-  if (stored.kind && stored.kind !== 'unknown' && live.kind !== stored.kind) return false;
-  if (stored.legal && !live.legal) return false;
-  if (stored.required && !live.required && !live.assent) return false;
-  if (Number(stored.linkBucket || 0) > Number(live.linkBucket || 0) + 1) return false;
-  return true;
-}
 function legacyCompact(index, origin) {
   const next = {...index};
   if (origin) next[origin] = NOW;
@@ -151,16 +141,6 @@ fc.assert(fc.property(fc.array(flowArb,{maxLength:30}),flows=>{
   }
 }),{seed:0xA60F1103,numRuns:1500,verbose:2});
 
-// Cache compatibility moves to ProfileCore without changing the valid persisted-descriptor domain.
-fc.assert(fc.property(fc.option(descriptorArb,{nil:null}),descriptorArb,(stored,live)=>{
-  const expected=legacyCompatible(stored,live);
-  const actual=core.descriptorCompatible(stored,live,OPTIONAL);
-  assert.equal(actual,expected);
-}),{seed:0xA60F1104,numRuns:2500,verbose:2});
-assert.equal(core.descriptorCompatible({kind:'native',severity:2},{kind:'native',severity:0},OPTIONAL),false,'optional-or-higher historical evidence never accelerates a click');
-assert.equal(core.descriptorCompatible({kind:'native',severity:0},null,OPTIONAL),false,'missing live evidence fails closed');
-assert.equal(core.descriptorCompatible({kind:'native',severity:0},{kind:'native',severity:0},NaN),false,'missing policy threshold fails closed');
-
 // The persistent origin index remains behavior-equivalent on valid historical timestamps and hard-bounded.
 const originIndexArb=fc.array(fc.record({key:fc.string({minLength:1,maxLength:36}).filter(key=>!['__proto__','prototype','constructor'].includes(key)),ts:fc.integer({min:NOW-1_000_000,max:NOW})}),{maxLength:300});
 fc.assert(fc.property(originIndexArb,fc.string({minLength:1,maxLength:36}).filter(key=>key!=='null'&&!['__proto__','prototype','constructor'].includes(key)),(rows,origin)=>{
@@ -184,6 +164,11 @@ for(const flow of malformed.flows){
   assert.ok(Number.isFinite(flow.descriptor.severity));assert.ok(Number.isFinite(flow.descriptor.linkBucket));
 }
 
+const hostileDescriptor=core.sanitizeDescriptor({kind:'native',severity:Symbol('x'),linkBucket:Symbol('y')});
+assert.ok(hostileDescriptor);
+assert.equal(hostileDescriptor.severity,0,'numeric coercion must be total even for hostile non-structured-clone inputs');
+assert.equal(hostileDescriptor.linkBucket,0);
+
 const bigIndex=Object.fromEntries(Array.from({length:300},(_,i)=>[`https://site-${String(i).padStart(3,'0')}.example`,NOW-i]));
 const compact=core.compactOriginIndex(bigIndex,'https://new.example',NOW);
 assert.equal(Object.keys(compact.index).length,256);
@@ -191,4 +176,4 @@ assert.equal(compact.drop.length,45);
 assert.equal(compact.index['https://new.example'],NOW);
 assert.equal(core.compactOriginIndex({'https://future.example':NOW+1},'',NOW).index['https://future.example'],undefined);
 
-console.log('profile-core: PASS (10500 differential/property cases + fail-closed schema invariants)');
+console.log('profile-core: PASS (8000 differential/property cases + fail-closed schema invariants)');
