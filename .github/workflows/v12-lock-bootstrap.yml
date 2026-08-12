@@ -1,0 +1,41 @@
+name: v12-lock-bootstrap
+
+on:
+  push:
+    branches: [feat/v12-architecture-convergence]
+
+permissions:
+  contents: write
+
+concurrency:
+  group: v12-lock-bootstrap
+  cancel-in-progress: true
+
+jobs:
+  lock:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: feat/v12-architecture-convergence
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '24'
+      - name: Generate exact dependency lock
+        env:
+          PUPPETEER_SKIP_DOWNLOAD: 'true'
+        run: |
+          npm install --package-lock-only --ignore-scripts
+          npm ci --ignore-scripts
+          test -f package-lock.json
+      - name: Commit lockfile only
+        run: |
+          git status --short
+          test "$(git status --short | awk '{print $2}' | sort | tr '\n' ' ')" = "package-lock.json "
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add package-lock.json
+          git commit -m "build: lock v12 development dependencies"
+          git push origin HEAD:feat/v12-architecture-convergence
