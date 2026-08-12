@@ -15,7 +15,7 @@ const kernelVersions = [...kernel.matchAll(/const\s+VERSION\s*=\s*['"]([^'"]+)['
 assert.equal(kernelVersions.length, 1, 'runtime-kernel must expose exactly one isolated-world birth generation');
 assert.equal(kernelVersions[0][1], version, 'runtime-kernel birth generation must equal the manifest release');
 
-const isolatedModules = ['bootstrap.js','engine.js','gate.js','generation-lease.js','handover-guard.js','risk-core.js','semantic-core.js'];
+const isolatedModules = ['bootstrap.js','decision-core.js','engine.js','gate.js','generation-lease.js','handover-guard.js','risk-core.js','semantic-core.js'];
 for (const file of isolatedModules) {
   const source = fs.readFileSync(path.join(EXTENSION, file), 'utf8');
   assert.match(source, /__AUTO_AGREE_RUNTIME_KERNEL__/, `${file} must derive its birth generation from runtime-kernel`);
@@ -28,7 +28,7 @@ assert.match(worker, /const\s+VERSION\s*=\s*chrome\.runtime\.getManifest\(\)\.ve
 const productionJs = fs.readdirSync(EXTENSION).filter(name => name.endsWith('.js')).sort();
 assert.deepEqual(
   productionJs,
-  ['bootstrap.js','engine.js','gate.js','generation-lease.js','handover-guard.js','risk-core.js','runtime-kernel.js','semantic-core.js','worker.js'],
+  ['bootstrap.js','decision-core.js','engine.js','gate.js','generation-lease.js','handover-guard.js','risk-core.js','runtime-kernel.js','semantic-core.js','worker.js'],
   'version contract must cover the complete production JavaScript closure'
 );
 for (const file of productionJs) {

@@ -5,6 +5,7 @@ import assert from 'node:assert/strict';
 const context = vm.createContext({ console, WeakRef, performance });
 vm.runInContext(fs.readFileSync('extension/runtime-kernel.js', 'utf8'), context);
 vm.runInContext(fs.readFileSync('extension/semantic-core.js', 'utf8'), context);
+vm.runInContext(fs.readFileSync('extension/decision-core.js', 'utf8'), context);
 vm.runInContext(fs.readFileSync('extension/risk-core.js', 'utf8'), context);
 const core = context.__AUTO_AGREE_SEMANTIC__;
 const risk = context.__AUTO_AGREE_RISK__;
