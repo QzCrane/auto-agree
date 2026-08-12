@@ -1,116 +1,226 @@
 # Security and trust model
 
+## Security objective
+
+Auto Agree automates only **routine mandatory access consent**. The core safety property is not “find a checkbox”; it is:
+
+> An automated DOM action may occur only when current browser evidence, current-generation policy and current action authority all agree that the control represents routine low-discretion access consent.
+
+Optional, consequential and attestation semantics fail closed. False-positive cost is treated as materially higher than false-negative cost.
+
 ## Permission budget
 
-Production permissions are deliberately limited to `scripting`, `storage`, and host access on `<all_urls>`.
+Production permissions are deliberately limited to:
 
-No network API, telemetry, remote configuration, remote code, cookies/history inspection, debugger attachment, proxy control or native host is used.
+- `scripting`;
+- `storage`;
+- host access on `<all_urls>`.
+
+No network client, telemetry, remote configuration, remote code, cookies/history inspection, `webRequest`, debugger attachment, downloads, proxy control, clipboard, native messaging or remote model is used.
+
+`<all_urls>` supplies host access for arbitrary-site operation; it is not permission to run the full Engine everywhere. Probe is the default tier and richer code is lazy-injected only after evidence gating.
 
 ## Consequential-consent boundary
 
-The extension blocks independent or combined clauses involving payment/debit authorization, loans/credit, investment/trading authorization, insurance purchase/application, medical informed consent, employment contracts, e-signatures, arbitration/waivers/class actions, biometric/facial-recognition consent, guarantees/powers of attorney, auto-renewal and factual attestations.
+Automation is blocked for independent or combined clauses involving marketing, payment/debit authorization, loans/credit, investment/trading authorization, insurance purchase/application, medical informed consent, employment contracts, e-signatures, arbitration/waivers/class actions, biometric/facial-recognition consent, guarantees/powers of attorney, automatic renewal and factual/age/identity attestations.
 
-The boundary is action-semantic, not industry-semantic. A bank's ordinary login Terms may still be routine; an authorization to debit an account is not.
+The boundary is **action-semantic**, not industry-semantic. A bank's ordinary login Terms may still be routine; authorization to debit an account is not.
+
+DecisionKernel is the sole severity lattice/policy owner. Risk Core consumes that lattice and cannot mint a second threshold. Routine language support is paired with same-language suppressor evidence; v12's executable 23-family contract caught and repaired Chinese automatic-renewal semantics that were previously weaker than the multilingual consequential baseline.
+
+## Authority chain
+
+v12 separates policy, automated-action permission and observable success:
+
+```text
+current DOM/accessibility evidence
+→ Risk Core severity
+→ DecisionKernel acceptance
+→ ActionAuthority protocol
+→ browser dispatch
+→ Engine live verifier
+```
+
+A DecisionKernel `accept` result authorizes an **attempt path**, not successful consent. ActionAuthority returning `true` means one authorized click primitive was invoked; it does not mean the control actually changed state. Engine's verifier is the only success observer.
+
+## ActionAuthority boundary
+
+`action-authority.js` is the only Engine automated-click protocol. It accepts only an `HTMLElement` and performs, in order:
+
+1. resolve the current isolated-world Generation Lease;
+2. require matching version and `lease.current() === true`;
+3. resolve the current Handover Guard;
+4. require matching version and `guard.authorize(target) === true`;
+5. invoke exactly one `target.click()`.
+
+Missing/mismatched dependency, explicit rejection or exception fails closed.
+
+Dependencies are resolved at attempt time rather than captured once. That matters during extension replacement and is also exercised by the browser rejection discriminator. Static contracts forbid Engine from retaining a private `authorizeHandoverClick()` or direct `target.click()` action protocol.
+
+## Cooperative generation lease
+
+Every current Auto Agree isolated world capable of reaching Gate/Engine work carries `generation-lease.js`. The lease wraps that realm's `HTMLElement.prototype.click` and synchronously checks `chrome.runtime.getManifest().version` against the RuntimeKernel generation immediately before DOM dispatch.
+
+The physical action path therefore checks generation twice:
+
+- ActionAuthority checks `lease.current()` before Guard authorization;
+- the patched `.click()` checks again at the primitive, covering an update that occurs after authorization but before dispatch.
+
+If the extension Runtime is invalidated or the manifest generation changed, the old Auto Agree `.click()` becomes a no-op. The page MAIN world is not patched; trusted browser input remains outside this wrapper.
+
+The v12 release gate physically proved **v12.0.0 → v13.0.0** without page reload: old v12 execution remained inspectable, `staleLeaseCurrent=false`, stale automated clicks=0, direct stale isolated `.click()`=0, trusted click=1.
+
+## Historical-generation handover firewall
+
+Generation Lease cannot retroactively protect historical versions that never shipped it. Handover Guard therefore remains a separate compatibility/security mechanism.
+
+On update rehydration, Worker installs current:
+
+```text
+RuntimeKernel → Generation Lease → Semantic Core → DomCore → Handover Guard
+```
+
+before it injects Probe into already-open tabs.
+
+The Guard enforces:
+
+- trusted browser clicks pass;
+- current Engine automation requires a one-shot consumed authorization;
+- unused direct authorization expires at the next microtask checkpoint;
+- unauthorized agreement-like historical/current synthetic clicks are canceled;
+- trusted-event synchronous delegation is permitted only for one exact delegated control while the exact source `Event` is still in browser dispatch;
+- `sourceEvent.eventPhase === Event.NONE` ends causal authority even if page code prevented extension bubble cleanup;
+- the first valid nested delegation consumes the mapping;
+- broad page/form/section containers and proceed actions cannot mint sibling-control authority;
+- ambiguous wrappers containing multiple delegated controls fail closed;
+- no timer lease extends authority into later tasks;
+- a Guard whose own extension Runtime becomes stale turns passive toward later legitimate generations.
+
+The Guard consumes Semantic Core and DomCore for bounded accessibility/topology handling rather than maintaining a private Terms/assent vocabulary or private composed-tree implementation.
+
+## Three-layer real-browser discriminator
+
+The permanent ActionAuthority test explicitly separates the layers:
+
+1. replace the public Guard API with `authorize() => false`; Engine reaches ActionAuthority exactly once and the isolated click primitive is **not called**;
+2. bypass Engine/ActionAuthority and call current-generation isolated `.click()` directly; the primitive is reached, but the original Guard capture listener still blocks the agreement-like synthetic DOM effect;
+3. perform trusted browser input; it succeeds once.
+
+Canonical v12 result:
+
+```text
+attempts=1
+engineBlocked={checked:false,clicks:0}
+direct synthetic primitive reached once
+guardBlocked={checked:false,clicks:0}
+trusted={checked:true,clicks:1}
+```
+
+This is defense in depth, not three names for one mechanism.
+
+## Decision and cache boundaries
+
+DecisionKernel is browser-independent and owns the sole severity/acceptance policy. Engine maps browser snapshots into EvidenceIR; neither DOM extraction nor ProfileCore may redefine acceptance.
+
+ProfileCore governs acceleration only:
+
+- 256 persistent origins;
+- 8 flows per origin;
+- 180-day TTL;
+- 32-entry Worker hot LRU plus `storage.session` and `storage.local`;
+- exact flow identity by fingerprint + validated DOM/Shadow locator;
+- bounded/finite locator/descriptor/counter/timestamp sanitization;
+- future-dated acceleration evidence fails closed;
+- serialized mutations; storage failures remain failures.
+
+A cached locator must be resolved against current DOM, current descriptor compatibility, current Risk Core severity and DecisionKernel policy. Historical success cannot bypass ActionAuthority.
+
+Profile namespaces come from Chrome `MessageSender.origin` / URL, never from a content-provided arbitrary origin field.
 
 ## Worker/document lifecycle boundary
 
-The Worker treats an explicit `MessageSender.documentLifecycle` other than `active` as non-authoritative. `prerender`, `cached`, and `pending_deletion` senders cannot schedule dynamic injection or mutate site-learning state. Probe/Gate/Engine retain their own lifecycle guards as an independent first line of defense.
+Explicit `MessageSender.documentLifecycle` states other than `active` are non-authoritative. `prerender`, `cached` and `pending_deletion` senders cannot schedule dynamic injection or mutate site-learning state.
 
-Service-worker globals are never correctness authority. Profile state and pending update-rehydration state are stored through `chrome.storage`; content-side handoffs are boundedly retryable after a worker disappears. Profile storage namespaces are derived from Chrome `MessageSender.origin`/`url`; a content tier cannot redirect learning by supplying an arbitrary origin string.
+Worker globals are transient and are never correctness authority. SchedulerCore owns pure queue policy; Worker owns Chrome execution. Persistent update-rehydration and profile state live in Chrome storage. Probe/Gate/Engine also retain independent lifecycle epochs so a transient Worker or hidden/frozen document cannot keep stale scheduled DOM work authoritative.
 
-Site-learning governance is itself a trust boundary, not just a cache implementation detail. v10 preserves the established limits and identity rules:
+## DOM topology and evidence boundary
 
-- at most 256 persistent origins;
-- at most 8 flows per origin;
-- 180-day profile TTL;
-- 32-entry Worker hot LRU plus `storage.session` and `storage.local` layers;
-- exact flow identity by fingerprint + validated DOM/Shadow locator;
-- strict locator/descriptor sanitization;
-- serialized mutations with persistence failures reported as failures, never apparent success.
+DomCore deliberately owns only composed-parent and root-scoped IDREF lookup. Gate, Guard and Engine retain different bounded text scanners because their latency/security budgets differ. A universal DOM/text utility would blur those obligations and potentially move expensive/full semantics into earlier tiers.
 
-Historical success may accelerate discovery but cannot authorize a click.
+No tier is permitted an unbounded wildcard whole-page scan or arbitrary subtree stringification. Pathological strings are sampled before normalization.
 
-## Update-generation authority boundary
+## Bounded-work correctness boundary
 
-An already-open page may contain more than one Auto Agree isolated-world generation after extension replacement. A version sentinel therefore proves presence, not exclusive authority.
+Hard caps protect CPU/memory but do not authorize loss of connected semantic final state. A work item may disappear only when complete, dead/disconnected, generation-obsolete/superseded, or represented by another bounded authoritative recovery object.
 
-v10 uses **two independent generation mechanisms** because they protect different historical states.
+Permanent real-Chrome tests attack:
 
-### Cooperative generation lease
+- Probe/Gate queue saturation;
+- Gate connected work beyond `JOB_TTL_MS`;
+- Engine walk saturation;
+- Engine RootBatch and sibling-range connected work beyond their TTL ages;
+- closed-Shadow work beyond `MAX_SHADOW_JOBS`.
 
-Every v10 execution world that can reach Gate/Engine work carries `generation-lease.js`. In Auto Agree's own isolated realm it wraps that realm's `HTMLElement.prototype.click` and synchronously checks `chrome.runtime.getManifest().version` immediately before DOM dispatch.
-
-If the Runtime has been invalidated by extension replacement or the installed manifest version no longer matches the compiled generation, the call becomes a no-op. The page MAIN world is not patched; trusted browser input remains outside this wrapper.
-
-Real Chrome testing established the premise: after a same-path v10→11 manifest replacement without page reload, the old v10 Engine execution context remained JavaScript-executable but its extension Runtime reported `Extension context invalidated.`. The release gate then proved zero stale automated clicks, zero direct stale-world `.click()` effects, and one successful trusted browser click.
-
-### Historical-generation handover firewall
-
-v9 and older generations did not ship the cooperative lease, so they cannot be retroactively revoked from inside themselves. On update/reload, the Worker therefore establishes `generation-lease.js` + `semantic-core.js` + `handover-guard.js` before it rehydrates `bootstrap.js` into already-open tabs.
-
-The guard enforces:
-
-- trusted user clicks always pass;
-- a current Engine click receives one exact one-shot target/ancestor authorization immediately before dispatch;
-- unused direct authorization expires at the next microtask checkpoint;
-- agreement-like stale synthetic clicks from non-cooperative old generations are canceled;
-- a trusted event or current-authorized click may delegate one descendant synthetic click only inside a small, exact local control wrapper and only while the **exact authorizing source Event remains in browser dispatch**;
-- the delegated control is mapped to that exact source Event; if `sourceEvent.eventPhase === Event.NONE`, the mapping is stale and confers no authority;
-- the first valid nested delegation consumes the mapping;
-- bubble cleanup is only an eager release path and is not a correctness dependency, so page `stopPropagation()` cannot leak authority into later asynchronous work;
-- broad `form`, `dialog`, `section`, page/document containers and proceed actions cannot mint sibling-control authority;
-- ambiguous wrappers containing multiple possible delegated controls fail closed;
-- no timer-based lease is permitted to leak authorization into later tasks;
-- a guard whose own extension Runtime is stale becomes passive toward later generations, preventing an old firewall from blocking a future legitimate Engine.
-
-The guard consumes the shared `semantic-core.js` and resolves bounded explicit accessibility relations (`aria-labelledby`, `aria-describedby`, native external labels). It does not carry a divergent private Terms/assent vocabulary and does not issue an unbounded generic descendant-control query on the trusted-event hot path.
-
-The extension does not request the `tabs` permission: Chrome's Tabs API is available without it for basic tab operations, and the existing `<all_urls>` host permission supplies the host access needed for injection.
+Raising caps, increasing timeouts to hide loss, or switching to unbounded synchronous scans is not an equivalent repair.
 
 ## Release-transition identity boundary
 
-The PR transition test stages the exact base commit and derives the previous/current versions from their manifests. The test does not trust a hardcoded historical pair.
+An open page may contain multiple Auto Agree isolated contexts after extension replacement. Version text proves a generation label, not unique execution identity; execution-context ID is the primary old/new world identity.
 
-Execution-context ID is the primary identity of an old versus rehydrated isolated world. Version strings alone are insufficient because a same-version hotfix/reload can produce two simultaneously observable contexts that both report the same manifest version. A release test that reasons only from version text can therefore produce a false result even when Chrome has created a distinct new world.
+`e2e-update.mjs` stages the exact PR base and derives previous/current versions from their manifests. The physical v12 candidate proved a real **11.0.0 → 12.0.0** same-path update without page reload while one full v11 isolated context and one full v12 context remained simultaneously observable.
+
+The current v12 context preserved exactly-one routine action and trusted same-event delegation; mixed state, external-IDREF stale semantics, non-English stale semantics, wide wrappers, ambiguous wrappers and action-inside-label cases remained zero-click.
+
+## Release-generation integrity
+
+Current release identity is machine-enforced across:
+
+- `extension/manifest.json`;
+- `package.json`;
+- `package-lock.json` top-level version;
+- `package-lock.json` root package version;
+- RuntimeKernel's single isolated birth-generation literal.
+
+All other isolated production modules derive RuntimeKernel generation; Worker and current-generation tests derive the manifest. The first v12 cut was deliberately rejected when it exposed a hardcoded `11.0.0` RuntimeKernel unit assertion. The defect was repaired before the four-file cut was retried.
 
 ## Artifact boundary
 
-A release ZIP is part of the security/correctness boundary. A successful CRC check is not sufficient if a newly referenced runtime module was never added to a hand-maintained package list.
+A release ZIP is part of the correctness/security boundary. The packager derives the executable JavaScript closure from `extension/*.js`; a checksum alone is insufficient if source and packaged runtime closures diverge.
 
-During v10 audit, the old deterministic packager was found to omit runtime JavaScript that had been added after its static list was written. The packager now derives the executable closure from the production `extension/*.js` set and verifies the resulting deterministic archive. This keeps the packaged runtime aligned with the load-unpacked production root.
+The canonical v12 candidate archive was:
+
+```text
+AutoAgree-v12.0.0.zip
+sha256=1cee531a26272160df70909815089a80d1d45814ce3d138d7dd2c2efbc00e859
+```
 
 ## Threats considered
 
-- misleading CSS/class names;
+- misleading CSS/classes and visually classless controls;
 - split legal/risk words across DOM fragments;
-- stale learned selectors after site redesign;
-- profile namespace spoofing, profile-flow collisions and unbounded profile growth;
+- multilingual risk asymmetry;
+- stale learned selectors and profile namespace/identity collisions;
+- future-dated/malformed persisted acceleration evidence;
 - hidden templates and duplicated inactive modals;
-- cross-frame injection storms, queue starvation and stale-document jobs;
-- closed/nested Shadow DOM;
-- BFCache/frozen/prerender/pending-deletion message races;
+- cross-frame injection storms and Worker queue starvation;
+- closed/nested Shadow DOM and slot/composed-tree boundaries;
+- BFCache/frozen/prerender/pending-deletion races;
 - detached-DOM retention through queues/observers;
-- pathological multi-megabyte attributes/text nodes, including update-guard semantic paths;
-- mutation storms designed to force synchronous work;
-- MV3 service-worker termination during Probe→Gate, Gate→Engine or profile handoff;
-- extension update/reload while old pages remain open;
-- simultaneous old/new isolated-world Engine execution after update;
-- stale-generation click attempts under superseded semantics;
-- page-owned custom controls that synchronously delegate from trusted wrapper interaction to a synthetic descendant click;
-- `stopPropagation()` or `stopImmediatePropagation()` preventing an extension bubble cleanup listener from running;
-- stale local causal tokens surviving into microtasks/timers/later tasks after their source Event dispatch has ended;
-- unused, overlong or overly broad authorization tokens being reused by later stale work;
-- release-transition tests that mistake equal version strings for one execution generation;
-- package-integrity checks that pass despite an incomplete runtime dependency closure.
+- pathological multi-megabyte text/attributes;
+- mutation storms and zero-budget slices;
+- MV3 service-worker termination during tier/profile handoff;
+- extension update while old pages/Engine contexts remain live;
+- stale-generation automated/direct isolated-world click attempts;
+- page-owned synchronous trusted-event delegation;
+- `stopPropagation()` / `stopImmediatePropagation()` preventing cleanup;
+- authorization token reuse, overly broad wrappers and ambiguous controls;
+- release tests confusing equal version strings with one execution context;
+- deterministic tests silently omitted from a manual package script;
+- package verification omitting a newly added runtime module;
+- single hosted-runner performance samples being misread as stable code regressions.
 
 ## Hard boundaries
 
-The v9→v10 handover cannot be made retroactively cooperative: v9 shipped no generation lease, so the new-generation firewall remains necessary until it reaches each surviving frame. Future generations that inherit the v10 lease can self-revoke their ordinary Auto Agree `.click()` primitive as soon as Chrome invalidates their extension Runtime, reducing reliance on that rehydration window.
+These mechanisms are scoped to Auto Agree's consent-action threat model. They are not a generic sandbox for arbitrary historical JavaScript side effects, and the tested Chrome behavior is not claimed as a universal browser theorem.
 
-The cooperative result is a tested Chrome behavior, not a universal browser theorem. `tests/e2e-generation-lease.mjs` remains a release gate so a future Chrome lifecycle change cannot silently invalidate this authority model.
-
-The handover firewall is scoped to Auto Agree's consequential stale authority—agreement-like synthetic clicks. The generation lease is scoped to Auto Agree's isolated-world `HTMLElement.prototype.click`. Neither mechanism is presented as a generic sandbox for arbitrary historical JavaScript side effects.
-
-The local delegation exception is defined by **live browser event dispatch**, not by wall-clock time, successful bubble cleanup or historical user interaction. ADR 0011 and the two-branch real-Chrome fixture are the canonical authority for this rule.
-
-Ordinary content-script extensions also cannot guarantee control over Chrome-owned UI, trusted-physical-input checks, opaque Canvas/WebGL UI with no usable DOM/accessibility surface, or semantics intentionally placed outside any finite bounded sample of an unbounded string.
+Ordinary content-script extensions also cannot guarantee control over Chrome-owned UI, trusted-physical-input-only interfaces, opaque Canvas/WebGL UI without usable DOM/accessibility evidence, or semantics intentionally placed outside every finite bounded sample of an unbounded string.

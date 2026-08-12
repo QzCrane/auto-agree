@@ -1,5 +1,5 @@
 {
-  "schemaVersion": 1,
+  "schemaVersion": 2,
   "records": [
     {
       "version": "2.0.0",
@@ -141,6 +141,36 @@
       "source": "GitHub Actions run 31587651834",
       "environment": { "chrome": "149.0.7827.22", "puppeteer": "25.1.0", "nodeMajor": 24 },
       "metrics": { "latencyMs": 212.9, "taskDurationS": 0.2076, "cpuSamples": 176 }
+    },
+    {
+      "version": "12.0.0",
+      "commit": "d3bdcc43abe12dc54b9e613f2e9a021662967d74",
+      "benchmarkId": "real-unpacked-tail-login-5000-v1",
+      "harnessRevision": "v12-statistical-existing-harness",
+      "evidenceClass": "real-unpacked-extension-release-statistical",
+      "source": "docs/verification/v12.md + PR #56 canonical run 31619485009",
+      "environment": { "chrome": "149.0.7827.22", "puppeteer": "25.1.0", "nodeMajor": 24 },
+      "repetitions": 7,
+      "metrics": {
+        "latencyMedianMs": 259.1,
+        "latencyP90Ms": 288.2,
+        "latencyMaxMs": 288.5,
+        "taskDurationMedianS": 0.2524,
+        "taskDurationP90S": 0.2803,
+        "taskDurationMaxS": 0.2812,
+        "cpuSamplesMedian": 219,
+        "cpuSamplesP90": 249.8,
+        "cpuSamplesMax": 251
+      },
+      "runs": [
+        { "latencyMs": 259.1, "taskDurationS": 0.2524, "cpuSamples": 219 },
+        { "latencyMs": 215.6, "taskDurationS": 0.2085, "cpuSamples": 172 },
+        { "latencyMs": 288.5, "taskDurationS": 0.2797, "cpuSamples": 251 },
+        { "latencyMs": 281.1, "taskDurationS": 0.2725, "cpuSamples": 239 },
+        { "latencyMs": 202.9, "taskDurationS": 0.1957, "cpuSamples": 170 },
+        { "latencyMs": 192.0, "taskDurationS": 0.1857, "cpuSamples": 159 },
+        { "latencyMs": 288.0, "taskDurationS": 0.2812, "cpuSamples": 249 }
+      ]
     }
   ]
 }

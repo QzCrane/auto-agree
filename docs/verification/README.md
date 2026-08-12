@@ -40,8 +40,9 @@ From v3 onward, detailed version reports were produced during the corresponding 
 | pre-v11 Engine sibling-batch lifetime hardening | [v11-engine-batch-live-ttl.md](v11-engine-batch-live-ttl.md) | real-Chrome proof that a connected `enqueueSiblingRange` job cannot be retired solely because renderer delay crossed `BATCH_JOB_TTL_MS=3000` |
 | pre-v11 Engine broad closed-Shadow hardening | [v11-engine-shadow-overflow.md](v11-engine-shadow-overflow.md) | real-Chrome proof and repair of `MAX_SHADOW_JOBS=8` oldest-cursor loss when a unique routine agreement exists only in a closed ShadowRoot on a plain host |
 | **v11.0.0** | **[v11.md](v11.md)** | formal generation-coherent release; real v10→v11 transition plus v11→v12 stale-generation probe |
+| **v12.0.0** | **[v12.md](v12.md)** | authority/core convergence, auto-registered deterministic gates, statistical performance, physical v11→v12 transition and v12→v13 stale-generation revocation |
 
-The pre-v11 hardening records intentionally retain their historical `10.0.0` runtime context. The formal v11 report aggregates those red/green findings into the release baseline and records the coherent generation cut.
+The pre-v11 hardening records intentionally retain their historical `10.0.0` runtime context. The formal v11 report aggregates those red/green findings into the v11 release baseline. The v12 report does **not** rewrite v11 history; it records the later falsification of one overbroad v11 claim (a RuntimeKernel unit still hardcoded `11.0.0`) and the stronger candidate-relative version contract that replaced it.
 
 ## Interpretation rules
 
@@ -53,8 +54,11 @@ The pre-v11 hardening records intentionally retain their historical `10.0.0` run
 6. A release report is not considered final until its release-gating CI evidence has been incorporated and the corresponding candidate has passed the repository's current verification policy.
 7. Real-browser E2E results describe the committed sanitized regression corpus and the tested browser environment; they do not imply universal correctness across arbitrary websites.
 8. Narrow green tests do not waive historical invariants outside their scope. New releases must preserve previously established safety, resource and persistence contracts or explicitly re-open them with new evidence.
-9. A post-merge addendum may supersede a mechanism claim in the original release report without rewriting history. The original report remains evidence of what was believed/tested at release time; the addendum records the later falsification and stronger replacement invariant.
-10. Scheduling-sensitive queue fixes require the exact final head to pass the permanent real-browser discriminator; when prior evidence showed variance, the same SHA should be rerun before merge rather than treating one green interleaving as proof.
-11. Final exact-head release CI and same-SHA variance evidence are authoritative in the release PR/merge metadata when embedding their generated run IDs into a report would itself create another unverified candidate SHA.
+9. A post-merge addendum or later version may supersede a mechanism claim in an original release report without rewriting history. The original report remains evidence of what was believed/tested then; the later record carries the falsification/replacement.
+10. Scheduling-sensitive fixes require exact final-head real-browser discriminators; where prior evidence showed variance, the same SHA must be rerun rather than treating one green interleaving as proof.
+11. Exact-head release CI and same-SHA evidence are authoritative in release PR/merge metadata when embedding generated final-run IDs into a report would itself create another unverified candidate SHA.
+12. Test existence is not test execution. Current deterministic gates self-register through `tests/run-core.mjs`, and registration itself is machine-tested.
+13. Performance samples from hosted runners are distributions with environment variance, not deterministic cross-machine microbenchmarks. Repeated raw evidence and the stable benchmark identity outrank one isolated wall-clock number.
+14. Release-generation claims must cover manifest/package/package-lock/RuntimeKernel coherence and current-generation test derivation; a prior release report cannot waive a newly discovered hardcoded generation assumption.
 
 For the high-level evolution map, see [`../history.md`](../history.md). For current architecture, see [`../architecture.md`](../architecture.md).
