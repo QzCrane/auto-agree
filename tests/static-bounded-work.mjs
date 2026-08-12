@@ -6,6 +6,7 @@ const kernel = fs.readFileSync('extension/runtime-kernel.js', 'utf8');
 const probe = fs.readFileSync('extension/bootstrap.js', 'utf8');
 const gate = fs.readFileSync('extension/gate.js', 'utf8');
 const tierE2e = fs.readFileSync('tests/e2e-tier-overflow.mjs', 'utf8');
+const probeTtlE2e = fs.readFileSync('tests/e2e-probe-live-ttl.mjs', 'utf8');
 const gateTtlE2e = fs.readFileSync('tests/e2e-gate-live-ttl.mjs', 'utf8');
 const engineWalkE2e = fs.readFileSync('tests/e2e-engine-overflow.mjs', 'utf8');
 
@@ -42,15 +43,33 @@ assert.match(engineWalkE2e, /const\s+NODES\s*=\s*900/, 'Engine walk saturation r
 assert.match(engineWalkE2e, /timeout:\s*9000/, 'Engine walk saturation keeps a fixed eventual-progress deadline');
 
 assert.equal(
-  /while\s*\(deep\.length\s*>=\s*MAX_DEEP\)\s*releaseDeep\(deep\.shift\(\)\)/.test(probe),
+  /while\s*\(deep\.length\s*>=\s*MAX_DEEP\)/.test(probe),
   false,
-  'Probe deep pressure must not silently release the oldest unfinished root'
+  'Probe deep pressure must not evict existing FIFO cursors to admit newer work'
 );
 assert.match(probe, /MAX_DEEP\s*=\s*4/, 'Probe recovery must preserve the hard deep-job cap');
-assert.match(probe, /let\s+deepRecoveryRef\s*=\s*null/, 'Probe needs a weak final-state recovery representation');
-assert.match(probe, /function\s+rememberDeepRecovery\s*\(/, 'Probe overflow must retain recoverable final state');
-assert.match(probe, /function\s+promoteDeepRecovery\s*\(/, 'Probe recovery must re-enter bounded background traversal');
-assert.match(probe, /deepRecoveryRef\s*=\s*new WeakRef\(merged\)/, 'Probe recovery must remain weak');
+assert.match(probe, /DEEP_JOB_TTL_MS\s*=\s*2400/, 'Probe live-work TTL boundary must remain explicit');
+assert.match(probe, /const\s+deepWork\s*=\s*KERNEL\.createBoundedFifo/, 'Probe deep work must use shared bounded FIFO authority');
+assert.match(probe, /capacity:\s*MAX_DEEP/, 'Probe shared FIFO capacity must remain four');
+assert.match(probe, /commonDeepRecoveryRoot\(current, next\)/, 'Probe retains domain-specific final-state coalescing');
+assert.match(probe, /deepWork\.admit\(job, root, null\)/, 'new Probe deep work must route through shared admission');
+assert.match(probe, /deepWork\.promote\(/, 'Probe recovery must re-enter ordinary deep traversal through the kernel');
+assert.match(probe, /deepWork\.hasRecovery/, 'Probe must expose pending weak recovery to promotion');
+assert.match(probe, /deepWork\.clear\(\)/, 'Probe lifecycle cleanup must clear kernel-owned queue and recovery');
+assert.equal(/performance\.now\(\)\s*-\s*job\.createdAt\s*>\s*2400/.test(probe), false, 'Probe must not keep a private age-only deletion predicate');
+assert.match(probe, /KERNEL\.refreshLiveAge\(job,\s*DEEP_JOB_TTL_MS,\s*root,\s*rootConnected\)/, 'Probe live root age must use shared lifetime authority');
+assert.equal(
+  /let\s+n\s*=\s*job\.started[^;]+;\s*job\.started\s*=\s*true;/.test(probe),
+  false,
+  'Probe must not mark a zero-budget deep slice started before processing its first node'
+);
+assert.match(
+  probe,
+  /while\s*\(steps\+\+\s*<\s*96\s*&&\s*performance\.now\(\)\s*-\s*start\s*<\s*1\.8\s*&&\s*n\)\s*\{\s*job\.started\s*=\s*true;/,
+  'Probe deep jobs become started only inside a slice that actually processes a node'
+);
+assert.match(probeTtlE2e, /performance\.now\(\)\s*\+\s*2700/, 'Probe live-TTL E2E must cross the 2400 ms production boundary');
+assert.match(probeTtlE2e, /live Probe deep work must survive age beyond its 2400 ms boundary exactly once/, 'Probe live-TTL E2E must require exactly-once eventual progress');
 
 assert.equal(
   /while\s*\(batchJobs\.length\s*>=\s*MAX_BATCH_JOBS\)\s*batchJobs\.shift\(\)/.test(gate),

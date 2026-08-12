@@ -12,9 +12,14 @@
   const NON_AUTH = /(?:newsletter|subscribe|mailing\s+list|contact\s+us|contact\s+form|site\s+search|feedback|support\s+(?:request|ticket)|订阅资讯|訂閱資訊|邮件订阅|郵件訂閱|联系我们|聯絡我們|站内搜索|站內搜尋|意见反馈|意見反饋)/iu;
   const CONTROL = 'input[type="checkbox"],input[type="radio"],[role="checkbox"],[role="radio"],[role="switch"],[aria-checked]';
   const MAX_DEEP = 4;
-  const deep = [];
+  const DEEP_JOB_TTL_MS = 2400;
+  const deepWork = KERNEL.createBoundedFifo({
+    capacity: MAX_DEEP,
+    isLive: rootConnected,
+    coalesce: (current, next) => ({ scope: commonDeepRecoveryRoot(current, next) })
+  });
+  const deep = deepWork.queue;
   const queued = new WeakSet();
-  let deepRecoveryRef = null;
   let observer = null;
   let gateRequested = false;
   let handoffRetry = 0;
@@ -239,8 +244,7 @@
     // The semantic gate owns discovery from this point. Drop queued roots immediately so the
     // retired probe cannot retain transient DOM while its already-posted drain callback unwinds.
     for (const job of deep) releaseDeep(job);
-    deep.length = 0;
-    deepRecoveryRef = null;
+    deepWork.clear();
     chrome.runtime.sendMessage({ type: 'AUTO_AGREE_GATE', reason }, response => {
       if (!chrome.runtime.lastError && response?.ok) { handoffRetry = 0; return; }
       gateRequested = false;
@@ -303,33 +307,24 @@
     return document.documentElement;
   }
 
-  function rememberDeepRecovery(root) {
-    if (!root || !rootConnected(root)) return;
-    const current = deepRecoveryRef?.deref?.();
-    const merged = current && rootConnected(current) ? commonDeepRecoveryRoot(current, root) : root;
-    if (merged && rootConnected(merged)) deepRecoveryRef = new WeakRef(merged);
-  }
-
   function promoteDeepRecovery() {
-    if (deep.length || !deepRecoveryRef) return false;
-    const root = deepRecoveryRef.deref?.();
-    deepRecoveryRef = null;
-    if (!root || !rootConnected(root) || queued.has(root)) return false;
-    queued.add(root);
-    deep.push({ rootRef: new WeakRef(root), cursorRef: null, started: false, createdAt: performance.now() });
-    return true;
+    if (deep.length || !deepWork.hasRecovery) return false;
+    return deepWork.promote(root => {
+      if (!root || !rootConnected(root) || queued.has(root)) return null;
+      queued.add(root);
+      return { rootRef: new WeakRef(root), cursorRef: null, started: false, createdAt: performance.now() };
+    });
   }
 
   function queueDeep(root) {
     if (gateRequested || paused || !root || queued.has(root) || !rootConnected(root)) return;
-    queued.add(root);
-    while (deep.length >= MAX_DEEP) {
-      const dropped = deep.shift();
-      const droppedRoot = dropped?.rootRef?.deref?.();
-      releaseDeep(dropped);
-      rememberDeepRecovery(droppedRoot);
+    const job = { rootRef: new WeakRef(root), cursorRef: null, started: false, createdAt: performance.now() };
+    const result = deepWork.admit(job, root, null);
+    if (!result.admitted) {
+      scheduleDrain();
+      return;
     }
-    deep.push({ rootRef: new WeakRef(root), cursorRef: null, started: false, createdAt: performance.now() });
+    queued.add(root);
     scheduleDrain();
   }
 
@@ -347,11 +342,11 @@
       while (deep.length && performance.now() - start < 1.8 && !gateRequested) {
         const job = deep[0]; let steps = 0, done = false;
         const root = job?.rootRef?.deref?.();
-        if (performance.now() - job.createdAt > 2400 || !root || !rootConnected(root)) { releaseDeep(deep.shift()); continue; }
+        if (!root || !KERNEL.refreshLiveAge(job, DEEP_JOB_TTL_MS, root, rootConnected)) { releaseDeep(deep.shift()); continue; }
         let n = job.started ? job.cursorRef?.deref?.() : firstNode(root);
-        job.started = true;
         if (n && !(n === root || root.contains(n))) n = firstNode(root);
         while (steps++ < 96 && performance.now() - start < 1.8 && n) {
+          job.started = true;
           const next = nextNode(n, root);
           job.cursorRef = next instanceof Node ? new WeakRef(next) : null;
           if (n.nodeType === Node.TEXT_NODE) {
@@ -449,8 +444,7 @@
 
   function clearProbeWork() {
     for (const job of deep) releaseDeep(job);
-    deep.length = 0;
-    deepRecoveryRef = null;
+    deepWork.clear();
     drainScheduled = false;
   }
 
