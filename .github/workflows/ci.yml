@@ -81,6 +81,10 @@ jobs:
         env:
           AUTO_AGREE_HEADED: '1'
         run: xvfb-run -a node tests/e2e-probe-lifecycle.mjs
+      - name: Prove Gate hidden/resume lifecycle ownership
+        env:
+          AUTO_AGREE_HEADED: '1'
+        run: xvfb-run -a node tests/e2e-gate-lifecycle.mjs
       - name: Prove live Gate deep cursor survives TTL age
         env:
           AUTO_AGREE_HEADED: '1'

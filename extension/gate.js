@@ -30,11 +30,10 @@
   const HANDOFF_RETRY_DELAYS = [40, 160, 640];
   let observer = null;
   let backgroundRunning = false;
-  let backgroundEpoch = 0;
+  let backgroundToken = 0;
   let eventsAttached = false;
   let lifecycleAttached = false;
-  let paused = false;
-  let lifecycleEpoch = 0;
+  const lifecycle = KERNEL.createLifecycleState(false);
   const batchJobs = [];
   const deepQueued = new WeakSet();
   const deepWork = KERNEL.createBoundedFifo({
@@ -223,7 +222,7 @@
   }
 
   function activate(reason, seed = null) {
-    if (requested || paused) return;
+    if (requested || lifecycle.paused) return;
     requested = true;
     globalThis.__AUTO_AGREE_BOOTSTRAP_CONTEXT__ = { reason, seedRef: seed instanceof Element && typeof WeakRef === 'function' ? new WeakRef(seed) : null };
     observer?.disconnect();
@@ -236,13 +235,14 @@
       if (!chrome.runtime.lastError && response?.ok) { handoffRetry = 0; return; }
       requested = false;
       attachLifecycle();
-      if (document.visibilityState === 'hidden' || document.prerendering) paused = true;
-      else { paused = false; attachEvents(); startObserver(); }
+      const shouldPause = document.visibilityState === 'hidden' || document.prerendering;
+      lifecycle.transition(shouldPause);
+      if (!shouldPause) { attachEvents(); startObserver(); }
       const delay = HANDOFF_RETRY_DELAYS[handoffRetry++];
       if (delay == null) return;
       const retrySeed = seed instanceof Element && seed.isConnected ? seed : null;
       setTimeout(() => {
-        if (!paused && !requested) activate('worker-restart-retry', retrySeed);
+        if (!lifecycle.paused && !requested) activate('worker-restart-retry', retrySeed);
       }, delay);
     });
   }
@@ -290,7 +290,7 @@
   }
 
   function queueDeep(root, allowComposite = true) {
-    if (requested || paused || !root || deepQueued.has(root) || !rootConnected(root)) return;
+    if (requested || lifecycle.paused || !root || deepQueued.has(root) || !rootConnected(root)) return;
     const job = { rootRef: new WeakRef(root), cursorRef: null, started: false, flags: 0, allowComposite: !!allowComposite, createdAt: performance.now() };
     const result = deepWork.admit(job, root, !!allowComposite);
     if (!result.admitted) {
@@ -369,11 +369,11 @@
     return { done: !node };
   }
 
-  async function drainBackground(epoch = lifecycleEpoch) {
-    if (paused || epoch !== lifecycleEpoch) { if (backgroundEpoch === epoch) backgroundRunning = false; return; }
+  async function drainBackground(token = lifecycle.capture()) {
+    if (!lifecycle.isCurrent(token)) { if (backgroundToken === token) backgroundRunning = false; return; }
     try {
       let rounds = 0;
-      while (!requested && !paused && epoch === lifecycleEpoch && (batchJobs.length || deepJobs.length) && rounds++ < 20) {
+      while (!requested && lifecycle.isCurrent(token) && (batchJobs.length || deepJobs.length) && rounds++ < 20) {
         const start = performance.now();
         while (batchJobs.length && performance.now() - start < BACKGROUND_BUDGET_MS) {
           const job = batchJobs[0];
@@ -419,22 +419,22 @@
             if (out.done) releaseDeep(deepJobs.shift());
           }
         }
-        if ((batchJobs.length || deepJobs.length) && globalThis.scheduler?.yield) { await scheduler.yield(); if (paused || epoch !== lifecycleEpoch) break; }
+        if ((batchJobs.length || deepJobs.length) && globalThis.scheduler?.yield) { await scheduler.yield(); if (!lifecycle.isCurrent(token)) break; }
         else break;
       }
     } finally {
       if (!batchJobs.length && !deepJobs.length) promoteDeepRecovery();
-      if (backgroundEpoch === epoch) backgroundRunning = false;
-      if (!requested && !paused && epoch === lifecycleEpoch && (batchJobs.length || deepJobs.length)) scheduleBackground();
+      if (backgroundToken === token) backgroundRunning = false;
+      if (!requested && lifecycle.isCurrent(token) && (batchJobs.length || deepJobs.length)) scheduleBackground();
     }
   }
 
   function scheduleBackground() {
-    if (requested || paused || backgroundRunning || (!batchJobs.length && !deepJobs.length)) return;
+    if (requested || lifecycle.paused || backgroundRunning || (!batchJobs.length && !deepJobs.length)) return;
     backgroundRunning = true;
-    const epoch = lifecycleEpoch;
-    backgroundEpoch = epoch;
-    postBackground(() => drainBackground(epoch));
+    const token = lifecycle.capture();
+    backgroundToken = token;
+    postBackground(() => drainBackground(token));
   }
 
   function sampleLargeBatch(nodes) {
@@ -451,7 +451,7 @@
   }
 
   function onMutations(records) {
-    if (requested || paused) return;
+    if (requested || lifecycle.paused) return;
     const start = performance.now();
     for (const record of records) {
       if (record.type === 'childList') {
@@ -519,7 +519,7 @@ if (scope instanceof Element && scope !== el) queueDeep(scope, true);
   }
 
   function onFocus(event) {
-    if (requested || paused || probeEventShadow(event)) return;
+    if (requested || lifecycle.paused || probeEventShadow(event)) return;
     const target = event.target instanceof Element ? event.target : null;
     if (!target) return;
     const ef = elementFlags(target);
@@ -532,7 +532,7 @@ if (scope instanceof Element && scope !== el) queueDeep(scope, true);
   }
 
   function onPointer(event) {
-    if (requested || paused || probeEventShadow(event)) return;
+    if (requested || lifecycle.paused || probeEventShadow(event)) return;
     const target = event.target instanceof Element ? event.target : null;
     if (!target) return;
     const scope = localScope(target);
@@ -560,7 +560,7 @@ if (scope instanceof Element && scope !== el) queueDeep(scope, true);
   }
 
   function startObserver() {
-    if (requested || paused) return;
+    if (requested || lifecycle.paused) return;
     if (!observer) observer = new MutationObserver(onMutations);
     try {
       observer.observe(document, {
@@ -608,18 +608,16 @@ if (scope instanceof Element && scope !== el) queueDeep(scope, true);
   }
 
   function pauseGate() {
-    if (paused || requested) return;
-    paused = true;
-    lifecycleEpoch++;
+    if (lifecycle.paused || requested) return;
+    lifecycle.pause();
     observer?.disconnect();
     detachEvents();
     clearGateWork();
   }
 
   function resumeGate() {
-    if (!paused || requested || document.prerendering || document.visibilityState === 'hidden') return;
-    paused = false;
-    lifecycleEpoch++;
+    if (!lifecycle.paused || requested || document.prerendering || document.visibilityState === 'hidden') return;
+    lifecycle.resume();
     localChecked = new WeakSet();
     attachEvents();
     startObserver();
@@ -657,6 +655,6 @@ if (scope instanceof Element && scope !== el) queueDeep(scope, true);
   }
 
   attachLifecycle();
-  if (document.visibilityState === 'hidden') paused = true;
+  if (document.visibilityState === 'hidden') lifecycle.pause();
   else { attachEvents(); startObserver(); }
 })();
