@@ -23,6 +23,11 @@ jobs:
       - uses: actions/setup-node@v7
         with:
           node-version: '24'
+          cache: npm
+      - name: Install locked development dependencies
+        env:
+          PUPPETEER_SKIP_DOWNLOAD: 'true'
+        run: npm ci --ignore-scripts
       - run: npm test
       - run: python tools/package_extension.py --check
 
@@ -36,8 +41,16 @@ jobs:
       - uses: actions/setup-node@v7
         with:
           node-version: '24'
-      - name: Install pinned Puppeteer test tool
-        run: npm install --no-save --no-package-lock --ignore-scripts puppeteer@25.1.0
+          cache: npm
+      - name: Install locked development dependencies
+        env:
+          PUPPETEER_SKIP_DOWNLOAD: 'true'
+        run: npm ci --ignore-scripts
+      - name: Cache Chrome for Testing
+        uses: actions/cache@v5
+        with:
+          path: ~/.cache/puppeteer
+          key: puppeteer-${{ runner.os }}-${{ runner.arch }}-25.1.0-chrome
       - name: Install Chrome for Testing explicitly
         run: npx puppeteer browsers install chrome
       - name: Inspect managed Chrome for Testing

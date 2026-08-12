@@ -129,7 +129,7 @@
       const node = stack.pop();
       if (!(node instanceof Node) || seen.has(node)) continue;
       seen.add(node);
-      if (node.nodeType === Node.TEXT_NODE) {
+      if (node instanceof Text) {
         pushPart(parts, node.data, budget);
         continue;
       }
@@ -160,10 +160,11 @@
 
   function rootQueryById(el, id) {
     if (!id || !(el instanceof Element)) return null;
-    const root = el.getRootNode?.() || document;
+    const root = el.getRootNode();
     try {
       if (root instanceof Document) return root.getElementById(id);
-      return root.querySelector?.(`#${CSS.escape(id)}`) || null;
+      if (root instanceof DocumentFragment) return root.querySelector(`#${CSS.escape(id)}`);
+      return null;
     } catch (_) { return null; }
   }
 
@@ -171,9 +172,10 @@
     if (!(input instanceof HTMLInputElement)) return null;
     if (input.labels?.length) return input.labels[0];
     if (input.id) {
-      const root = input.getRootNode?.() || document;
+      const root = input.getRootNode();
       try {
-        const label = root.querySelector?.(`label[for="${CSS.escape(input.id)}"]`);
+        if (!(root instanceof Document || root instanceof DocumentFragment)) return input.closest?.('label') || null;
+        const label = root.querySelector(`label[for="${CSS.escape(input.id)}"]`);
         if (label instanceof HTMLLabelElement) return label;
       } catch (_) {}
     }
@@ -446,7 +448,7 @@
     if (!(el instanceof Element) || !el.isConnected) return false;
     let p = el;
     for (let i = 0; i < 10 && p instanceof Element; i++, p = composedParent(p)) {
-      if (p.hidden || p.getAttribute('aria-hidden') === 'true' || p.hasAttribute('inert')) return false;
+      if (p.hasAttribute('hidden') || p.getAttribute('aria-hidden') === 'true' || p.hasAttribute('inert')) return false;
       if (p instanceof HTMLDialogElement && !p.open) return false;
       if (p.localName === 'details' && !p.hasAttribute('open')) {
         const summary = el.closest?.('summary');
@@ -688,6 +690,7 @@
 
   function resolveLocator(locator) {
     if (!locator?.selector || !Array.isArray(locator.hosts)) return null;
+    /** @type {Document | ShadowRoot} */
     let root = document;
     for (const selector of locator.hosts) {
       let host = null;

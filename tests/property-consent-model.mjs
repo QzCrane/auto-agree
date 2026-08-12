@@ -30,7 +30,8 @@ const consequential = [
   'I consent to facial recognition and biometric processing',
   '我同意服务协议并授权扣款',
   '我同意用户协议和人脸识别授权',
-  'medical informed consent'
+  'medical informed consent',
+  'accept automatic renewal'
 ];
 const attestations = [
   'I confirm that I am over 18 and agree to the Terms',

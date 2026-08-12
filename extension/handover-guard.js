@@ -81,10 +81,11 @@
 
   function rootQueryById(el, id) {
     if (!(el instanceof Element) || !id) return null;
-    const root = el.getRootNode?.() || document;
+    const root = el.getRootNode();
     try {
       if (root instanceof Document) return root.getElementById(id);
-      return root.querySelector?.(`#${CSS.escape(id)}`) || null;
+      if (root instanceof DocumentFragment) return root.querySelector(`#${CSS.escape(id)}`);
+      return null;
     } catch (_) { return null; }
   }
 
