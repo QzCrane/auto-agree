@@ -21,7 +21,7 @@ const injectionActiveByTab = new Map();
 let injectionActive = 0;
 let injectionSeq = 0;
 let lastScheduledTab = -1;
-const VERSION = '11.0.0';
+const VERSION = chrome.runtime.getManifest().version;
 /** @type {Promise<boolean | void>} */
 let storageWriteChain = Promise.resolve();
 let rehydratePromise = null;
@@ -346,7 +346,7 @@ function profileOriginForSender(sender) {
 
 async function protectAndRehydrateTab(tabId) {
   const target = { tabId, allFrames: true };
-  await scheduleInjection(target, ['generation-lease.js', 'semantic-core.js', 'handover-guard.js'], 4);
+  await scheduleInjection(target, ['runtime-kernel.js', 'generation-lease.js', 'semantic-core.js', 'handover-guard.js'], 4);
   await scheduleInjection(target, ['bootstrap.js'], 3);
 }
 
@@ -443,8 +443,8 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   const isGate = message.type === 'AUTO_AGREE_GATE';
   const map = isGate ? gateInflight : engineInflight;
   const files = isGate
-    ? ['generation-lease.js', 'semantic-core.js', 'gate.js']
-    : ['generation-lease.js', 'semantic-core.js', 'handover-guard.js', 'risk-core.js', 'engine.js'];
+    ? ['runtime-kernel.js', 'generation-lease.js', 'semantic-core.js', 'gate.js']
+    : ['runtime-kernel.js', 'generation-lease.js', 'semantic-core.js', 'handover-guard.js', 'risk-core.js', 'engine.js'];
   let promise = map.get(key);
   if (!promise) {
     promise = scheduleInjection(target, files, isGate ? 1 : 2).finally(() => map.delete(key));

@@ -10,13 +10,13 @@ const area=map=>({
   async set(obj){for(const [k,v] of Object.entries(obj))map.set(k,v);},
   async remove(keys){for(const k of Array.isArray(keys)?keys:[keys])map.delete(k);}
 });
-const PROTECTION_FILES=['generation-lease.js','semantic-core.js','handover-guard.js'];
+const PROTECTION_FILES=['runtime-kernel.js','generation-lease.js','semantic-core.js','handover-guard.js'];
 const BOOTSTRAP_FILES=['bootstrap.js'];
 function sameFiles(actual,expected){return JSON.stringify(actual)===JSON.stringify(expected);}
 function boot(tabIds=[1,2],failProtectionTabs=new Set()){
   let listener,installed; const calls=[];
   const chrome={
-    runtime:{onMessage:{addListener(fn){listener=fn;}},onInstalled:{addListener(fn){installed=fn;}}},
+    runtime:{getManifest(){return {version:CURRENT_VERSION};},onMessage:{addListener(fn){listener=fn;}},onInstalled:{addListener(fn){installed=fn;}}},
     tabs:{async query(){return tabIds.map(id=>({id}));}},
     scripting:{async executeScript(spec){
       calls.push(spec);

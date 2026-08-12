@@ -3,7 +3,8 @@ import vm from 'node:vm';
 import assert from 'node:assert/strict';
 import fc from 'fast-check';
 
-const context = vm.createContext({ console });
+const context = vm.createContext({ console, WeakRef, performance });
+vm.runInContext(fs.readFileSync('extension/runtime-kernel.js', 'utf8'), context);
 vm.runInContext(fs.readFileSync('extension/semantic-core.js', 'utf8'), context);
 vm.runInContext(fs.readFileSync('extension/risk-core.js', 'utf8'), context);
 const core = context.__AUTO_AGREE_SEMANTIC__;

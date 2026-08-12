@@ -2,39 +2,20 @@ import fs from 'node:fs';
 import assert from 'node:assert/strict';
 
 const engine = fs.readFileSync('extension/engine.js', 'utf8');
+const kernel = fs.readFileSync('extension/runtime-kernel.js', 'utf8');
 const shadowE2e = fs.readFileSync('tests/e2e-engine-shadow-overflow.mjs', 'utf8');
 
 assert.match(engine, /MAX_SHADOW_JOBS\s*=\s*8/, 'Engine shadow recovery must preserve the hard 8-job cap');
-assert.equal(
-  /while\s*\(shadowJobs\.length\s*>=\s*MAX_SHADOW_JOBS\)[\s\S]{0,260}shadowJobs\.shift\(\)/.test(engine),
-  false,
-  'Engine broad-shadow pressure must not evict an older unfinished FIFO cursor'
-);
-assert.match(engine, /let\s+shadowRecoveryRef\s*=\s*null/, 'Engine needs one weak broad-shadow recovery scope');
-assert.match(engine, /function\s+makeShadowJob\s*\(/, 'Engine shadow jobs must share one bounded constructor');
-assert.match(engine, /function\s+rememberShadowRecovery\s*\(/, 'new excess broad-shadow roots must remain recoverable');
-assert.match(engine, /function\s+promoteShadowRecovery\s*\(/, 'broad-shadow recovery must re-enter ordinary bounded traversal');
-assert.match(engine, /shadowRecoveryRef\s*=\s*new WeakRef\(merged\)/, 'broad-shadow recovery must not strongly own DOM');
-assert.match(
-  engine,
-  /if\s*\(shadowJobs\.length\s*>=\s*MAX_SHADOW_JOBS\)\s*\{[\s\S]{0,260}rememberShadowRecovery\(root\)[\s\S]{0,160}return;/,
-  'Engine must preserve existing shadow FIFO cursors and compress only the new excess root'
-);
-assert.match(
-  engine,
-  /function\s+hasBackgroundWork\s*\(\)[\s\S]{0,260}shadowRecoveryRef/,
-  'background liveness must include pending broad-shadow recovery'
-);
-assert.match(
-  engine,
-  /if\s*\(!rootBatches\.length\s*&&\s*!walkJobs\.length\s*&&\s*!batchJobs\.length\s*&&\s*!shadowJobs\.length\)\s*promoteShadowRecovery\(\)/,
-  'broad-shadow recovery must not overtake RootBatch, walk, batch, or ordinary shadow work'
-);
-assert.match(
-  engine,
-  /shadowJobs\.length\s*=\s*0;\s*shadowRecoveryRef\s*=\s*null;\s*batchJobs\.length\s*=\s*0/,
-  'Engine lifecycle retirement must clear broad-shadow recovery state'
-);
+assert.equal(/while\s*\(shadowJobs\.length\s*>=\s*MAX_SHADOW_JOBS\)[\s\S]{0,260}shadowJobs\.shift\(\)/.test(engine), false, 'Engine broad-shadow pressure must not evict an older unfinished FIFO cursor');
+assert.match(engine, /const\s+shadowWork\s*=\s*KERNEL\.createBoundedFifo/, 'Engine broad Shadow must use shared bounded-work authority');
+assert.match(engine, /capacity:\s*MAX_SHADOW_JOBS/, 'shared Shadow capacity must remain the proven 8-job cap');
+assert.match(engine, /coalesce:\s*\(current, next\)[\s\S]{0,100}commonWalkRecoveryRoot\(current, next\)/, 'Shadow retains domain-specific common-root coalescing');
+assert.match(engine, /shadowWork\.admit\(makeShadowJob\(root\), root, null\)/, 'new Shadow work must route through bounded FIFO admission');
+assert.match(engine, /shadowWork\.promote\(/, 'Shadow recovery must re-enter ordinary traversal through the kernel');
+assert.match(engine, /shadowWork\.hasRecovery/, 'background liveness must include pending kernel-owned Shadow recovery');
+assert.match(engine, /shadowWork\.clear\(\)/, 'lifecycle retirement must clear kernel-owned Shadow work');
+assert.match(kernel, /recoveryRef = new WeakRef\(mergedScope\)/, 'shared recovery must never strongly own the DOM scope');
+assert.match(engine, /if\s*\(!rootBatches\.length\s*&&\s*!walkJobs\.length\s*&&\s*!batchJobs\.length\s*&&\s*!shadowJobs\.length\)\s*promoteShadowRecovery\(\)/, 'broad-shadow recovery must not overtake RootBatch, walk, batch, or ordinary shadow work');
 
 assert.match(shadowE2e, /const\s+ROOTS\s*=\s*14/, 'closed-shadow saturation must materially exceed the 8-job cap');
 assert.match(shadowE2e, /const\s+NODES\s*=\s*900/, 'closed-shadow roots must require background continuation');

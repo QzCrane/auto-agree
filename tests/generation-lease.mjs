@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import vm from 'node:vm';
 import assert from 'node:assert/strict';
 
+const kernelSource=fs.readFileSync('extension/runtime-kernel.js','utf8');
 const source=fs.readFileSync('extension/generation-lease.js','utf8');
 const currentVersion=JSON.parse(fs.readFileSync('extension/manifest.json','utf8')).version;
 const [major]=currentVersion.split('.').map(Number);
@@ -19,7 +20,8 @@ const chrome={runtime:{getManifest(){
   if(invalidated) throw new Error('Extension context invalidated.');
   return {version:runtimeVersion};
 }}};
-const context=vm.createContext({chrome,HTMLElement,Object,Reflect,Error});
+const context=vm.createContext({chrome,HTMLElement,Object,Reflect,Error,WeakRef,performance});
+vm.runInContext(kernelSource,context);
 vm.runInContext(source,context);
 assert.equal(context.__AUTO_AGREE_GENERATION_LEASE__?.version,currentVersion,'compiled generation lease must match the candidate manifest');
 

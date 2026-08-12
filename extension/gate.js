@@ -1,6 +1,8 @@
 (() => {
   'use strict';
-  const VERSION = '11.0.0';
+  const KERNEL = globalThis.__AUTO_AGREE_RUNTIME_KERNEL__;
+  const VERSION = KERNEL?.version;
+  if (!KERNEL || !VERSION) return;
   const CORE = globalThis.__AUTO_AGREE_SEMANTIC__;
   if (!CORE || CORE.version !== VERSION) return;
   if (globalThis.__AUTO_AGREE_GATE__) return;

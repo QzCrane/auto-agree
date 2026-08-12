@@ -20,6 +20,7 @@
         "<all_urls>"
       ],
       "js": [
+        "runtime-kernel.js",
         "generation-lease.js",
         "bootstrap.js"
       ],

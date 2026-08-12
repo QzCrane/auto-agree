@@ -1,6 +1,8 @@
 (() => {
   'use strict';
-  const VERSION = '11.0.0';
+  const KERNEL = globalThis.__AUTO_AGREE_RUNTIME_KERNEL__;
+  const VERSION = KERNEL?.version;
+  if (!KERNEL || !VERSION) return;
   if (globalThis.__AUTO_AGREE_GENERATION_LEASE__?.version === VERSION) return;
 
   const descriptor = Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'click');

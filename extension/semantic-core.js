@@ -1,6 +1,8 @@
 (() => {
   'use strict';
-  const VERSION = '11.0.0';
+  const KERNEL = globalThis.__AUTO_AGREE_RUNTIME_KERNEL__;
+  const VERSION = KERNEL?.version;
+  if (!KERNEL || !VERSION) return;
   if (globalThis.__AUTO_AGREE_SEMANTIC__?.version === VERSION) return;
   const SEVERITY = Object.freeze({ ROUTINE: 0, PRIVACY: 1, OPTIONAL: 2, CONSEQUENTIAL: 3, ATTESTATION: 4 });
 
