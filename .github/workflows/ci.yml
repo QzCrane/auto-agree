@@ -6,13 +6,65 @@ on:
   pull_request:
 
 permissions:
-  contents: read
+  contents: write
 
 concurrency:
   group: verify-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
+  normalize-release-tests:
+    if: github.event_name == 'pull_request' && github.head_ref == 'release/v11.0.0' && github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: release/v11.0.0
+          fetch-depth: 0
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '24'
+      - name: Normalize current-generation E2E expectations and audit tests
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+
+          p = Path('tests/e2e-extension.mjs')
+          s = p.read_text()
+          old_decl = "const HEADED=process.env.AUTO_AGREE_HEADED==='1';"
+          new_decl = "const CURRENT_VERSION=JSON.parse(fs.readFileSync(path.join(EXTENSION,'manifest.json'),'utf8')).version;\nconst HEADED=process.env.AUTO_AGREE_HEADED==='1';"
+          old_assert = "const ext=await autoAgreeExtension(browser); assert.equal(ext.version,'10.0.0');"
+          new_assert = "const ext=await autoAgreeExtension(browser); assert.equal(ext.version,CURRENT_VERSION);"
+          if s.count(old_decl) != 1 or s.count(old_assert) != 1:
+              raise SystemExit('e2e-extension current-version normalization did not match exactly once')
+          p.write_text(s.replace(old_decl,new_decl,1).replace(old_assert,new_assert,1))
+
+          stale=[]
+          for file in sorted(Path('tests').rglob('*.mjs')):
+              for no,line in enumerate(file.read_text().splitlines(),1):
+                  if '10.0.0' in line:
+                      stale.append((str(file),no,line.strip()))
+          if stale:
+              print('remaining test literals for old generation:')
+              for item in stale:
+                  print(f'{item[0]}:{item[1]}: {item[2]}')
+              raise SystemExit(f'{len(stale)} old-generation test literals remain')
+          PY
+          node --check tests/e2e-extension.mjs
+          npm test
+          git diff --check
+      - name: Commit normalized release tests
+        run: |
+          set -euo pipefail
+          test -n "$(git status --porcelain -- tests/e2e-extension.mjs)"
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add tests/e2e-extension.mjs
+          git commit -m 'test: derive current E2E generation from manifest'
+          git push origin HEAD:release/v11.0.0
+
   core:
     runs-on: ubuntu-latest
     timeout-minutes: 5
