@@ -1,0 +1,16 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Engine lifecycle</title>
+<form id="login-form">
+  <input id="email" type="email" autocomplete="username" value="user@example.test">
+  <label><input id="seed-agree" type="checkbox" required>I have read and agree to the Terms of Service</label>
+  <button type="submit">Sign in</button>
+</form>
+<div id="mount"></div>
+<script>
+  const seed = document.querySelector('#seed-agree');
+  seed.dataset.clicks = '0';
+  seed.addEventListener('click', event => {
+    event.currentTarget.dataset.clicks = String(Number(event.currentTarget.dataset.clicks || 0) + 1);
+  });
+</script>

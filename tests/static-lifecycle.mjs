@@ -4,6 +4,7 @@ import assert from 'node:assert/strict';
 const kernel = fs.readFileSync('extension/runtime-kernel.js', 'utf8');
 const probe = fs.readFileSync('extension/bootstrap.js', 'utf8');
 const gate = fs.readFileSync('extension/gate.js', 'utf8');
+const engine = fs.readFileSync('extension/engine.js', 'utf8');
 
 assert.match(kernel, /function\s+createLifecycleState\s*\(/, 'runtime kernel must own lifecycle epoch state');
 assert.match(kernel, /if\s*\(nextPaused\s*===\s*paused\)\s*return false/, 'idempotent lifecycle transitions must not invent generations');
@@ -27,5 +28,22 @@ assert.match(gate, /if\s*\(backgroundToken\s*===\s*token\)\s*backgroundRunning\s
 assert.match(gate, /lifecycle\.transition\(shouldPause\)/, 'Gate worker-handoff recovery must transition the shared lifecycle');
 assert.match(gate, /lifecycle\.pause\(\)/, 'Gate pause must use shared lifecycle transition');
 assert.match(gate, /lifecycle\.resume\(\)/, 'Gate resume must use shared lifecycle transition');
+
+assert.match(engine, /const\s+lifecycle\s*=\s*KERNEL\.createLifecycleState\(false\)/, 'Engine must use the shared lifecycle authority');
+assert.equal(/lifecyclePaused|lifecycleGeneration|backgroundEpoch|contextTxnGeneration/.test(engine), false, 'Engine must not retain private lifecycle generation authority');
+assert.match(engine, /contextTxnToken\s*=\s*token/, 'Engine context transactions must record the exact lifecycle token');
+assert.match(engine, /if\s*\(contextTxnToken\s*===\s*token\)\s*\{\s*contextTxnScheduled\s*=\s*false;/, 'stale context callbacks may clear state only when they still own the recorded token');
+assert.match(engine, /flushToken\s*=\s*token/, 'Engine root flush microtasks must record their lifecycle token');
+assert.match(engine, /if\s*\(flushToken\s*===\s*token\)\s*flushQueued\s*=\s*false/, 'stale root-flush callbacks must not clear a newer generation scheduler flag');
+assert.match(engine, /async function drainBackground\(token\s*=\s*lifecycle\.capture\(\)\)/, 'Engine background drain must be lifecycle-token scoped');
+assert.match(engine, /if\s*\(backgroundToken\s*===\s*token\)\s*backgroundQueued\s*=\s*false/, 'stale Engine background callbacks must not clear a newer generation scheduler flag');
+assert.match(engine, /token:\s*lifecycle\.capture\(\)/, 'Engine click verifiers must snapshot lifecycle ownership');
+assert.match(engine, /!lifecycle\.isCurrent\(verifier\.token\)/, 'Engine click verification must reject stale generations');
+assert.match(engine, /pendingRescueToken\s*=\s*token/, 'pending visibility rescue timers must be lifecycle-token scoped');
+assert.match(engine, /if\s*\(pendingRescueToken\s*===\s*token\)\s*pendingRescueTimer\s*=\s*0/, 'stale pending-rescue callbacks must not clear a newer timer');
+assert.match(engine, /new ResizeObserver\(entries => \{\s*if \(lifecycle\.paused\) return;/, 'queued ResizeObserver work must fail closed while Engine is paused');
+assert.match(engine, /function pauseEngine\(\) \{\s*if \(lifecycle\.paused\) return;\s*lifecycle\.pause\(\)/, 'Engine pause must use the shared transition authority');
+assert.match(engine, /function resumeEngine\(\) \{\s*if \(!lifecycle\.paused/, 'Engine resume guard must read the shared lifecycle authority');
+assert.match(engine, /lifecycle\.resume\(\)/, 'Engine resume must advance the shared lifecycle generation');
 
 console.log('static-lifecycle: PASS');
