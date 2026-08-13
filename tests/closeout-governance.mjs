@@ -20,6 +20,12 @@ assert.ok(performance.args.includes('${HEAD}'));
 
 assert.match(tool,/assert\.equal\(metadata\.headRefOid,verified\.head/,'merge authorization must compare-and-swap the verified PR head');
 assert.match(tool,/--match-head-commit',verified\.head/,'GitHub merge must receive the expected head');
+assert.equal(/--delete-branch/.test(tool),false,'merge must not ask gh to switch a branch already owned by another worktree');
+assert.match(tool,/assert\.equal\(merged\.state,'MERGED'/,'merge completion must be read back from the remote PR');
+assert.match(tool,/assert\.equal\(mainRef\.object\?\.sha,merged\.mergeCommit\.oid/,'remote main must be read back at the merge commit');
+assert.match(tool,/assert\.equal\(mergeCommit\.tree\?\.sha,verified\.tree/,'the merged tree must equal the verified candidate tree');
+assert.match(tool,/ref cleanup refuses a moved head branch/,'remote branch cleanup must refuse a ref that moved after verification');
+assert.match(tool,/head-ref absence must be confirmed by remote 404/,'remote branch deletion must be read back');
 assert.match(tool,/policySha256/,'receipts must bind the executable closeout policy');
 assert.match(tool,/packageManifestSha256/,'receipts must bind the canonical package identity');
 assert.match(tool,/source:'operator-declared'/,'local evidence must not self-certify hosted runner state');

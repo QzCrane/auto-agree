@@ -18,6 +18,7 @@ assert.match(paired,/candidateSummary\.max <= ceiling\[metricName\]/,'paired evi
 assert.match(paired,/raw/,'raw per-run evidence must remain in the emitted artifact');
 assert.match(paired,/chromeExecutableSha256: chrome\.sha256/,'paired evidence must bind the installed Chrome executable without launching a version-only browser');
 assert.equal(/spawnSync\(chromePath, \['--version'\]/.test(paired),false,'Chrome identity collection must not launch a hanging Windows browser process');
+assert.match(scenario,/await Promise\.allSettled\(pages\.map\(closePage\)\)/,'multi-tab teardown must not replace completed measurements with an already-closed transport error');
 
 for(const workload of ['positiveTailLogin','negativeIdle','negativeMutationChurn','hiddenQuiescence','multiTabScheduler']){
   assert.match(scenario,new RegExp(`async function ${workload}\\(`),`${workload} must be an executable real-Chrome workload`);
