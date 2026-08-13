@@ -167,12 +167,34 @@ function merge(){
   const verified=verify();
   const pr=valueAfter('--pr');
   assert.match(String(pr||''),/^\d+$/u,'--pr must be a pull request number');
-  const metadata=JSON.parse(run('gh',['pr','view',pr,'--json','headRefOid,baseRefName,state,isDraft']).stdout);
+  const metadata=JSON.parse(run('gh',['pr','view',pr,'--json','headRefOid,headRefName,baseRefName,state,isDraft,isCrossRepository']).stdout);
   assert.equal(metadata.state,'OPEN','pull request must be open');
   assert.equal(metadata.isDraft,false,'pull request must be ready');
   assert.equal(metadata.baseRefName,'main','pull request must target main');
   assert.equal(metadata.headRefOid,verified.head,'pull request head moved after evidence was recorded');
-  run('gh',['pr','merge',pr,'--squash','--delete-branch','--match-head-commit',verified.head],{inherit:true});
+  run('gh',['pr','merge',pr,'--squash','--match-head-commit',verified.head],{inherit:true});
+
+  const merged=JSON.parse(run('gh',['pr','view',pr,'--json','state,mergeCommit']).stdout);
+  assert.equal(merged.state,'MERGED','remote pull request readback must be merged');
+  assert.match(String(merged.mergeCommit?.oid||''),/^[a-f0-9]{40}$/u,'remote merge commit must exist');
+  const repository=JSON.parse(run('gh',['repo','view','--json','nameWithOwner']).stdout).nameWithOwner;
+  const mainRef=JSON.parse(run('gh',['api',`repos/${repository}/git/ref/heads/main`]).stdout);
+  assert.equal(mainRef.object?.sha,merged.mergeCommit.oid,'remote main must point to the merge commit');
+  const mergeCommit=JSON.parse(run('gh',['api',`repos/${repository}/git/commits/${merged.mergeCommit.oid}`]).stdout);
+  assert.equal(mergeCommit.tree?.sha,verified.tree,'squash merge tree must equal the verified candidate tree');
+
+  if(!metadata.isCrossRepository){
+    const refPath=`repos/${repository}/git/ref/heads/${metadata.headRefName}`;
+    const headRef=run('gh',['api',refPath],{allowFailure:true});
+    if(headRef.status===0){
+      assert.equal(JSON.parse(headRef.stdout).object?.sha,verified.head,'ref cleanup refuses a moved head branch');
+      run('gh',['api','--method','DELETE',refPath]);
+    }
+    const deleted=run('gh',['api',refPath],{allowFailure:true});
+    assert.notEqual(deleted.status,0,'merged head ref must be absent after cleanup');
+    assert.match(`${deleted.stderr||''}${deleted.stdout||''}`,/404/u,'head-ref absence must be confirmed by remote 404');
+  }
+  console.log(`closeout-merge: PASS pr=${pr} merge=${merged.mergeCommit.oid} tree=${verified.tree}`);
 }
 
 if(mode==='record') await record();

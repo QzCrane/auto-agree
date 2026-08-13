@@ -39,6 +39,11 @@ async function finishMetric(owner) {
   return metric(after, 'TaskDuration') - metric(owner.before, 'TaskDuration');
 }
 
+async function closePage(page) {
+  if (!page || page.isClosed()) return;
+  try { await page.close(); } catch {}
+}
+
 async function waitForTaskQuiescence(page, timeoutMs = 3500) {
   const session = await page.createCDPSession();
   try {
@@ -93,7 +98,7 @@ async function positiveTailLogin() {
     });
     await page.waitForFunction(() => document.querySelector('#target')?.checked === true, {timeout: 5000});
     return {wallMs: performance.now() - start, taskDurationS: await finishMetric(owner)};
-  } finally { await page.close(); }
+  } finally { await closePage(page); }
 }
 
 async function negativeIdle() {
@@ -117,7 +122,7 @@ async function negativeIdle() {
     const checked = await page.$$eval('input:checked', nodes => nodes.length);
     assert.equal(checked, 0);
     return {wallMs: performance.now() - start, taskDurationS: await finishMetric(owner)};
-  } finally { await page.close(); }
+  } finally { await closePage(page); }
 }
 
 async function negativeMutationChurn() {
@@ -144,7 +149,7 @@ async function negativeMutationChurn() {
     });
     await new Promise(resolve => setTimeout(resolve, 150));
     return {wallMs: performance.now() - start, taskDurationS: await finishMetric(owner)};
-  } finally { await page.close(); }
+  } finally { await closePage(page); }
 }
 
 async function hiddenQuiescence() {
@@ -177,8 +182,7 @@ async function hiddenQuiescence() {
     assert.equal(await page.$eval('#hidden-target', input => input.checked), false);
     return {wallMs: performance.now() - start, taskDurationS: await finishMetric(owner)};
   } finally {
-    await page.close();
-    await foreground.close();
+    await Promise.allSettled([closePage(page), closePage(foreground)]);
   }
 }
 
@@ -204,7 +208,12 @@ async function multiTabScheduler() {
     }
     const durations = await Promise.all(owners.map(finishMetric));
     return {wallMs: performance.now() - start, taskDurationS: durations.reduce((sum, value) => sum + value, 0)};
-  } finally { await Promise.all(pages.map(page => page.close())); }
+  } finally {
+    // Teardown must not overwrite a completed workload when Chrome has already
+    // closed one target or the transport. Workload/metric failures above still
+    // reject; cleanup is idempotent and the outer browser owner closes the rest.
+    await Promise.allSettled(pages.map(closePage));
+  }
 }
 
 async function collectWorkloads() {
@@ -226,6 +235,6 @@ try {
   console.log(`PERF_RESULT=${JSON.stringify({schemaVersion: 1, workloads})}`);
 } finally {
   clearTimeout(timeout);
-  await browser.close();
+  try { await browser.close(); } catch {}
   await new Promise(resolve => server.close(resolve));
 }

@@ -139,7 +139,7 @@ compression=stored
 
 `stored` ZIP entries make the archive independent of Python/zlib compressor versions. `tests/package-reproducibility.mjs` builds it in two independent Python processes and compares both bytes and the canonical hash.
 
-Formal closeout is executable rather than prose-only: [`release/closeout-policy.json`](release/closeout-policy.json) defines the lanes and two required same-head attempts; `npm run closeout:evidence` records exact base/head/tree, tool and Chrome identities, lane output digests, package authority and an explicitly sourced hosted-runner state; `npm run closeout:verify` validates both receipts; and `npm run closeout:merge` compares the PR head before issuing the squash merge.
+Formal closeout is executable rather than prose-only: [`release/closeout-policy.json`](release/closeout-policy.json) defines the lanes and two required same-head attempts; `npm run closeout:evidence` records exact base/head/tree, tool and Chrome identities, lane output digests, package authority and an explicitly sourced hosted-runner state; `npm run closeout:verify` validates both receipts; and `npm run closeout:merge` compares the PR head before issuing the squash merge, then reads back PR state, remote main, exact tree parity and remote head-ref deletion without switching the local worktree.
 
 The following v12 measurements remain historical evidence for the architecture baseline; they are not the identity or performance protocol of the current 12.1 package.
 
