@@ -25,6 +25,11 @@ def build_bytes():
         for name in FILES:
             data=canonical_text_bytes(EXT/name)
             info=zipfile.ZipInfo(name,date_time=ENTRY_DATE_TIME)
+            # ZipInfo otherwise records the host platform (FAT on Windows,
+            # Unix on Linux) in the central directory. Release identity owns
+            # that byte too, so always emit the Unix creator used by the
+            # canonical 100644 entry-mode contract.
+            info.create_system=3
             info.compress_type=zipfile.ZIP_STORED
             info.external_attr=ENTRY_MODE<<16
             z.writestr(info,data,compress_type=zipfile.ZIP_STORED)
@@ -50,7 +55,7 @@ def main():
     if bad or names!=FILES or not metadata_ok: raise SystemExit(f'package verification failed: bad={bad} names={names} metadata_ok={metadata_ok}')
     authority=json.loads(PACKAGE_MANIFEST.read_text(encoding='utf-8'))
     expected={
-        'schemaVersion':2,
+        'schemaVersion':3,
         'version':version,
         'archive':f'AutoAgree-v{version}.zip',
         'compression':'stored',
@@ -58,6 +63,7 @@ def main():
         'textLineEndings':'lf',
         'entryTimestamp':'2026-08-08T00:00:00Z',
         'entryMode':'100644',
+        'entryCreatorSystem':'unix',
         'entries':FILES,
         'sha256':sha,
     }

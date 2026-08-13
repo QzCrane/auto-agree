@@ -133,10 +133,11 @@ The current **12.1.0** production package identity is owned by [`release/package
 
 ```text
 AutoAgree-v12.1.0.zip
-sha256=4b2697268bac2c8da7a748bd8db9e36fb9b5d30a7459f4a7560aa794a5ed13a3
+sha256=2e9b53c255d570f33b3515677d2d45bd30f35a8b093eb677d258c619f1a8d82d
 compression=stored
 textEncoding=utf-8
 textLineEndings=lf
+entryCreatorSystem=unix
 ```
 
 `stored` ZIP entries make the archive independent of Python/zlib compressor versions. Canonical UTF-8/LF text members make it independent of Git checkout line-ending policy. `tests/package-reproducibility.mjs` builds it in two independent Python processes and compares both bytes and the canonical hash.

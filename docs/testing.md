@@ -55,14 +55,15 @@ The failed first v12 cut (#52) is permanent negative evidence: it changed Runtim
 
 ### Deterministic packaging
 
-`python tools/package_extension.py --check` derives the runtime JavaScript archive closure from current `extension/*.js` rather than a second manual package list, creates `ZIP_STORED` entries so zlib implementations cannot change release identity, and compares the result to the machine authority in `release/package-manifest.json`. The current physical closure is:
+`python tools/package_extension.py --check` derives the runtime JavaScript archive closure from current `extension/*.js` rather than a second manual package list, creates `ZIP_STORED` entries with canonical UTF-8/LF content and a fixed Unix creator-system field so neither zlib, checkout line endings nor the host OS can change release identity, and compares the result to the machine authority in `release/package-manifest.json`. The current physical closure is:
 
 ```text
 AutoAgree-v12.1.0.zip
-sha256=4b2697268bac2c8da7a748bd8db9e36fb9b5d30a7459f4a7560aa794a5ed13a3
+sha256=2e9b53c255d570f33b3515677d2d45bd30f35a8b093eb677d258c619f1a8d82d
 compression=stored
 textEncoding=utf-8
 textLineEndings=lf
+entryCreatorSystem=unix
 ```
 
 The package boundary normalizes every declared text member to UTF-8/LF before hashing, so Git's Windows CRLF and Linux LF materializations cannot create different release bytes. `tests/package-reproducibility.mjs` repeats the build in two independent Python processes and requires byte equality plus the authority hash. The v12.0.0 hash remains historical in its verification report.

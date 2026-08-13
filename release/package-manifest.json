@@ -1,5 +1,5 @@
 {
-  "schemaVersion": 2,
+  "schemaVersion": 3,
   "version": "12.1.0",
   "archive": "AutoAgree-v12.1.0.zip",
   "compression": "stored",
@@ -7,6 +7,7 @@
   "textLineEndings": "lf",
   "entryTimestamp": "2026-08-08T00:00:00Z",
   "entryMode": "100644",
+  "entryCreatorSystem": "unix",
   "entries": [
     "manifest.json",
     "action-authority.js",
@@ -25,5 +26,5 @@
     "worker.js",
     "README.md"
   ],
-  "sha256": "4b2697268bac2c8da7a748bd8db9e36fb9b5d30a7459f4a7560aa794a5ed13a3"
+  "sha256": "2e9b53c255d570f33b3515677d2d45bd30f35a8b093eb677d258c619f1a8d82d"
 }
