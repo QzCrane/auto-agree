@@ -1,0 +1,118 @@
+{
+  "schemaVersion": 1,
+  "requiredAttempts": 2,
+  "hostedStates": [
+    "PASSED_HOSTED",
+    "FAILED_PRODUCT",
+    "INFRA_UNAVAILABLE",
+    "NOT_APPLICABLE"
+  ],
+  "lanes": [
+    {
+      "id": "core",
+      "command": "npm",
+      "args": ["test"]
+    },
+    {
+      "id": "package",
+      "command": "python",
+      "args": ["tools/package_extension.py", "--check"]
+    },
+    {
+      "id": "browser-main",
+      "command": "node",
+      "args": ["tests/e2e-extension.mjs", "--profile"]
+    },
+    {
+      "id": "probe-gate-pressure",
+      "command": "node",
+      "args": ["tests/e2e-tier-overflow.mjs"]
+    },
+    {
+      "id": "probe-live-ttl",
+      "command": "node",
+      "args": ["tests/e2e-probe-live-ttl.mjs"]
+    },
+    {
+      "id": "probe-lifecycle",
+      "command": "node",
+      "args": ["tests/e2e-probe-lifecycle.mjs"]
+    },
+    {
+      "id": "gate-lifecycle",
+      "command": "node",
+      "args": ["tests/e2e-gate-lifecycle.mjs"]
+    },
+    {
+      "id": "engine-lifecycle",
+      "command": "node",
+      "args": ["tests/e2e-engine-lifecycle.mjs"]
+    },
+    {
+      "id": "gate-live-ttl",
+      "command": "node",
+      "args": ["tests/e2e-gate-live-ttl.mjs"]
+    },
+    {
+      "id": "engine-walk-pressure",
+      "command": "node",
+      "args": ["tests/e2e-engine-overflow.mjs"]
+    },
+    {
+      "id": "engine-context-index-pressure",
+      "command": "node",
+      "args": ["tests/e2e-engine-context-index-overflow.mjs"]
+    },
+    {
+      "id": "engine-rootbatch-ttl",
+      "command": "node",
+      "args": ["tests/e2e-engine-rootbatch-ttl.mjs"]
+    },
+    {
+      "id": "engine-sibling-ttl",
+      "command": "node",
+      "args": ["tests/e2e-engine-batch-ttl.mjs"]
+    },
+    {
+      "id": "engine-shadow-pressure",
+      "command": "node",
+      "args": ["tests/e2e-engine-shadow-overflow.mjs"]
+    },
+    {
+      "id": "classless-policy",
+      "command": "node",
+      "args": ["tests/e2e-classless-policy.mjs"]
+    },
+    {
+      "id": "action-authority",
+      "command": "node",
+      "args": ["tests/e2e-authorize-rejection.mjs"]
+    },
+    {
+      "id": "generation-lease",
+      "command": "node",
+      "args": ["tests/e2e-generation-lease.mjs"]
+    },
+    {
+      "id": "update-transition",
+      "command": "node",
+      "args": ["tests/e2e-update.mjs"],
+      "env": {
+        "AUTO_AGREE_PREVIOUS_REF": "${BASE}"
+      }
+    },
+    {
+      "id": "paired-performance",
+      "command": "node",
+      "args": [
+        "tests/e2e-performance-paired.mjs",
+        "--base",
+        "${BASE}",
+        "--candidate",
+        "${HEAD}",
+        "--repetitions",
+        "5"
+      ]
+    }
+  ]
+}

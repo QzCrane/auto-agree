@@ -13,13 +13,14 @@ const area=map=>({
 const PROTECTION_FILES=['runtime-kernel.js','generation-lease.js','semantic-core.js','dom-core.js','handover-guard.js'];
 const BOOTSTRAP_FILES=['bootstrap.js'];
 function sameFiles(actual,expected){return JSON.stringify(actual)===JSON.stringify(expected);}
-function boot(tabIds=[1,2],failProtectionTabs=new Set()){
-  let listener,installed; const calls=[];
+function boot(tabIds=[1,2],failProtectionTabs=new Set(),terminalProtectionTabs=new Set()){
+  let listener,installed; const calls=[]; let queryCount=0;
   const chrome={
     runtime:{getManifest(){return {version:CURRENT_VERSION};},onMessage:{addListener(fn){listener=fn;}},onInstalled:{addListener(fn){installed=fn;}}},
-    tabs:{async query(){return tabIds.map(id=>({id}));}},
+    tabs:{async query(){queryCount++;return tabIds.map(id=>({id}));}},
     scripting:{async executeScript(spec){
       calls.push(spec);
+      if(sameFiles(spec.files,PROTECTION_FILES)&&terminalProtectionTabs.has(spec.target?.tabId)) throw new Error('Cannot access a chrome:// URL');
       if(sameFiles(spec.files,PROTECTION_FILES)&&failProtectionTabs.has(spec.target?.tabId)) throw new Error('synthetic-protection-failure');
       return[];
     }},
@@ -27,7 +28,7 @@ function boot(tabIds=[1,2],failProtectionTabs=new Set()){
   };
   vm.runInNewContext(source,{chrome,console,Promise,Map,Set,Date,Error,Number,String,Array,Object,JSON,Math,URL,setTimeout,clearTimeout});
   const send=(msg,sender={tab:{id:1},frameId:0,documentId:'d',documentLifecycle:'active',origin:'https://example.test',url:'https://example.test/login'})=>new Promise(resolve=>listener(msg,sender,resolve));
-  return{listener,installed,calls,send};
+  return{listener,installed,calls,send,get queryCount(){return queryCount;}};
 }
 const origin='https://example.test';
 const profile={version:CURRENT_VERSION,flows:[{fingerprint:'/login|auth',locator:{hosts:[],selector:'#agree'},descriptor:{kind:'native',severity:0,legal:true,assent:true,required:true,auth:true,linkBucket:1},successes:2,failures:0,ts:Date.now()}]};
@@ -63,4 +64,20 @@ assert.ok(failedCalls.filter(x=>sameFiles(x.files,PROTECTION_FILES)).length>=2,'
 assert.equal(failedCalls.some(x=>sameFiles(x.files,BOOTSTRAP_FILES)),false,'bootstrap must not run when protection never succeeds');
 assert.equal(session.has('__auto_agree_update_rehydrate__'),true,'unresolved protection must preserve durable restart work');
 assert.equal(JSON.stringify(session.get('__auto_agree_update_rehydrate__').pending),JSON.stringify([21]));
+
+// A new Worker consumes the durable unresolved set directly. It must not rediscover or
+// re-inject tabs that already completed in the previous Worker lifetime.
+const e=boot([21,22,23]);
+await new Promise(r=>setTimeout(r,240));
+assert.equal(e.queryCount,0,'durable pending replay must not rescan every open tab');
+assert.ok(e.calls.some(x=>x.target?.tabId===21),'unresolved tab must be replayed');
+assert.equal(e.calls.some(x=>x.target?.tabId===22||x.target?.tabId===23),false,'successful tabs must not be re-injected');
+assert.equal(session.has('__auto_agree_update_rehydrate__'),false,'successful precise replay must retire the marker');
+
+// Permanently inaccessible browser pages are terminal, not durable retry work.
+session.set('__auto_agree_update_rehydrate__',{version:CURRENT_VERSION,ts:Date.now(),pending:[31],attempt:1});
+const f=boot([31],new Set(),new Set([31]));
+await new Promise(r=>setTimeout(r,40));
+assert.equal(f.queryCount,0);
+assert.equal(session.has('__auto_agree_update_rehydrate__'),false,'terminal inaccessible tabs must not pin restart work forever');
 console.log('worker-restart: PASS');

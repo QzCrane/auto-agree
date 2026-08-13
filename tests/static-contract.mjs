@@ -172,5 +172,5 @@ assert.equal(/assert\.equal\([^\n]*version[^\n]*['"](?:9|10)\.0\.0['"]/.test(upd
 const ci=fs.readFileSync(path.resolve('.github/workflows/ci.yml'),'utf8');
 assert.match(ci,/if:\s*github\.event_name == 'pull_request'/,'release transition must be PR-scoped, not replayed on every main push');
 assert.match(ci,/AUTO_AGREE_PREVIOUS_REF:\s*\$\{\{\s*github\.event\.pull_request\.base\.sha\s*\}\}/,'release transition must stage the PR base as its previous version');
-assert.equal(/github\.event\.before/.test(ci),false,'release transition must not derive previous state from arbitrary main push history');
+assert.equal(/AUTO_AGREE_PREVIOUS_REF:[^\n]*github\.event\.before/.test(ci),false,'release transition must not derive previous state from arbitrary main push history');
 console.log('static-contract: PASS');

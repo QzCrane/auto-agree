@@ -65,12 +65,19 @@
   let pendingVisibilityRecoveryRef = null;
   const contextIndex = new WeakMap();
   const indexedRefs = new WeakMap();
-  const contextIndexRecovery = new WeakSet();
+  // A capped candidate bucket cannot represent every relevant control, so each
+  // overflowing context keeps the last context epoch that was fully recovered.
+  // A later credential/intent epoch schedules exactly one bounded root walk;
+  // repeated focus/proceed events in the same epoch do not create a permanent
+  // rescan loop. The WeakMap never owns the context lifetime.
+  const contextIndexRecovery = new WeakMap();
   const relevantControls = new WeakSet();
   const fragmentRowsSeen = new WeakSet();
   const parserDeferredAnchors = new WeakSet();
   const contextCache = new WeakMap();
   const contextEpoch = new WeakMap();
+  const inputContextState = new WeakMap();
+  const preflightContextEpoch = new WeakMap();
   const contextTxnRefs = new Set();
   const contextTxnRefByKey = new WeakMap();
   let contextTxnScheduled = false;
@@ -302,6 +309,33 @@
     return key;
   }
 
+  function inputContextFingerprint(el) {
+    if (!(el instanceof Element)) return '';
+    const valueOwner = el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement || el instanceof HTMLSelectElement;
+    const value = valueOwner ? String(el.value || '').slice(0, 320) : String(el.textContent || '').slice(0, 320);
+    const validity = valueOwner && el.validity ? `${el.validity.valid ? 1 : 0}:${el.validity.valueMissing ? 1 : 0}:${el.validity.typeMismatch ? 1 : 0}` : '';
+    return joinNormalized([
+      el.localName,
+      el.getAttribute('type'),
+      el.getAttribute('name'),
+      value,
+      validity,
+      el instanceof HTMLInputElement ? (el.checked ? 'checked' : 'unchecked') : '',
+      el.matches?.(':disabled') ? 'disabled' : 'enabled',
+      el.hasAttribute('required') ? 'required' : '',
+      el.getAttribute('aria-checked'),
+      el.getAttribute('aria-disabled')
+    ], 900);
+  }
+
+  function refreshInputContext(el) {
+    const root = contextKey(el);
+    const next = inputContextFingerprint(el);
+    const changed = inputContextState.get(el) !== next;
+    inputContextState.set(el, next);
+    return { root: changed ? bumpContext(el) : root, changed };
+  }
+
   function commitContextTransaction(token) {
     if (!lifecycle.isCurrent(token)) {
       if (contextTxnToken === token) { contextTxnScheduled = false; contextTxnRefs.clear(); contextTxnToken = 0; }
@@ -341,16 +375,23 @@
     const el = node instanceof Element ? node : node?.parentElement;
     const root = el ? contextKey(el) : document;
     const now = performance.now();
-    const prev = intentState.get(root) || { score: 0, ts: now };
+    const prev = intentState.get(root) || { score: 0, ts: now, processedEpoch: -1 };
     const decay = Math.max(0, 1 - Math.max(0, now - prev.ts) / 8000);
     const weights = { focus: 1, input: 2, proceed: 4, enter: 3 };
-    const next = { score: prev.score * decay + (weights[kind] || 0), ts: now };
+    const currentEpoch = epochOf(root);
+    const score = prev.score * decay + (weights[kind] || 0);
+    const activated = score >= 3 && prev.processedEpoch !== currentEpoch;
+    const next = {
+      score,
+      ts: now,
+      processedEpoch: activated ? currentEpoch : prev.processedEpoch
+    };
     intentState.set(root, next);
-    if (next.score >= 3) {
+    if (activated) {
       processIndexedContext(root instanceof Element ? root : null);
       if (root instanceof Element) queueRoot(root, true);
     }
-    return next;
+    return { ...next, activated };
   }
 
   function registerContext(root) {
@@ -634,7 +675,8 @@
     const set = bucketFor(s.context.root);
     if (set.size >= MAX_INDEXED_CANDIDATES) sweepCandidateBucket(set);
     if (set.size >= MAX_INDEXED_CANDIDATES) {
-      contextIndexRecovery.add(s.context.root || document);
+      const key = s.context.root || document;
+      if (!contextIndexRecovery.has(key)) contextIndexRecovery.set(key, -1);
       return;
     }
     let ref = indexedRefs.get(s.control);
@@ -1838,8 +1880,15 @@ function enqueueRootBatch(roots, index, urgent) {
     contexts.push(document);
     for (const context of contexts) {
       const set = contextIndex.get(context);
-      if (contextIndexRecovery.has(context)) {
+      const recoveredEpoch = contextIndexRecovery.get(context);
+      const currentEpoch = epochOf(context);
+      if (recoveredEpoch !== undefined && recoveredEpoch !== currentEpoch) {
         const recoveryRoot = context instanceof Element ? context : document.documentElement;
+        // Mark this epoch before queueing. The walk itself evaluates every live
+        // candidate; overflow observed during that walk must not re-arm the same
+        // epoch forever. A later context mutation increments epochOf(context)
+        // and therefore creates one fresh recovery obligation.
+        contextIndexRecovery.set(context, currentEpoch);
         if (recoveryRoot) queueRoot(recoveryRoot, true);
       }
       if (!set) continue;
@@ -1854,12 +1903,17 @@ function enqueueRootBatch(roots, index, urgent) {
   function preflight(event) {
     if (lifecycle.paused) return;
     const root = eventContext(event);
-    if (proceedInteraction(event)) noteIntent(event.target, 'proceed');
+    const proceed = proceedInteraction(event);
     recheckPending();
-    processIndexedContext(root);
-    if (!proceedInteraction(event)) return;
+    if (!proceed) return;
+    const key = root || document;
+    const epoch = epochOf(key);
+    if (preflightContextEpoch.get(key) === epoch) return;
+    preflightContextEpoch.set(key, epoch);
+    const intent = noteIntent(event.target, 'proceed');
+    if (!intent.activated) processIndexedContext(root);
     // No synchronous full-container walk: only already indexed candidates and pending controls.
-    queueRoot(root || document.documentElement, true);
+    if (!intent.activated) queueRoot(root || document.documentElement, true);
     setTimeout(recheckPending, 100);
   }
 
@@ -1938,11 +1992,13 @@ function enqueueRootBatch(roots, index, urgent) {
     if (!target) return;
     const hint = joinNormalized([target.getAttribute('name'), target.getAttribute('type'), target.getAttribute('placeholder'), target.getAttribute('autocomplete')], 300);
     if (CREDENTIAL.test(hint)) {
-      noteIntent(target, 'focus');
-      const root = bumpContext(target);
-      broadShadowEnabled = true;
-      queueShadowSweep(root instanceof Element ? root : document.documentElement);
-      processIndexedContext(root instanceof Element ? root : null);
+      const refreshed = refreshInputContext(target);
+      const intent = noteIntent(target, 'focus');
+      if (refreshed.changed) {
+        broadShadowEnabled = true;
+        queueShadowSweep(refreshed.root instanceof Element ? refreshed.root : document.documentElement);
+        if (!intent.activated) processIndexedContext(refreshed.root instanceof Element ? refreshed.root : null);
+      }
     }
   }
 
@@ -1950,13 +2006,13 @@ function enqueueRootBatch(roots, index, urgent) {
     if (lifecycle.paused) return;
     const target = event.target instanceof Element ? event.target : null;
     if (!target) return;
-    noteIntent(target, 'input');
-    const root = bumpContext(target);
+    const refreshed = refreshInputContext(target);
+    const intent = noteIntent(target, 'input');
     // Credential/value changes can flip a terse legal control from ambiguous to mandatory.
     // Re-evaluate only the already indexed legal candidates for this context (O(K)), never
     // rescan the whole form. This also keeps ContextSnapshot cache invalidation and action
     // scheduling coupled, so a fresh epoch cannot sit unused until some unrelated mutation.
-    processIndexedContext(root instanceof Element ? root : null);
+    if (refreshed.changed && !intent.activated) processIndexedContext(refreshed.root instanceof Element ? refreshed.root : null);
   }
 
   function onVisualTransition() { if (!lifecycle.paused && (pendingVisibility.size || pendingVisibilityRecoveryRef)) recheckPending(); }

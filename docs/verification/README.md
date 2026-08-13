@@ -41,6 +41,7 @@ From v3 onward, detailed version reports were produced during the corresponding 
 | pre-v11 Engine broad closed-Shadow hardening | [v11-engine-shadow-overflow.md](v11-engine-shadow-overflow.md) | real-Chrome proof and repair of `MAX_SHADOW_JOBS=8` oldest-cursor loss when a unique routine agreement exists only in a closed ShadowRoot on a plain host |
 | **v11.0.0** | **[v11.md](v11.md)** | formal generation-coherent release; real v10→v11 transition plus v11→v12 stale-generation probe |
 | **v12.0.0** | **[v12.md](v12.md)** | authority/core convergence, auto-registered deterministic gates, statistical performance, physical v11→v12 transition and v12→v13 stale-generation revocation |
+| **v12.1.0** | **[v12.1.md](v12.1.md)** | precise restart replay, context-index convergence, canonical cross-environment package identity, paired performance and executable exact-head closeout |
 
 The pre-v11 hardening records intentionally retain their historical `10.0.0` runtime context. The formal v11 report aggregates those red/green findings into the v11 release baseline. The v12 report does **not** rewrite v11 history; it records the later falsification of one overbroad v11 claim (a RuntimeKernel unit still hardcoded `11.0.0`) and the stronger candidate-relative version contract that replaced it.
 

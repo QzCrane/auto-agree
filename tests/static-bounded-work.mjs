@@ -48,8 +48,15 @@ assert.match(engine, /pendingVisibilityRecoveryRef\s*=\s*new WeakRef\(root\)/, '
 assert.match(engine, /pendingVisibility\.size\s*\|\|\s*pendingVisibilityRecoveryRef/, 'visual transitions must include overflow recovery work');
 assert.match(engine, /attributeFilter:[^\n]+['"]class['"][^\n]+['"]style['"]/, 'visibility recovery must observe class/style transitions');
 assert.match(engine, /MAX_INDEXED_CANDIDATES\s*=\s*96/, 'per-context candidate indexing must retain a hard cap');
-assert.match(engine, /contextIndexRecovery\.add\(s\.context\.root\s*\|\|\s*document\)/, 'candidate index overflow must retain weak context recovery');
-assert.match(engine, /contextIndexRecovery\.has\(context\)/, 'indexed preflight must re-enter bounded traversal for overflowed contexts');
+assert.match(engine, /const\s+contextIndexRecovery\s*=\s*new WeakMap\(\)/, 'candidate index recovery must weakly own per-context convergence state');
+assert.match(engine, /contextIndexRecovery\.set\(key,\s*-1\)/, 'first candidate-index overflow must create an unrecovered epoch');
+assert.match(engine, /recoveredEpoch\s*!==\s*undefined\s*&&\s*recoveredEpoch\s*!==\s*currentEpoch/, 'indexed preflight must schedule only one recovery per context epoch');
+assert.match(engine, /contextIndexRecovery\.set\(context,\s*currentEpoch\)/, 'recovery must converge before queueing so its own walk cannot re-arm forever');
+assert.match(engine, /const\s+inputContextState\s*=\s*new WeakMap\(\)/, 'input/focus events must weakly retain their last semantic state');
+assert.match(engine, /const\s+preflightContextEpoch\s*=\s*new WeakMap\(\)/, 'proceed preflight must converge once per context epoch');
+assert.match(engine, /if\s*\(!proceed\)\s*return/, 'unrelated pointer events must not scan the candidate index');
+assert.match(engine, /if\s*\(preflightContextEpoch\.get\(key\)\s*===\s*epoch\)\s*return/, 'repeated proceed events in one unchanged context must be coalesced');
+assert.match(engine, /if\s*\(refreshed\.changed\s*&&\s*!intent\.activated\)\s*processIndexedContext/, 'input re-evaluation must require a real semantic fingerprint change');
 assert.match(engineVisibilityE2e, /index\s*<\s*220/, 'visibility saturation fixture must exceed the 192-entry cap');
 assert.match(engineVisibilityE2e, /hidden-219/, 'visibility saturation must recover the tail candidate');
 

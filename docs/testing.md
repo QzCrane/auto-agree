@@ -2,13 +2,13 @@
 
 ## Release philosophy
 
-A green narrow test proves only its own invariant. v12 keeps deterministic policy/resource proofs, real headed-browser behavior, release-transition authority, and statistical performance as separate evidence classes.
+A green narrow test proves only its own invariant. The current 12.1 policy keeps deterministic policy/resource proofs, real browser behavior, release-transition authority, paired performance and merge authorization as separate evidence classes.
 
 Every formal release candidate has three canonical evidence lanes:
 
 1. **core** — auto-discovered deterministic gates + TypeScript + deterministic package verification;
 2. **unpacked-e2e** — real Chrome with the actual unpacked MV3 extension;
-3. **performance** — repeated real-unpacked performance statistics in independent Chrome processes.
+3. **performance** — interleaved exact-base/exact-head real-unpacked samples across five product workloads.
 
 The exact final release head must pass all three and then pass a same-SHA rerun. GitHub Actions normally replays these commands, but a hosted-runner billing or capacity outage is not a product failure: a recorded local run on a supported Chrome host is valid evidence when it includes the exact SHA and tool/browser identities. Ubuntu is an execution host, not an AutoAgree product platform. Merge authorization remains separate and must use an expected-head compare-and-swap; repository protection is preferred when the hosting plan supports it.
 
@@ -43,7 +43,7 @@ The v12 candidate auto-discovered **27 deterministic gates**. Representative exe
 
 ### Version contract
 
-v12 release coherence is defined as:
+Current release coherence is defined as:
 
 - manifest version = package version = package-lock top-level version = package-lock root-package version;
 - RuntimeKernel contains exactly one isolated-world birth-generation literal and it equals the release generation;
@@ -55,12 +55,15 @@ The failed first v12 cut (#52) is permanent negative evidence: it changed Runtim
 
 ### Deterministic packaging
 
-`python tools/package_extension.py --check` derives the runtime JavaScript archive closure from current `extension/*.js` rather than a second manual package list. The canonical v12 physical candidate produced:
+`python tools/package_extension.py --check` derives the runtime JavaScript archive closure from current `extension/*.js` rather than a second manual package list, creates `ZIP_STORED` entries so zlib implementations cannot change release identity, and compares the result to the machine authority in `release/package-manifest.json`. The current physical closure is:
 
 ```text
-AutoAgree-v12.0.0.zip
-sha256=1cee531a26272160df70909815089a80d1d45814ce3d138d7dd2c2efbc00e859
+AutoAgree-v12.1.0.zip
+sha256=dfb6b53cd4eca94b933cb571bfa81812e499f2daccdbcad80bf651730dfc8e40
+compression=stored
 ```
+
+`tests/package-reproducibility.mjs` repeats the build in two independent Python processes and requires byte equality plus the authority hash. The v12.0.0 hash remains historical in its verification report.
 
 ## 2. Real unpacked-extension Chrome gate
 
@@ -192,40 +195,21 @@ ambiguousCausalClicks=0
 actionInsideLabelClicks=0
 ```
 
-## 3. Statistical performance gate
+## 3. Paired performance gate
 
-The functional E2E profile remains a single broad regression sample. v12 additionally runs `tests/e2e-performance-statistics.mjs` in a separate `performance` job.
+`tests/e2e-performance-paired.mjs` checks out the exact comparison base into a detached temporary worktree and alternates base/candidate order on the same host and Chrome installation. Each variant is sampled five times by the canonical policy. This removes the previous error of comparing a candidate distribution only to a broad fixed ceiling while silently accepting a material relative regression.
 
-The wrapper does **not** replace the benchmark. It launches seven fresh Node/Chrome processes and runs the existing `tests/e2e-extension.mjs --profile` workload each time. Every underlying sample still enforces the existing broad ceilings:
+The real unpacked-extension scenario covers:
 
-```text
-latency < 1000 ms
-TaskDuration < 0.8 s
-```
+1. a positive 5,000-checkbox tail-login path;
+2. an equivalent negative page after it becomes idle;
+3. repeated benign mutation churn;
+4. physical background-page quiescence;
+5. an eight-tab scheduler burst.
 
-The wrapper retains all raw samples and reports median, p90 and max for latency, TaskDuration and CPU samples, together with Chrome/Puppeteer/Node metadata. `performance-statistics-contract.mjs` locks the repetition count (at least five; canonical CI uses seven), benchmark identity, fresh-process execution, raw evidence and summary fields.
+Every workload retains raw samples and candidate absolute ceilings. Median and p90 are also compared with the interleaved base using noise floors, so neither low-denominator noise nor a generous absolute ceiling can independently decide the result. `tests/performance-statistics-contract.mjs` locks exact base/head binding, order alternation, workload coverage, distribution ratios, absolute ceilings and CI invocation.
 
-Canonical v12 candidate first attempt:
-
-| run | latency ms | TaskDuration s | CPU samples |
-|---:|---:|---:|---:|
-| 1 | 259.1 | 0.2524 | 219 |
-| 2 | 215.6 | 0.2085 | 172 |
-| 3 | 288.5 | 0.2797 | 251 |
-| 4 | 281.1 | 0.2725 | 239 |
-| 5 | 202.9 | 0.1957 | 170 |
-| 6 | 192.0 | 0.1857 | 159 |
-| 7 | 288.0 | 0.2812 | 249 |
-
-Summary:
-
-```text
-latency median / p90 / max:       259.1 / 288.2 / 288.5 ms
-TaskDuration median / p90 / max:  0.2524 / 0.2803 / 0.2812 s
-CPU samples median / p90 / max:   219 / 249.8 / 251
-```
-
-Earlier same-code v11-main statistical runs showed materially different hosted-runner regimes (roughly 219 ms versus 277 ms medians), so performance data is used for regression prioritization and repeated-distribution evidence—not treated as a deterministic cross-machine microbenchmark. v12 found no stable hotspot evidence justifying speculative runtime optimization during the release cut.
+The v12 seven-run single-candidate distribution remains valid historical evidence in `docs/verification/v12.md` and `docs/performance/ledger.json`; it is no longer the current regression gate.
 
 ## Worker/profile/update policy
 
@@ -253,5 +237,7 @@ A formal release PR is mergeable only after:
 5. no temporary write-enabled migration/research workflow survives in the release diff;
 6. expected-head compare-and-swap confirms the reviewed head did not move;
 7. post-merge main passes the applicable local lanes again; hosted replay is required when available but a documented provider outage is not rewritten as a code failure.
+
+`release/closeout-policy.json` is the executable lane authority. A formal local closeout records two receipts under ignored `artifacts/`, and each receipt binds the exact base, candidate commit/tree, policy hash, package-manifest hash, Node/Python/Chrome/Puppeteer identity, command/output digests and a separately sourced hosted state. `tools/closeout-evidence.mjs verify` rejects a moved head, dirty tracked tree, missing lane, changed policy/package authority or any failed attempt. Its merge mode additionally reads the live PR head and passes the verified SHA to GitHub's expected-head merge option.
 
 The version report may cite an earlier byte-identical physical candidate for detailed generated evidence; exact final-head run IDs remain authoritative in the final release PR/merge metadata when embedding them in documentation would itself create a new unverified SHA.

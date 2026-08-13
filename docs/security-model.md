@@ -187,12 +187,15 @@ All other isolated production modules derive RuntimeKernel generation; Worker an
 
 A release ZIP is part of the correctness/security boundary. The packager derives the executable JavaScript closure from `extension/*.js`; a checksum alone is insufficient if source and packaged runtime closures diverge.
 
-The canonical v12 candidate archive was:
+The current package identity is machine-owned by `release/package-manifest.json` and uses stored ZIP entries so compressor implementations cannot alter the bytes:
 
 ```text
-AutoAgree-v12.0.0.zip
-sha256=1cee531a26272160df70909815089a80d1d45814ce3d138d7dd2c2efbc00e859
+AutoAgree-v12.1.0.zip
+sha256=dfb6b53cd4eca94b933cb571bfa81812e499f2daccdbcad80bf651730dfc8e40
+compression=stored
 ```
+
+The v12.0.0 archive and its `1cee531a…` hash remain historical evidence in `docs/verification/v12.md`; they are not presented as the current closure.
 
 ## Threats considered
 

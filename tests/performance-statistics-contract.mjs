@@ -1,24 +1,33 @@
 import fs from 'node:fs';
 import assert from 'node:assert/strict';
 
-const statistics=fs.readFileSync('tests/e2e-performance-statistics.mjs','utf8');
+const paired=fs.readFileSync('tests/e2e-performance-paired.mjs','utf8');
+const scenario=fs.readFileSync('tests/e2e-performance-scenario.mjs','utf8');
 const ci=fs.readFileSync('.github/workflows/ci.yml','utf8').replace(/\r\n/gu,'\n');
 
-assert.match(statistics,/AUTO_AGREE_PERF_REPETITIONS\|\|7/,'statistical harness must default to seven independent repetitions');
-assert.match(statistics,/repetitions>=5&&repetitions<=15/,'statistical harness must reject non-statistical repetition counts');
-assert.match(statistics,/spawnSync\(process\.execPath,\['tests\/e2e-extension\.mjs','--profile'\]/,'each sample must execute the existing real-unpacked profile harness in a fresh Node process');
-assert.match(statistics,/benchmarkId:'real-unpacked-tail-login-5000-v1'/,'statistical evidence must preserve the comparable real-unpacked benchmark identity');
-assert.match(statistics,/harnessRevision:'v12-statistical-existing-harness'/,'statistical protocol revision must be explicit');
-assert.match(statistics,/median:quantile\(values,0\.5/,'statistical evidence must report median');
-assert.match(statistics,/p90:quantile\(values,0\.9/,'statistical evidence must report a tail quantile');
-assert.match(statistics,/max:round\(Math\.max/,'statistical evidence must retain the observed worst sample');
-assert.match(statistics,/runs\n};|runs\s*\n};/,'raw per-run evidence must remain in the emitted artifact');
-assert.equal(/latencyMs\s*[<>]=?\s*\d+/.test(statistics),false,'statistics wrapper must not invent a second latency threshold; each underlying real run owns the existing ceiling');
-assert.equal(/taskDurationS?\s*[<>]=?\s*\d+/.test(statistics),false,'statistics wrapper must not invent a second task-duration threshold');
+assert.match(paired,/--base must be an exact Git commit/,'paired evidence must bind an exact base commit');
+assert.match(paired,/exactCandidate/,'paired evidence must bind the candidate commit');
+assert.match(paired,/repetitions >= 3 && repetitions <= 9/,'paired harness must reject non-statistical repetition counts');
+assert.match(paired,/repetition % 2 === 0 \? \['base', 'candidate'\] : \['candidate', 'base'\]/,'base/candidate order must alternate to reduce host-order bias');
+assert.match(paired,/benchmarkId: 'auto-agree-five-workload-paired-v1'/,'paired protocol identity must be explicit');
+assert.match(paired,/median: quantile\(values, 0\.5\)/,'paired evidence must report median');
+assert.match(paired,/p90: quantile\(values, 0\.9\)/,'paired evidence must report a tail quantile');
+assert.match(paired,/medianRatio <= ratioLimits\.median/,'paired evidence must enforce a median regression ratio');
+assert.match(paired,/p90Ratio <= ratioLimits\.p90/,'paired evidence must enforce a p90 regression ratio');
+assert.match(paired,/candidateSummary\.max <= ceiling\[metricName\]/,'paired evidence must retain an absolute candidate ceiling');
+assert.match(paired,/raw/,'raw per-run evidence must remain in the emitted artifact');
+assert.match(paired,/chromeExecutableSha256: chrome\.sha256/,'paired evidence must bind the installed Chrome executable without launching a version-only browser');
+assert.equal(/spawnSync\(chromePath, \['--version'\]/.test(paired),false,'Chrome identity collection must not launch a hanging Windows browser process');
 
-assert.match(ci,/\n  performance:\n/,'statistical profiling must run as an independent parallel CI job');
-assert.match(ci,/AUTO_AGREE_PERF_REPETITIONS:\s*'7'/,'canonical CI must collect seven real-unpacked samples');
-assert.match(ci,/xvfb-run -a node tests\/e2e-performance-statistics\.mjs/,'canonical CI must execute the statistical harness in real headed Chrome');
-assert.match(ci,/e2e-profile-statistics\.json/,'canonical CI must print the durable statistical evidence payload');
+for(const workload of ['positiveTailLogin','negativeIdle','negativeMutationChurn','hiddenQuiescence','multiTabScheduler']){
+  assert.match(scenario,new RegExp(`async function ${workload}\\(`),`${workload} must be an executable real-Chrome workload`);
+  assert.match(paired,new RegExp(`${workload}: \\{wallMs:`),`${workload} must own an absolute safety ceiling`);
+}
 
-console.log('performance-statistics-contract: PASS');
+assert.match(ci,/\n  performance:\n/,'paired profiling must run as an independent parallel CI job');
+assert.match(ci,/AUTO_AGREE_PERF_REPETITIONS:\s*'5'/,'canonical CI must collect five interleaved samples per variant');
+assert.match(ci,/github\.event\.pull_request\.base\.sha \|\| github\.event\.before/,'CI must bind the comparison to the exact PR base or pre-push main');
+assert.match(ci,/xvfb-run -a node tests\/e2e-performance-paired\.mjs --base \"\$AUTO_AGREE_PERF_BASE\" --candidate HEAD/,'CI must execute the paired harness in real headed Chrome');
+assert.match(ci,/e2e-performance-paired\.json/,'CI must print the durable paired evidence payload');
+
+console.log('performance-statistics-contract: PASS (exact-base/exact-head paired matrix)');

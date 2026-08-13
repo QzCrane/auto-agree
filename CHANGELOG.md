@@ -1,5 +1,13 @@
 # Changelog
 
+## 12.1.0 — 2026-08-13
+
+- Made Worker update recovery replay only the durable unresolved tab set, classify permanently inaccessible browser pages as terminal, and stop successful tabs from being reinjected on every MV3 restart.
+- Completed Engine candidate-index saturation with one weak recovery obligation per context epoch and a real Chromium discriminator above the 96-candidate cap.
+- Added an exact-base/exact-head paired performance matrix for positive, negative-idle, mutation-churn, hidden-quiescence and multi-tab workloads, with raw samples, relative distribution limits and absolute safety ceilings.
+- Added a machine-readable release package manifest and exact-head local closeout attestation/validator. The original v12 archive identity remains historical evidence; 12.1.0 owns a new production closure and package identity.
+- Preserved the v12 permission and consent boundary: no new permission, network client, telemetry, remote code, or broader automated-action authority.
+
 ## 12.0.0 — 2026-08-13
 
 - Converged shared runtime/lifecycle/bounded-work mechanics into **RuntimeKernel** while preserving tier-specific Probe/Gate/Engine budgets and all hard queue/object caps. Connected work remains recoverable through FIFO/weak final-state semantics rather than being silently discarded by pressure or age.

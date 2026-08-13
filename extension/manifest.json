@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Auto Agree Login Terms",
-  "version": "12.0.0",
+  "version": "12.1.0",
   "minimum_chrome_version": "120",
   "description": "Automatically accepts routine mandatory access agreements with lazy semantic/risk gating, lifecycle-safe MV3 recovery, fair bounded injection, real form-validity causality, Shadow DOM support, and hard exclusions for consequential consent.",
   "permissions": [
