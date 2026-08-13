@@ -1,6 +1,6 @@
 {
   "name": "auto-agree",
-  "version": "12.0.0",
+  "version": "12.1.0",
   "private": true,
   "type": "module",
   "description": "Evidence-gated Chrome extension that automatically accepts routine mandatory access agreements while refusing consequential consent.",
@@ -9,7 +9,11 @@
     "check": "node tests/run-core.mjs && npm run typecheck",
     "test": "npm run check",
     "e2e": "node tests/e2e-extension.mjs",
-    "profile:e2e": "node tests/e2e-extension.mjs --profile"
+    "profile:e2e": "node tests/e2e-extension.mjs --profile",
+    "performance:paired": "node tests/e2e-performance-paired.mjs",
+    "closeout:evidence": "node tools/closeout-evidence.mjs record",
+    "closeout:verify": "node tools/closeout-evidence.mjs verify",
+    "closeout:merge": "node tools/closeout-evidence.mjs merge"
   },
   "engines": {
     "node": ">=22"

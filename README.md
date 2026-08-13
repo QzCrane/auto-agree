@@ -16,7 +16,7 @@ It refuses marketing, cookies, remember-me, auto-renewal, payment/debit authoriz
 
 The decision is based on **what action the user would authorize**, not what industry the site belongs to. Language support is fail-closed: every routine-supported language family is paired with native-language optional, consequential, attestation and high-consequence suppressors.
 
-## v12 architecture
+## Current architecture (v12.1)
 
 ```mermaid
 flowchart LR
@@ -123,11 +123,25 @@ npm test
 python tools/package_extension.py --check
 ```
 
-v12 CI has **three independent jobs**:
+The current CI and local closeout policy have **three independent evidence classes**:
 
 1. **core** — `tests/run-core.mjs` automatically discovers every deterministic root `tests/*.mjs` gate except `e2e-*` and itself, executes each in a fresh Node process, then runs TypeScript and deterministic package verification;
 2. **unpacked-e2e** — real headed Chrome for Testing with the actual unpacked MV3 extension, Worker, dynamic injection, lifecycle/queue/Shadow/authority/update discriminators;
-3. **performance** — seven independent fresh Chrome processes running the unchanged real-unpacked 5,000-checkbox tail-login profile harness and emitting raw runs plus median/p90/max.
+3. **performance** — an interleaved exact-base/exact-head real-Chrome matrix covering positive-tail, negative-idle, mutation-churn, hidden-page and multi-tab scheduler behavior, with raw samples, median/p90 ratios and absolute ceilings.
+
+The current **12.1.0** production package identity is owned by [`release/package-manifest.json`](release/package-manifest.json):
+
+```text
+AutoAgree-v12.1.0.zip
+sha256=dfb6b53cd4eca94b933cb571bfa81812e499f2daccdbcad80bf651730dfc8e40
+compression=stored
+```
+
+`stored` ZIP entries make the archive independent of Python/zlib compressor versions. `tests/package-reproducibility.mjs` builds it in two independent Python processes and compares both bytes and the canonical hash.
+
+Formal closeout is executable rather than prose-only: [`release/closeout-policy.json`](release/closeout-policy.json) defines the lanes and two required same-head attempts; `npm run closeout:evidence` records exact base/head/tree, tool and Chrome identities, lane output digests, package authority and an explicitly sourced hosted-runner state; `npm run closeout:verify` validates both receipts; and `npm run closeout:merge` compares the PR head before issuing the squash merge.
+
+The following v12 measurements remain historical evidence for the architecture baseline; they are not the identity or performance protocol of the current 12.1 package.
 
 The v12 release candidate physically proved:
 
@@ -138,12 +152,12 @@ The v12 release candidate physically proved:
 - three-layer automated-action proof: rejected ActionAuthority dispatches no synthetic click; a direct isolated synthetic click is independently blocked by Handover Guard; trusted browser input remains usable;
 - real **11.0.0 → 12.0.0** non-reloaded update with full old/new isolated contexts simultaneously observable;
 - real **12.0.0 → 13.0.0** future-generation probe with stale automated clicks = 0, direct stale isolated `.click()` = 0, trusted click = 1;
-- deterministic package `AutoAgree-v12.0.0.zip`, canonical candidate sha256 `1cee531a26272160df70909815089a80d1d45814ce3d138d7dd2c2efbc00e859`;
+- deterministic historical package `AutoAgree-v12.0.0.zip`, canonical candidate sha256 `1cee531a26272160df70909815089a80d1d45814ce3d138d7dd2c2efbc00e859`;
 - statistical real-unpacked candidate performance on Chrome 149.0.7827.22 / Puppeteer 25.1.0 / Node 24: latency median **259.1 ms**, p90 **288.2 ms**, max **288.5 ms**; TaskDuration median **0.2524 s**, p90 **0.2803 s**, max **0.2812 s** across seven raw runs.
 
 Hosted GitHub runners exhibit measurable execution-regime variance, so one CI profile is not treated as a deterministic cross-machine microbenchmark and does not justify speculative product optimization by itself.
 
-Detailed evidence: [v12 verification report](docs/verification/v12.md).
+Current closure protocol: [v12.1 verification report](docs/verification/v12.1.md). Historical baseline evidence: [v12 verification report](docs/verification/v12.md).
 
 ## Site learning
 

@@ -239,17 +239,30 @@ async function protectAndRehydrateTab(tabId) {
   await scheduleInjection(target, ['bootstrap.js'], 3);
 }
 
-async function rehydrateExistingTabs() {
-  if (!chrome.tabs?.query) return null;
-  let tabs = [];
-  try { tabs = await chrome.tabs.query({}); } catch (_) { return null; }
-  let pending = [...new Set(tabs.map(tab => tab?.id).filter(Number.isInteger))];
+function terminalRehydrateFailure(error) {
+  const message = String(error?.message || error || '');
+  return /No tab with id|tab was closed|Cannot access (?:a )?(?:chrome|edge|about):|Cannot access contents of url|extensions gallery cannot be scripted|Frame with ID \d+ was removed/i.test(message);
+}
+
+async function rehydrateExistingTabs(pendingTabIds = null) {
+  let pending;
+  if (Array.isArray(pendingTabIds)) {
+    pending = [...new Set(pendingTabIds.filter(Number.isInteger))];
+  } else {
+    if (!chrome.tabs?.query) return null;
+    let tabs = [];
+    try { tabs = await chrome.tabs.query({}); } catch (_) { return null; }
+    pending = [...new Set(tabs.map(tab => tab?.id).filter(Number.isInteger))];
+  }
   for (let pass = 0; pass < 2 && pending.length; pass++) {
     const retry = [];
     for (let i = 0; i < pending.length; i += 12) {
       const ids = pending.slice(i, i + 12);
       const results = await Promise.allSettled(ids.map(tabId => protectAndRehydrateTab(tabId)));
-      for (let j = 0; j < results.length; j++) if (results[j].status === 'rejected') retry.push(ids[j]);
+      for (let j = 0; j < results.length; j++) {
+        const result = results[j];
+        if (result.status === 'rejected' && !terminalRehydrateFailure(result.reason)) retry.push(ids[j]);
+      }
     }
     pending = retry;
     if (pending.length && pass === 0) await new Promise(resolve => setTimeout(resolve, 180));
@@ -257,10 +270,10 @@ async function rehydrateExistingTabs() {
   return pending;
 }
 
-async function startUpdateRehydrate() {
-  const marker = { version: VERSION, ts: Date.now() };
+async function startUpdateRehydrate(pendingTabIds = null, previousAttempt = 0) {
+  const marker = { version: VERSION, ts: Date.now(), attempt: Math.max(0, Number(previousAttempt) || 0) + 1 };
   try { await chrome.storage.session?.set({ [REHYDRATE_KEY]: marker }); } catch (_) {}
-  const pending = await rehydrateExistingTabs();
+  const pending = await rehydrateExistingTabs(pendingTabIds);
   if (Array.isArray(pending) && pending.length === 0) {
     try { await chrome.storage.session?.remove(REHYDRATE_KEY); } catch (_) {}
     return;
@@ -272,8 +285,8 @@ async function startUpdateRehydrate() {
   } catch (_) {}
 }
 
-function requestUpdateRehydrate() {
-  if (!rehydratePromise) rehydratePromise = startUpdateRehydrate().finally(() => { rehydratePromise = null; });
+function requestUpdateRehydrate(pendingTabIds = null, previousAttempt = 0) {
+  if (!rehydratePromise) rehydratePromise = startUpdateRehydrate(pendingTabIds, previousAttempt).finally(() => { rehydratePromise = null; });
   return rehydratePromise;
 }
 
@@ -286,7 +299,11 @@ void (async () => {
     const stored = await chrome.storage.session?.get(REHYDRATE_KEY);
     const resumeMarker = stored?.[REHYDRATE_KEY];
     if (resumeMarker && typeof resumeMarker === 'object' && 'version' in resumeMarker && resumeMarker.version === VERSION) {
-      await requestUpdateRehydrate();
+      const pending = 'pending' in resumeMarker && Array.isArray(resumeMarker.pending)
+        ? resumeMarker.pending.filter(Number.isInteger)
+        : null;
+      const previousAttempt = 'attempt' in resumeMarker ? Number(resumeMarker.attempt) : 0;
+      await requestUpdateRehydrate(pending, previousAttempt);
     }
   } catch (_) {}
 })();

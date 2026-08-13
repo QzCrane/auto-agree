@@ -2,6 +2,7 @@
 import argparse, hashlib, io, json, pathlib, sys, zipfile
 ROOT=pathlib.Path(__file__).resolve().parents[1]
 EXT=ROOT/'extension'
+PACKAGE_MANIFEST=ROOT/'release'/'package-manifest.json'
 
 # The extension root is the canonical production runtime. Derive the executable closure instead of
 # maintaining a second hand-written JS allowlist that can silently omit a newly referenced module.
@@ -37,6 +38,16 @@ def main():
     with zipfile.ZipFile(out) as z:
         bad=z.testzip(); names=z.namelist()
     if bad or names!=FILES: raise SystemExit(f'package verification failed: bad={bad} names={names}')
+    authority=json.loads(PACKAGE_MANIFEST.read_text(encoding='utf-8'))
+    expected={
+        'schemaVersion':1,
+        'version':version,
+        'archive':f'AutoAgree-v{version}.zip',
+        'compression':'stored',
+        'sha256':sha,
+    }
+    if authority != expected:
+        raise SystemExit(f'package authority drift: expected={expected} actual={authority}')
     print(f'{out}: sha256={sha}')
     if a.check: out.unlink(missing_ok=True); out.parent.rmdir() if out.parent.exists() and not any(out.parent.iterdir()) else None
 if __name__=='__main__': main()
