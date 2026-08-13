@@ -202,6 +202,8 @@ actionInsideLabelClicks=0
 
 `tests/e2e-performance-paired.mjs` checks out the exact comparison base into a detached temporary worktree and alternates base/candidate order on the same host and Chrome installation. Each variant is sampled five times by the canonical policy. This removes the previous error of comparing a candidate distribution only to a broad fixed ceiling while silently accepting a material relative regression.
 
+The harness first binds both commits' exact `extension/` tree IDs. When those trees are byte-identical, it emits a `NOT_APPLICABLE_IDENTICAL_RUNTIME_TREE` artifact instead of manufacturing a performance comparison between identical runtime bytes. Packaging, documentation, or evidence-only changes therefore remain auditable without weakening the paired statistical and absolute ceilings used whenever runtime code or assets actually change.
+
 The real unpacked-extension scenario covers:
 
 1. a positive 5,000-checkbox tail-login path;

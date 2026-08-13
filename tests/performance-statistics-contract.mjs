@@ -7,6 +7,8 @@ const ci=fs.readFileSync('.github/workflows/ci.yml','utf8').replace(/\r\n/gu,'\n
 
 assert.match(paired,/--base must be an exact Git commit/,'paired evidence must bind an exact base commit');
 assert.match(paired,/exactCandidate/,'paired evidence must bind the candidate commit');
+assert.match(paired,/baseRuntimeTree === candidateRuntimeTree/,'runtime-identical candidates must not execute a meaningless paired benchmark');
+assert.match(paired,/NOT_APPLICABLE_IDENTICAL_RUNTIME_TREE/,'runtime-identical candidates must emit an explicit auditable disposition');
 assert.match(paired,/repetitions >= 3 && repetitions <= 9/,'paired harness must reject non-statistical repetition counts');
 assert.match(paired,/repetition % 2 === 0 \? \['base', 'candidate'\] : \['candidate', 'base'\]/,'base/candidate order must alternate to reduce host-order bias');
 assert.match(paired,/benchmarkId: 'auto-agree-five-workload-paired-v1'/,'paired protocol identity must be explicit');
