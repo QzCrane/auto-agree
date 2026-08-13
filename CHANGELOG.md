@@ -6,6 +6,7 @@
 - Completed Engine candidate-index saturation with one weak recovery obligation per context epoch and a real Chromium discriminator above the 96-candidate cap.
 - Added an exact-base/exact-head paired performance matrix for positive, negative-idle, mutation-churn, hidden-quiescence and multi-tab workloads, with raw samples, relative distribution limits and absolute safety ceilings.
 - Added a machine-readable release package manifest and exact-head local closeout attestation/validator. The original v12 archive identity remains historical evidence; 12.1.0 owns a new production closure and package identity.
+- Canonicalized all package text members to UTF-8/LF with fixed ZIP metadata, so Windows CRLF and Linux LF checkouts now produce the same 12.1.0 archive identity.
 - Preserved the v12 permission and consent boundary: no new permission, network client, telemetry, remote code, or broader automated-action authority.
 
 ## 12.0.0 — 2026-08-13

@@ -7,12 +7,23 @@ import {spawnSync} from 'node:child_process';
 
 const authority = JSON.parse(fs.readFileSync('release/package-manifest.json', 'utf8'));
 const version = JSON.parse(fs.readFileSync('extension/manifest.json', 'utf8')).version;
-assert.deepEqual(Object.keys(authority), ['schemaVersion', 'version', 'archive', 'compression', 'sha256']);
-assert.equal(authority.schemaVersion, 1);
+assert.deepEqual(Object.keys(authority), ['schemaVersion', 'version', 'archive', 'compression', 'textEncoding', 'textLineEndings', 'entryTimestamp', 'entryMode', 'entryCreatorSystem', 'entries', 'sha256']);
+assert.equal(authority.schemaVersion, 3);
 assert.equal(authority.version, version);
 assert.equal(authority.archive, `AutoAgree-v${version}.zip`);
 assert.equal(authority.compression, 'stored');
+assert.equal(authority.textEncoding, 'utf-8');
+assert.equal(authority.textLineEndings, 'lf');
+assert.equal(authority.entryTimestamp, '2026-08-08T00:00:00Z');
+assert.equal(authority.entryMode, '100644');
+assert.equal(authority.entryCreatorSystem, 'unix');
+assert.deepEqual(authority.entries, ['manifest.json', ...fs.readdirSync('extension').filter(name => name.endsWith('.js')).sort(), 'README.md']);
 assert.match(authority.sha256, /^[a-f0-9]{64}$/);
+
+const packager = fs.readFileSync('tools/package_extension.py', 'utf8');
+assert.match(packager, /replace\('\\r\\n','\\n'\)\.replace\('\\r','\\n'\)/, 'package members must canonicalize checkout line endings to LF');
+assert.match(packager, /decode\('utf-8'\)/, 'package text encoding must be explicit');
+assert.match(packager, /info\.create_system=3/, 'package creator system must not inherit the host OS');
 
 const temp = fs.mkdtempSync(path.join(os.tmpdir(), 'auto-agree-package-'));
 try {

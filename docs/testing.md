@@ -55,15 +55,18 @@ The failed first v12 cut (#52) is permanent negative evidence: it changed Runtim
 
 ### Deterministic packaging
 
-`python tools/package_extension.py --check` derives the runtime JavaScript archive closure from current `extension/*.js` rather than a second manual package list, creates `ZIP_STORED` entries so zlib implementations cannot change release identity, and compares the result to the machine authority in `release/package-manifest.json`. The current physical closure is:
+`python tools/package_extension.py --check` derives the runtime JavaScript archive closure from current `extension/*.js` rather than a second manual package list, creates `ZIP_STORED` entries with canonical UTF-8/LF content and a fixed Unix creator-system field so neither zlib, checkout line endings nor the host OS can change release identity, and compares the result to the machine authority in `release/package-manifest.json`. The current physical closure is:
 
 ```text
 AutoAgree-v12.1.0.zip
-sha256=dfb6b53cd4eca94b933cb571bfa81812e499f2daccdbcad80bf651730dfc8e40
+sha256=2e9b53c255d570f33b3515677d2d45bd30f35a8b093eb677d258c619f1a8d82d
 compression=stored
+textEncoding=utf-8
+textLineEndings=lf
+entryCreatorSystem=unix
 ```
 
-`tests/package-reproducibility.mjs` repeats the build in two independent Python processes and requires byte equality plus the authority hash. The v12.0.0 hash remains historical in its verification report.
+The package boundary normalizes every declared text member to UTF-8/LF before hashing, so Git's Windows CRLF and Linux LF materializations cannot create different release bytes. `tests/package-reproducibility.mjs` repeats the build in two independent Python processes and requires byte equality plus the authority hash. The v12.0.0 hash remains historical in its verification report.
 
 ## 2. Real unpacked-extension Chrome gate
 
@@ -198,6 +201,8 @@ actionInsideLabelClicks=0
 ## 3. Paired performance gate
 
 `tests/e2e-performance-paired.mjs` checks out the exact comparison base into a detached temporary worktree and alternates base/candidate order on the same host and Chrome installation. Each variant is sampled five times by the canonical policy. This removes the previous error of comparing a candidate distribution only to a broad fixed ceiling while silently accepting a material relative regression.
+
+The harness first binds both commits' exact `extension/` tree IDs. When those trees are byte-identical, it emits a `NOT_APPLICABLE_IDENTICAL_RUNTIME_TREE` artifact instead of manufacturing a performance comparison between identical runtime bytes. Packaging, documentation, or evidence-only changes therefore remain auditable without weakening the paired statistical and absolute ceilings used whenever runtime code or assets actually change.
 
 The real unpacked-extension scenario covers:
 

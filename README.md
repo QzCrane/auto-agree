@@ -133,11 +133,14 @@ The current **12.1.0** production package identity is owned by [`release/package
 
 ```text
 AutoAgree-v12.1.0.zip
-sha256=dfb6b53cd4eca94b933cb571bfa81812e499f2daccdbcad80bf651730dfc8e40
+sha256=2e9b53c255d570f33b3515677d2d45bd30f35a8b093eb677d258c619f1a8d82d
 compression=stored
+textEncoding=utf-8
+textLineEndings=lf
+entryCreatorSystem=unix
 ```
 
-`stored` ZIP entries make the archive independent of Python/zlib compressor versions. `tests/package-reproducibility.mjs` builds it in two independent Python processes and compares both bytes and the canonical hash.
+`stored` ZIP entries make the archive independent of Python/zlib compressor versions. Canonical UTF-8/LF text members make it independent of Git checkout line-ending policy. `tests/package-reproducibility.mjs` builds it in two independent Python processes and compares both bytes and the canonical hash.
 
 Formal closeout is executable rather than prose-only: [`release/closeout-policy.json`](release/closeout-policy.json) defines the lanes and two required same-head attempts; `npm run closeout:evidence` records exact base/head/tree, tool and Chrome identities, lane output digests, package authority and an explicitly sourced hosted-runner state; `npm run closeout:verify` validates both receipts; and `npm run closeout:merge` compares the PR head before issuing the squash merge, then reads back PR state, remote main, exact tree parity and remote head-ref deletion without switching the local worktree.
 

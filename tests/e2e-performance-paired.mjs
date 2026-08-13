@@ -29,10 +29,30 @@ const exactBase = git(['rev-parse', `${base}^{commit}`]);
 const exactCandidate = git(['rev-parse', `${candidate}^{commit}`]);
 assert.notEqual(exactBase, exactCandidate, 'paired performance requires distinct base and candidate commits');
 assert.equal(git(['status', '--porcelain', '--untracked-files=no']), '', 'candidate tracked worktree must be clean');
+const outputPath = path.join(ROOT, 'artifacts', 'e2e-performance-paired.json');
+
+const baseRuntimeTree = git(['rev-parse', `${exactBase}:extension`]);
+const candidateRuntimeTree = git(['rev-parse', `${exactCandidate}:extension`]);
+if (baseRuntimeTree === candidateRuntimeTree) {
+  const evidence = {
+    schemaVersion: 1,
+    benchmarkId: 'auto-agree-five-workload-paired-v1',
+    status: 'NOT_APPLICABLE_IDENTICAL_RUNTIME_TREE',
+    exactBase,
+    exactCandidate,
+    baseRuntimeTree,
+    candidateRuntimeTree,
+    reason: 'The exact base and candidate extension/ trees are byte-identical; runtime performance cannot differ.',
+    environment: {node: process.version}
+  };
+  fs.mkdirSync(path.dirname(outputPath), {recursive: true});
+  fs.writeFileSync(outputPath, `${JSON.stringify(evidence, null, 2)}\n`);
+  console.log(`e2e-performance-paired: PASS ${JSON.stringify(evidence)}`);
+  process.exit(0);
+}
 
 const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'auto-agree-paired-'));
 const baseWorktree = path.join(tempRoot, 'base');
-const outputPath = path.join(ROOT, 'artifacts', 'e2e-performance-paired.json');
 
 function executableIdentity(file) {
   const version = file.match(/(\d+\.\d+\.\d+\.\d+)/u)?.[1];
