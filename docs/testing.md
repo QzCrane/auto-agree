@@ -59,11 +59,13 @@ The failed first v12 cut (#52) is permanent negative evidence: it changed Runtim
 
 ```text
 AutoAgree-v12.1.0.zip
-sha256=dfb6b53cd4eca94b933cb571bfa81812e499f2daccdbcad80bf651730dfc8e40
+sha256=4b2697268bac2c8da7a748bd8db9e36fb9b5d30a7459f4a7560aa794a5ed13a3
 compression=stored
+textEncoding=utf-8
+textLineEndings=lf
 ```
 
-`tests/package-reproducibility.mjs` repeats the build in two independent Python processes and requires byte equality plus the authority hash. The v12.0.0 hash remains historical in its verification report.
+The package boundary normalizes every declared text member to UTF-8/LF before hashing, so Git's Windows CRLF and Linux LF materializations cannot create different release bytes. `tests/package-reproducibility.mjs` repeats the build in two independent Python processes and requires byte equality plus the authority hash. The v12.0.0 hash remains historical in its verification report.
 
 ## 2. Real unpacked-extension Chrome gate
 

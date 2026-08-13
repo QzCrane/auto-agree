@@ -1,7 +1,29 @@
 {
-  "schemaVersion": 1,
+  "schemaVersion": 2,
   "version": "12.1.0",
   "archive": "AutoAgree-v12.1.0.zip",
   "compression": "stored",
-  "sha256": "dfb6b53cd4eca94b933cb571bfa81812e499f2daccdbcad80bf651730dfc8e40"
+  "textEncoding": "utf-8",
+  "textLineEndings": "lf",
+  "entryTimestamp": "2026-08-08T00:00:00Z",
+  "entryMode": "100644",
+  "entries": [
+    "manifest.json",
+    "action-authority.js",
+    "bootstrap.js",
+    "decision-core.js",
+    "dom-core.js",
+    "engine.js",
+    "gate.js",
+    "generation-lease.js",
+    "handover-guard.js",
+    "profile-core.js",
+    "risk-core.js",
+    "runtime-kernel.js",
+    "scheduler-core.js",
+    "semantic-core.js",
+    "worker.js",
+    "README.md"
+  ],
+  "sha256": "4b2697268bac2c8da7a748bd8db9e36fb9b5d30a7459f4a7560aa794a5ed13a3"
 }

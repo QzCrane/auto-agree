@@ -191,11 +191,13 @@ The current package identity is machine-owned by `release/package-manifest.json`
 
 ```text
 AutoAgree-v12.1.0.zip
-sha256=dfb6b53cd4eca94b933cb571bfa81812e499f2daccdbcad80bf651730dfc8e40
+sha256=4b2697268bac2c8da7a748bd8db9e36fb9b5d30a7459f4a7560aa794a5ed13a3
 compression=stored
+textEncoding=utf-8
+textLineEndings=lf
 ```
 
-The v12.0.0 archive and its `1cee531a…` hash remain historical evidence in `docs/verification/v12.md`; they are not presented as the current closure.
+The packager canonicalizes Git materializations before hashing: every declared text member is decoded as UTF-8 and written with LF. This prevents a Windows CRLF checkout and a Linux LF checkout from minting different release identities. The v12.0.0 archive and its `1cee531a…` hash remain historical evidence in `docs/verification/v12.md`; they are not presented as the current closure.
 
 ## Threats considered
 

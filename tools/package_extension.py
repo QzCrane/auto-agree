@@ -3,10 +3,19 @@ import argparse, hashlib, io, json, pathlib, sys, zipfile
 ROOT=pathlib.Path(__file__).resolve().parents[1]
 EXT=ROOT/'extension'
 PACKAGE_MANIFEST=ROOT/'release'/'package-manifest.json'
+ENTRY_DATE_TIME=(2026,8,8,0,0,0)
+ENTRY_MODE=0o100644
 
 # The extension root is the canonical production runtime. Derive the executable closure instead of
 # maintaining a second hand-written JS allowlist that can silently omit a newly referenced module.
 FILES=['manifest.json', *sorted(p.name for p in EXT.glob('*.js')), 'README.md']
+
+def canonical_text_bytes(path):
+    # Git checkout policy may materialize CRLF on Windows and LF on Linux. The
+    # release archive owns one physical representation independent of checkout:
+    # UTF-8 with LF line endings for every text member.
+    text=path.read_bytes().decode('utf-8')
+    return text.replace('\r\n','\n').replace('\r','\n').encode('utf-8')
 
 def build_bytes():
     # STORED entries make the complete archive byte-identical across Python/zlib
@@ -14,10 +23,10 @@ def build_bytes():
     out=io.BytesIO()
     with zipfile.ZipFile(out,'w',zipfile.ZIP_STORED) as z:
         for name in FILES:
-            data=(EXT/name).read_bytes()
-            info=zipfile.ZipInfo(name,date_time=(2026,8,8,0,0,0))
+            data=canonical_text_bytes(EXT/name)
+            info=zipfile.ZipInfo(name,date_time=ENTRY_DATE_TIME)
             info.compress_type=zipfile.ZIP_STORED
-            info.external_attr=0o100644<<16
+            info.external_attr=ENTRY_MODE<<16
             z.writestr(info,data,compress_type=zipfile.ZIP_STORED)
     return out.getvalue()
 
@@ -36,14 +45,20 @@ def main():
     out=pathlib.Path(a.output) if a.output else ROOT/'dist'/f'AutoAgree-v{version}.zip'
     sha=build(out)
     with zipfile.ZipFile(out) as z:
-        bad=z.testzip(); names=z.namelist()
-    if bad or names!=FILES: raise SystemExit(f'package verification failed: bad={bad} names={names}')
+        bad=z.testzip(); infos=z.infolist(); names=[info.filename for info in infos]
+    metadata_ok=all(info.compress_type==zipfile.ZIP_STORED and info.date_time==ENTRY_DATE_TIME and info.external_attr==(ENTRY_MODE<<16) for info in infos)
+    if bad or names!=FILES or not metadata_ok: raise SystemExit(f'package verification failed: bad={bad} names={names} metadata_ok={metadata_ok}')
     authority=json.loads(PACKAGE_MANIFEST.read_text(encoding='utf-8'))
     expected={
-        'schemaVersion':1,
+        'schemaVersion':2,
         'version':version,
         'archive':f'AutoAgree-v{version}.zip',
         'compression':'stored',
+        'textEncoding':'utf-8',
+        'textLineEndings':'lf',
+        'entryTimestamp':'2026-08-08T00:00:00Z',
+        'entryMode':'100644',
+        'entries':FILES,
         'sha256':sha,
     }
     if authority != expected:
