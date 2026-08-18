@@ -23,6 +23,7 @@ const dynamicAria = `<!doctype html><meta charset="utf-8">
 
 const customContainer = `<!doctype html><meta charset="utf-8">
 <div id="auth-shell">
+  <header><div><div><div><div><div><span>Sign in to your account</span></div></div></div></div></div></header>
   <section>
     <div><div><div><div><div><span>I agree to the Terms of Service</span></div></div></div></div></div>
     <aside><input id="target-box" type="checkbox" required></aside>
@@ -36,12 +37,22 @@ const deepGenericNegative = `<!doctype html><meta charset="utf-8">
   <aside><input id="generic-box" type="checkbox" required></aside>
 </div>`;
 
+const noAuthProceedNegative = `<!doctype html><meta charset="utf-8">
+<div id="generic-shell">
+  <section>
+    <div><div><div><div><div><span>I agree to the Terms of Service</span></div></div></div></div></div>
+    <aside><input id="generic-box" type="checkbox" required></aside>
+  </section>
+  <footer><div><button id="continue" type="button">Continue</button></div></footer>
+</div>`;
+
 const pages = new Map([
   ['/deep-native-label', deepNativeLabel],
   ['/long-text', longText],
   ['/dynamic-aria', dynamicAria],
   ['/custom-container', customContainer],
-  ['/deep-generic-negative', deepGenericNegative]
+  ['/deep-generic-negative', deepGenericNegative],
+  ['/no-auth-proceed-negative', noAuthProceedNegative]
 ]);
 
 const server = http.createServer((req, res) => {
@@ -97,14 +108,17 @@ async function runPositive(pathname, {pointer = false} = {}) {
   }
 }
 
-async function runNegative(pathname) {
+async function runNegative(pathname, {pointer = false} = {}) {
   const page = await browser.newPage();
   try {
     await page.bringToFront();
     await page.goto(`http://127.0.0.1:${port}${pathname}`, {waitUntil: 'domcontentloaded'});
     await page.bringToFront();
+    await new Promise(resolve => setTimeout(resolve, 250));
+    assert.equal(await page.$eval('#generic-box', input => input.checked), false, `${pathname}: negative control must begin unchecked`);
+    if (pointer) await page.click('#continue');
     await new Promise(resolve => setTimeout(resolve, 700));
-    assert.equal(await page.$eval('#generic-box', input => input.checked), false, `${pathname}: unrelated deep geometry must not gain automated consent authority`);
+    assert.equal(await page.$eval('#generic-box', input => input.checked), false, `${pathname}: insufficient activation evidence must not gain automated consent authority`);
   } finally {
     await page.close();
   }
@@ -116,6 +130,7 @@ try {
   await runPositive('/dynamic-aria');
   await runPositive('/custom-container', {pointer: true});
   await runNegative('/deep-generic-negative');
+  await runNegative('/no-auth-proceed-negative', {pointer: true});
   console.log('e2e-activation-recall: PASS');
 } finally {
   await browser.close();
