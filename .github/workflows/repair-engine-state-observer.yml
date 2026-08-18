@@ -37,3 +37,5 @@ jobs:
           git add extension/engine.js
           git commit -m "fix: observe live candidate state transitions"
           git push origin HEAD:agent/restore-activation-recall
+
+# explicit one-shot trigger
