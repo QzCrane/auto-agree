@@ -9,6 +9,7 @@
   // richer semantic gate. It never clicks, never interprets consent, and never scans unbounded DOM.
   const ATTR = /(?:password|one-time-code|otp|verification|phone|mobile|tel|email|username|user.?name|login|signin|sign-in|signup|sign-up|register|auth|agree|accept|terms?|privacy|agreement|consent|验证码|驗證碼|手机号|手機號|登录|登入|注册|註冊|同意|协议|協議|条款|條款|隐私|隱私)/iu;
   const TEXT = /(?:login|log\s*in|sign\s*in|sign\s*up|register|verification\s*code|agree|accept|terms?(?:\s+of\s+(?:service|use))?|privacy|user\s+agreement|登录|登入|注册|註冊|验证码|驗證碼|同意|接受|协议|協議|条款|條款|隐私|隱私|利用規約|プライバシー|로그인|동의|약관|개인정보|соглас|услов|конфиденц|أوافق|الشروط|الخصوصية)/iu;
+  const PROCEED = /(?:login|log\s*in|sign\s*in|sign\s*up|register|continue|next|proceed|submit|verify|confirm|登录|登入|注册|註冊|继续|繼續|下一步|提交|确认|確認|验证|驗證)/iu;
   const NON_AUTH = /(?:newsletter|subscribe|mailing\s+list|contact\s+us|contact\s+form|site\s+search|feedback|support\s+(?:request|ticket)|订阅资讯|訂閱資訊|邮件订阅|郵件訂閱|联系我们|聯絡我們|站内搜索|站內搜尋|意见反馈|意見反饋)/iu;
   const CONTROL = 'input[type="checkbox"],input[type="radio"],[role="checkbox"],[role="radio"],[role="switch"],[aria-checked]';
   const MAX_DEEP = 4;
@@ -65,8 +66,6 @@
     ].filter(Boolean);
     return take(chunks.join(gap), max);
   }
-
-
 
   function joinNorm(values, max = 480) {
     let out = '';
@@ -184,7 +183,11 @@
   function textControlScope(el) {
     if (!(el instanceof Element)) return null;
     let p = el;
-    for (let depth = 0; depth < 3 && p instanceof Element; depth++, p = p.parentElement) {
+    // This is only an activation trigger, not consent authority. Modern component trees routinely
+    // place legal copy and the visual/native control several wrappers apart, so the Probe may walk
+    // a few more ancestors while retaining a strict fixed bound. Gate/Engine still re-evaluate all
+    // semantics before any action can occur.
+    for (let depth = 0; depth < 8 && p instanceof Element; depth++, p = p.parentElement) {
       try { if (p.querySelector?.(CONTROL)) return p; } catch (_) {}
       if (p.matches?.('label[for]')) {
         const id = p.getAttribute('for');
@@ -279,8 +282,8 @@
     let n, count = 0;
     while (count++ < maxNodes && performance.now() - start < budgetMs && (n = walker.nextNode())) {
       if (n.nodeType === Node.TEXT_NODE) {
-        const data = n.data || '';
-        if (data.length <= 900 && TEXT.test(data)) {
+        const data = norm(n.data || '', 900);
+        if (data && TEXT.test(data)) {
           const p = n.parentElement;
           const scope = p && textControlScope(p);
           if (scope) { requestGate('legal-control-text', p); return true; }
@@ -361,8 +364,8 @@
           const next = nextNode(n, root);
           job.cursorRef = next instanceof Node ? new WeakRef(next) : null;
           if (n.nodeType === Node.TEXT_NODE) {
-            const data = n.data || '';
-            if (data.length <= 900 && TEXT.test(data)) {
+            const data = norm(n.data || '', 900);
+            if (data && TEXT.test(data)) {
               const p = n.parentElement, scope = p && textControlScope(p);
               if (scope) { requestGate('deep-legal-control', p); return; }
             }
@@ -391,6 +394,28 @@
     return false;
   }
 
+  function proceedLike(el) {
+    if (!(el instanceof Element)) return false;
+    let interactive = false;
+    try { interactive = el.matches('button,a[href],[role="button"],input[type="submit"],input[type="button"]'); } catch (_) {}
+    if (!interactive) return false;
+    const value = el instanceof HTMLInputElement ? el.value : '';
+    const hint = joinNorm([ownHint(el), el.textContent, value], 420);
+    return !!hint && PROCEED.test(hint);
+  }
+
+  function scanProceedAncestors(target, initialScope) {
+    if (!proceedLike(target)) return false;
+    let p = initialScope instanceof Element ? initialScope.parentElement : target.parentElement;
+    let depth = 0;
+    while (p instanceof Element && depth++ < 6) {
+      if (scan(p, 72, 0.35)) return true;
+      if (p.matches?.('form,dialog,[role="dialog"],[aria-modal="true"]')) break;
+      p = p.parentElement;
+    }
+    return false;
+  }
+
   function eventProbe(event) {
     if (gateRequested || lifecycle.paused || eventShadow(event)) return;
     const target = event.target instanceof Element ? event.target : null;
@@ -398,7 +423,8 @@
     if (suspicious(target)) requestGate(event.type, target);
     else {
       const scope = localScope(target);
-      if (scope) scan(scope, 64, 0.45);
+      if (scope && scan(scope, 64, 0.45)) return;
+      scanProceedAncestors(target, scope);
     }
   }
 
@@ -408,8 +434,8 @@
     for (const r of records) {
       if (gateRequested) return;
       if (r.type === 'characterData') {
-        const data = r.target?.data || '';
-        if (data.length <= 900 && TEXT.test(data) && r.target.parentElement) scan(localScope(r.target.parentElement) || r.target.parentElement, 56, 0.35);
+        const data = norm(r.target?.data || '', 900);
+        if (data && TEXT.test(data) && r.target.parentElement) scan(localScope(r.target.parentElement) || r.target.parentElement, 56, 0.35);
       } else if (r.type === 'attributes') {
         if (r.target instanceof Element && suspicious(r.target)) return requestGate('attribute', r.target);
       } else if (r.type === 'childList') {
@@ -419,8 +445,8 @@
           const n = nodes[i];
           if (!n) continue;
           if (n.nodeType === Node.TEXT_NODE) {
-            const data = n.data || '';
-            if (data.length <= 900 && TEXT.test(data) && n.parentElement) scan(localScope(n.parentElement) || n.parentElement, 48, 0.3);
+            const data = norm(n.data || '', 900);
+            if (data && TEXT.test(data) && n.parentElement) scan(localScope(n.parentElement) || n.parentElement, 48, 0.3);
           } else if (n.nodeType === Node.ELEMENT_NODE || n.nodeType === Node.DOCUMENT_FRAGMENT_NODE) {
             if (scan(n, 48, 0.3)) return;
           }
@@ -447,7 +473,18 @@
   function startObserver() {
     if (gateRequested || lifecycle.paused) return;
     if (!observer) observer = new MutationObserver(onMutations);
-    try { observer.observe(document, { subtree:true, childList:true, characterData:true, attributes:true, attributeFilter:['type','name','placeholder','autocomplete','role','aria-label','aria-checked'] }); } catch (_) {}
+    try {
+      observer.observe(document, {
+        subtree:true,
+        childList:true,
+        characterData:true,
+        attributes:true,
+        attributeFilter:[
+          'type','name','id','title','placeholder','autocomplete','role','aria-label','aria-checked',
+          'aria-labelledby','aria-describedby','aria-required','data-testid','for'
+        ]
+      });
+    } catch (_) {}
     if (document.documentElement) {
       if (!edgeProbe(document.documentElement)) scan(document.documentElement, 80, 1.0);
     }
