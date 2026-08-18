@@ -131,7 +131,13 @@ The Probe repair keeps fixed limits:
 - existing fixed node/time scan budgets;
 - bounded string sampling rather than whole pathological strings.
 
-This restores recall without granting generic deep geometry a new path to consent authority. Gate, DecisionKernel, Risk Core, Engine, Handover Guard and ActionAuthority remain unchanged by v12.2.
+This restores recall without granting generic deep geometry a new path to consent authority. Gate, DecisionKernel, Risk Core, Handover Guard and ActionAuthority remain unchanged by this part of v12.2; Engine receives only the state-observer repair described below, not a policy change.
+
+### Engine live candidate state transitions
+
+The stricter activation test deliberately begins positive controls disabled so Gate/Engine reachability is observable separately from action. That exposed a second defect: document/Shadow-wide `discoveryObserver` did not subscribe to candidate-state attributes even though `mutationAttributeRelevant()` and CandidateSnapshot already understood them. A disabled candidate could therefore be indexed and rejected correctly, then never re-evaluated after becoming enabled unless it happened to live under a separately registered form/dialog context.
+
+v12.2 aligns the document/Shadow observer with the existing state model by observing `checked`, `required`, `disabled`, `aria-checked`, `aria-required`, `aria-disabled`, `data-state`, and `data-checked`. `tests/engine-state-transition-contract.mjs` locks that attribute set and proves candidate indexing precedes decision rejection, while `e2e-activation-recall.mjs` physically requires `disabled=true → disabled=false → checked=true` on the real unpacked extension. No DecisionKernel acceptance rule or ActionAuthority path changes.
 
 ### Probe/Gate bounded-work pressure
 

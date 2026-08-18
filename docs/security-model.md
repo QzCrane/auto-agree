@@ -41,7 +41,7 @@ The v12.2 repair permits deeper activation only when there is an explicit semant
 
 Generic text/control geometry keeps its previous shallow three-ancestor bound. Real Chrome permanently checks the negative case: remote Terms text plus a semantically neutral required checkbox, with no label/ARIA relation and no proceed interaction, stays unchecked.
 
-This repair does not modify Gate, DecisionKernel, Risk Core, Engine, Handover Guard or ActionAuthority. More Probe recall can therefore load richer analysis, but it cannot by itself mint automated-action authority.
+The Probe repair does not modify Gate, DecisionKernel, Risk Core, Handover Guard or ActionAuthority. More Probe recall can therefore load richer analysis, but it cannot by itself mint automated-action authority. v12.2 separately fixes Engine observation of already-indexed controls whose live checked/required/disabled/ARIA/data state changes; that repair only makes the existing snapshot/policy path run again and does not add a new acceptance or click-authority rule.
 
 ## Consequential-consent boundary
 
