@@ -1,0 +1,48 @@
+name: repair-lock
+
+on:
+  push:
+    branches: [agent/restore-activation-recall]
+
+permissions:
+  contents: write
+
+jobs:
+  repair:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: agent/restore-activation-recall
+          fetch-depth: 0
+      - name: Restore canonical lock and advance only root generation
+        run: |
+          git checkout origin/main -- package-lock.json
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          path = Path('package-lock.json')
+          data = json.loads(path.read_text(encoding='utf-8'))
+          data['version'] = '12.2.0'
+          data['packages']['']['version'] = '12.2.0'
+          path.write_text(json.dumps(data, ensure_ascii=False, indent=2) + '\n', encoding='utf-8')
+          PY
+          node - <<'NODE'
+          const fs = require('fs');
+          const base = JSON.parse(require('child_process').execFileSync('git', ['show', 'origin/main:package-lock.json'], {encoding:'utf8'}));
+          const next = JSON.parse(fs.readFileSync('package-lock.json', 'utf8'));
+          if (next.version !== '12.2.0' || next.packages[''].version !== '12.2.0') throw new Error('root generation not advanced');
+          base.version = '12.2.0';
+          base.packages[''].version = '12.2.0';
+          if (JSON.stringify(base) !== JSON.stringify(next)) throw new Error('lock repair changed dependency semantics');
+          NODE
+      - name: Commit canonical lock only
+        run: |
+          test "$(git diff --name-only)" = "package-lock.json"
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add package-lock.json
+          git commit -m "release: canonicalize 12.2.0 package lock"
+          git push origin HEAD:agent/restore-activation-recall
