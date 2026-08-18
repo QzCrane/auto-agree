@@ -33,7 +33,7 @@ const customContainer = `<!doctype html><meta charset="utf-8">
 const deepGenericNegative = `<!doctype html><meta charset="utf-8">
 <div id="generic-shell">
   <div><div><div><div><div><span>I agree to the Terms of Service</span></div></div></div></div></div>
-  <aside><input id="agree" type="checkbox" required></aside>
+  <aside><input id="generic-box" type="checkbox" required></aside>
 </div>`;
 
 const pages = new Map([
@@ -103,7 +103,7 @@ async function runNegative(pathname) {
     await page.goto(`http://127.0.0.1:${port}${pathname}`, {waitUntil: 'domcontentloaded'});
     await page.bringToFront();
     await new Promise(resolve => setTimeout(resolve, 700));
-    assert.equal(await page.$eval('#agree', input => input.checked), false, `${pathname}: unrelated deep geometry must not gain automated consent authority`);
+    assert.equal(await page.$eval('#generic-box', input => input.checked), false, `${pathname}: unrelated deep geometry must not gain automated consent authority`);
   } finally {
     await page.close();
   }
