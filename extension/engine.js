@@ -1841,7 +1841,7 @@ function enqueueRootBatch(roots, index, urgent) {
         childList: true,
         characterData: true,
         attributes: true,
-        attributeFilter: ['type','role','title','name','placeholder','autocomplete','hidden','class','style','aria-hidden','aria-label','aria-labelledby','aria-describedby']
+        attributeFilter: ['type','role','title','name','placeholder','autocomplete','checked','required','disabled','hidden','class','style','aria-checked','aria-required','aria-disabled','aria-hidden','aria-label','aria-labelledby','aria-describedby','data-state','data-checked']
       });
     } catch (_) { return; }
     queueRoot(root, false);

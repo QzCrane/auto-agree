@@ -42,6 +42,7 @@ From v3 onward, detailed version reports were produced during the corresponding 
 | **v11.0.0** | **[v11.md](v11.md)** | formal generation-coherent release; real v10→v11 transition plus v11→v12 stale-generation probe |
 | **v12.0.0** | **[v12.md](v12.md)** | authority/core convergence, auto-registered deterministic gates, statistical performance, physical v11→v12 transition and v12→v13 stale-generation revocation |
 | **v12.1.0** | **[v12.1.md](v12.1.md)** | precise restart replay, context-index convergence, canonical cross-environment package identity, paired performance and executable exact-head closeout |
+| **v12.2.0** | **[v12.2.md](v12.2.md)** | Probe→Gate activation-recall repair with explicit-label/ARIA/proceed recovery, deep-geometry negative safety discriminator, 20-lane closeout, and a new physical generation |
 
 The pre-v11 hardening records intentionally retain their historical `10.0.0` runtime context. The formal v11 report aggregates those red/green findings into the v11 release baseline. The v12 report does **not** rewrite v11 history; it records the later falsification of one overbroad v11 claim (a RuntimeKernel unit still hardcoded `11.0.0`) and the stronger candidate-relative version contract that replaced it.
 
@@ -61,5 +62,6 @@ The pre-v11 hardening records intentionally retain their historical `10.0.0` run
 12. Test existence is not test execution. Current deterministic gates self-register through `tests/run-core.mjs`, and registration itself is machine-tested.
 13. Performance samples from hosted runners are distributions with environment variance, not deterministic cross-machine microbenchmarks. Repeated raw evidence and the stable benchmark identity outrank one isolated wall-clock number.
 14. Release-generation claims must cover manifest/package/package-lock/RuntimeKernel coherence and current-generation test derivation; a prior release report cannot waive a newly discovered hardcoded generation assumption.
+15. Downstream Engine correctness is not evidence that Probe activation recall is correct. Activation boundaries that can suppress the richer runtime require their own positive/negative real-browser discriminators.
 
 For the high-level evolution map, see [`../history.md`](../history.md). For current architecture, see [`../architecture.md`](../architecture.md).

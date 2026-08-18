@@ -4,7 +4,7 @@
   // This is the single birth-generation literal for isolated-world runtime modules. Other
   // production modules snapshot this value when they initialize instead of carrying independent
   // release strings. A stale execution world therefore retains the generation it was born with.
-  const VERSION = '12.1.0';
+  const VERSION = '12.2.0';
   if (globalThis.__AUTO_AGREE_RUNTIME_KERNEL__?.version === VERSION) return;
 
   function objectScope(value) {

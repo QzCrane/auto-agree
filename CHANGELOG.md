@@ -1,5 +1,15 @@
 # Changelog
 
+## 12.2.0 — 2026-08-18
+
+- Repaired a coverage gap between the always-present Probe and the richer Gate/Engine path: the existing 300-case structural fuzz initialized Engine before mounting its corpus, so it could remain green while real pages failed to activate the richer runtime at all.
+- Restored bounded activation recall for deep native-label relationships, long legal text through the existing head/center/tail sampler, SPA-style late `aria-labelledby`/`aria-describedby` bindings, and trusted proceed interactions only when the bounded region co-locates access/auth + legal + consent-control evidence.
+- Kept generic geometric inference deliberately narrow: deeper recall requires an explicit native label/ARIA relationship or a bounded user proceed signal; a new real-Chrome negative discriminator requires unrelated deep legal text plus a semantically neutral required checkbox to remain zero-click.
+- Added `e2e-activation-recall.mjs` to hosted unpacked-Chrome CI and the executable exact-head closeout policy, increasing formal closeout from 19 to 20 lanes while keeping two same-head attempts.
+- Fixed a second real-browser false negative exposed only after activation was isolated: document/Shadow-wide Engine discovery did not observe `checked`/`required`/`disabled`/ARIA/data state changes, so an indexed candidate that became actionable later could remain permanently stale. The discovery observer now watches the same candidate-state attributes used by snapshot/relevance logic, with a dedicated auto-registered contract.
+- Advanced the physical runtime generation to 12.2.0 so surviving 12.1 isolated worlds cannot inherit current-generation action authority after the behavior change. Package/package-lock/manifest/RuntimeKernel coherence remains machine-enforced.
+- Preserved permissions and the consequential-consent boundary: no new permission, network client, telemetry, remote code, debugger authority, or DecisionKernel/ActionAuthority widening.
+
 ## 12.1.0 — 2026-08-13
 
 - Made Worker update recovery replay only the durable unresolved tab set, classify permanently inaccessible browser pages as terminal, and stop successful tabs from being reinjected on every MV3 restart.

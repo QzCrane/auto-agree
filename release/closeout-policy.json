@@ -24,6 +24,11 @@
       "args": ["tests/e2e-extension.mjs", "--profile"]
     },
     {
+      "id": "activation-recall",
+      "command": "node",
+      "args": ["tests/e2e-activation-recall.mjs"]
+    },
+    {
       "id": "probe-gate-pressure",
       "command": "node",
       "args": ["tests/e2e-tier-overflow.mjs"]

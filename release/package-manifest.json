@@ -1,7 +1,7 @@
 {
   "schemaVersion": 3,
-  "version": "12.1.0",
-  "archive": "AutoAgree-v12.1.0.zip",
+  "version": "12.2.0",
+  "archive": "AutoAgree-v12.2.0.zip",
   "compression": "stored",
   "textEncoding": "utf-8",
   "textLineEndings": "lf",
@@ -26,5 +26,5 @@
     "worker.js",
     "README.md"
   ],
-  "sha256": "2e9b53c255d570f33b3515677d2d45bd30f35a8b093eb677d258c619f1a8d82d"
+  "sha256": "fe4fe1221509c09a1d4071686e689a679603e829e702056325d327a743199c7b"
 }

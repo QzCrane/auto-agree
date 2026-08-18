@@ -4,20 +4,19 @@ This directory is the only load-unpacked production root.
 
 Load it from `chrome://extensions` → Developer mode → Load unpacked.
 
-Runtime order:
+Runtime order for the current 12.2 generation:
 
-1. `generation-lease.js` and then `bootstrap.js` are declared by the manifest in all matching frames. The lease is isolated-world local and removes that generation's programmatic `.click()` authority when its Runtime is invalidated or version-mismatched; Probe itself never clicks.
-2. `worker.js` rejects explicitly inactive document lifecycles and schedules `generation-lease.js` + `semantic-core.js` + `gate.js` after Probe evidence.
-3. If Gate accepts, Worker schedules `generation-lease.js` + `semantic-core.js` + `handover-guard.js` + `risk-core.js` + `engine.js` with bounded global/per-tab injection concurrency, queue aging, stale eviction and Engine admission priority.
-4. Probe/Gate handoff is retryable across unexpected Worker termination; profile operations are idempotently retryable and storage origin is derived from `MessageSender`, never from content-provided origin text.
-5. On extension update/reload, Worker uses a persisted session marker and high-priority bounded `tabs.query()` + `scripting.executeScript()` rehydration. It first installs `generation-lease.js` + `semantic-core.js` + `handover-guard.js` into accessible frames; only after protection resolves does it inject `bootstrap.js`.
-6. The cooperative generation lease protects v11→future stale Auto Agree `.click()` calls. The handover guard remains the compatibility firewall for historical non-cooperative generations. Trusted browser input is not converted into general script authority.
-7. Site-learning persistence remains bounded: 256 origins, 8 flows/origin, 180-day TTL, 32-entry Worker hot LRU, session/local storage layers, fingerprint+exact-locator flow identity, serialized writes and propagated persistence errors.
-8. Probe/Gate/Engine discovery queues keep hard representation caps. Connected correctness work is preserved through FIFO/liveness semantics or weak final-state recovery; no queue repair uses an unbounded synchronous document scan.
-9. `tests/version-contract.mjs` requires manifest/package plus all eight production JavaScript generation sentinels to describe one coherent runtime generation.
+1. The manifest installs `runtime-kernel.js` → `generation-lease.js` → `bootstrap.js` at `document_start` in every matching frame. RuntimeKernel owns the isolated-world birth generation and bounded lifecycle/work primitives; Generation Lease revokes stale Auto Agree `.click()` authority; Probe only decides whether richer analysis is worth loading.
+2. Probe activation is deliberately broader than click authority but remains bounded. It may escalate explicit native-label/ARIA legal relationships, sampled long legal text, or credential evidence. A trusted proceed-like interaction can widen only local inspection and only when the bounded region co-locates access/auth semantics + legal semantics + a consent control; Continue by itself is never activation authority. Generic deep geometry remains narrow and cannot by itself create a rich-runtime handoff.
+3. Worker validates the sender/document lifecycle and injects `runtime-kernel.js` → `generation-lease.js` → `semantic-core.js` → `gate.js`. Gate performs bounded evidence/co-occurrence analysis and still cannot click.
+4. If Gate activates Engine, Worker injects the Engine closure in dependency order: RuntimeKernel, Generation Lease, Semantic Core, DomCore, Handover Guard, ActionAuthority, DecisionKernel, ProfileCore, Risk Core, then Engine.
+5. DecisionKernel is the sole severity/acceptance policy. Risk Core classifies optional/consequential/attestation semantics. ProfileCore is acceleration only. Engine extracts current browser evidence and may reach ActionAuthority only after policy accepts the live candidate.
+6. ActionAuthority is the sole automated-action protocol: current Generation Lease → current Handover Guard authorization → one `.click()` attempt. Engine independently verifies observable success; a dispatched attempt is not treated as success by itself.
+7. On extension update/reload, Worker persists unresolved rehydration work and installs current RuntimeKernel/Lease/Semantic Core/DomCore/Handover Guard protection into accessible surviving pages before reintroducing Probe. Terminal inaccessible browser pages are retired; transient failures remain durable.
+8. Probe/Gate/Engine queues keep hard representation caps. Connected correctness work survives pressure through FIFO/liveness semantics or weak final-state recovery; no repair falls back to an unbounded synchronous document scan.
+9. Site-learning persistence remains bounded: 256 origins, 8 flows/origin, 180-day TTL, 32-entry Worker hot LRU, session/local storage layers, exact flow identity, serialized writes, and propagated persistence errors. Cached evidence never becomes click authority.
+10. `tests/version-contract.mjs` binds manifest/package/package-lock/RuntimeKernel to one runtime generation. Real Chrome release gates separately exercise activation recall, lifecycle/pressure, stale-generation revocation, update transition, action authority, structural fuzz, and paired performance.
 
-The v11 release is physically tested as a non-reloaded **v10→v11** transition. A separate manifest-only **v11→v12** probe verifies that a surviving stale v11 isolated world loses automated and direct `.click()` authority while trusted browser input remains functional.
-
-The deterministic package tool derives its JavaScript payload from the complete production `extension/*.js` set so a newly referenced runtime module cannot be absent from the ZIP while the load-unpacked tree still works.
+The deterministic package tool derives its JavaScript payload from the complete production `extension/*.js` set, canonicalizes text to UTF-8/LF with fixed ZIP metadata, and includes this README. Package identity is therefore a function of the actual load-unpacked runtime closure rather than a hand-maintained subset.
 
 Do not add historical implementations to this directory. Historical evidence belongs in `docs/verification/`; obsolete source remains available through Git history.

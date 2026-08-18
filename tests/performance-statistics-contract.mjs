@@ -27,6 +27,8 @@ for(const workload of ['positiveTailLogin','negativeIdle','negativeMutationChurn
   assert.match(paired,new RegExp(`${workload}: \\{wallMs:`),`${workload} must own an absolute safety ceiling`);
 }
 
+const exactHeadCheckout="ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}";
+assert.equal(ci.split(exactHeadCheckout).length-1,3,'all hosted evidence jobs must checkout the exact PR head instead of GitHub\'s synthetic merge ref');
 assert.match(ci,/\n  performance:\n/,'paired profiling must run as an independent parallel CI job');
 assert.match(ci,/AUTO_AGREE_PERF_REPETITIONS:\s*'5'/,'canonical CI must collect five interleaved samples per variant');
 assert.match(ci,/github\.event\.pull_request\.base\.sha \|\| github\.event\.before/,'CI must bind the comparison to the exact PR base or pre-push main');
