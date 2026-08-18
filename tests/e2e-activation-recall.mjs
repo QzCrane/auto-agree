@@ -11,21 +11,21 @@ const VERSION = JSON.parse(fs.readFileSync(path.join(EXTENSION, 'manifest.json')
 const HEADED = process.env.AUTO_AGREE_HEADED === '1';
 
 const deepNativeLabel = `<!doctype html><meta charset="utf-8">
-<label id="legal-row"><div><div><div><div><div><span id="legal">I agree to the Terms of Service</span></div></div></div></div></div><aside><input id="agree" type="checkbox" required></aside></label>`;
+<label id="legal-row"><div><div><div><div><div><span id="legal">I agree to the Terms of Service</span></div></div></div></div></div><aside><input id="target-box" type="checkbox" required></aside></label>`;
 
 const longText = `<!doctype html><meta charset="utf-8">
-<label><input id="agree" type="checkbox" required><span id="legal">I agree to the Terms of Service ${'ordinary filler '.repeat(90)}</span></label>`;
+<label><input id="target-box" type="checkbox" required><span id="legal">I agree to the Terms of Service ${'ordinary filler '.repeat(90)}</span></label>`;
 
 const dynamicAria = `<!doctype html><meta charset="utf-8">
 <div><div><div><div><div><div><div><div><div><div><span id="legal-copy">I agree to the Terms of Service</span></div></div></div></div></div></div></div></div></div></div>
-<div><input id="agree" type="checkbox" required></div>
-<script>setTimeout(() => document.querySelector('#agree').setAttribute('aria-labelledby', 'legal-copy'), 180);</script>`;
+<div><input id="target-box" type="checkbox" required></div>
+<script>setTimeout(() => document.querySelector('#target-box').setAttribute('aria-labelledby', 'legal-copy'), 180);</script>`;
 
 const customContainer = `<!doctype html><meta charset="utf-8">
 <div id="auth-shell">
   <section>
     <div><div><div><div><div><span>I agree to the Terms of Service</span></div></div></div></div></div>
-    <aside><input id="agree" type="checkbox" required></aside>
+    <aside><input id="target-box" type="checkbox" required></aside>
   </section>
   <footer><div><button id="continue" type="button">Continue</button></div></footer>
 </div>`;
@@ -64,12 +64,12 @@ const browser = await puppeteer.launch(options);
 
 async function waitChecked(page, label) {
   try {
-    await page.waitForFunction(() => document.querySelector('#agree')?.checked === true, {timeout: 4500});
+    await page.waitForFunction(() => document.querySelector('#target-box')?.checked === true, {timeout: 4500});
   } catch (error) {
     const worlds = await extensionWorldSentinels(page);
     const state = await page.evaluate(() => ({
-      checked: document.querySelector('#agree')?.checked,
-      labelledby: document.querySelector('#agree')?.getAttribute('aria-labelledby'),
+      checked: document.querySelector('#target-box')?.checked,
+      labelledby: document.querySelector('#target-box')?.getAttribute('aria-labelledby'),
       visibility: document.visibilityState,
       readyState: document.readyState
     }));
@@ -88,6 +88,7 @@ async function runPositive(pathname, {pointer = false} = {}) {
     await page.bringToFront();
     if (pointer) {
       await new Promise(resolve => setTimeout(resolve, 250));
+      assert.equal(await page.$eval('#target-box', input => input.checked), false, `${pathname}: proceed path must not activate before trusted intent`);
       await page.click('#continue');
     }
     await waitChecked(page, pathname);
