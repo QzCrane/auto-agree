@@ -16,7 +16,7 @@ It refuses marketing, cookies, remember-me, auto-renewal, payment/debit authoriz
 
 The decision is based on **what action the user would authorize**, not what industry the site belongs to. Language support is fail-closed: every routine-supported language family is paired with native-language optional, consequential, attestation and high-consequence suppressors.
 
-## Current architecture (v12.1)
+## Current architecture (v12.2)
 
 ```mermaid
 flowchart LR
@@ -24,7 +24,7 @@ flowchart LR
   RK --> G[Semantic Gate]
   RK --> E[Engine]
   L[Generation Lease] --> P
-  P -->|auth/legal co-occurrence| G
+  P -->|bounded activation evidence| G
   SC[Semantic Core] --> G
   G -->|activation evidence| W[MV3 Worker]
   W -->|Engine-capable isolated world| E
@@ -45,7 +45,7 @@ The modules are deliberately separated by authority:
 
 - **RuntimeKernel** owns one isolated-world birth generation, lifecycle epochs, bounded FIFO admission, live-age refresh and weak recovery primitives.
 - **Generation Lease** owns cooperative stale-generation physical revocation of Auto Agree's isolated-world `HTMLElement.prototype.click`.
-- **Probe** is always present but never decides consent.
+- **Probe** is always present but never decides consent. v12.2 gives its activation boundary an independent real-Chrome contract: explicit deep native-label/ARIA relations and bounded proceed intent can escalate richer analysis, while generic deep geometry remains narrow.
 - **Semantic Core** owns bounded legal/assent normalization shared by Gate/Engine/Guard.
 - **Gate** decides only whether richer code is worth injecting.
 - **DomCore** owns two topology-only primitives (`composedParent`, root-scoped IDREF lookup); it is forbidden from becoming a text scanner or policy layer.
@@ -126,14 +126,16 @@ python tools/package_extension.py --check
 The current CI and local closeout policy have **three independent evidence classes**:
 
 1. **core** — `tests/run-core.mjs` automatically discovers every deterministic root `tests/*.mjs` gate except `e2e-*` and itself, executes each in a fresh Node process, then runs TypeScript and deterministic package verification;
-2. **unpacked-e2e** — real headed Chrome for Testing with the actual unpacked MV3 extension, Worker, dynamic injection, lifecycle/queue/Shadow/authority/update discriminators;
+2. **unpacked-e2e** — real headed Chrome for Testing with the actual unpacked MV3 extension, Worker, dynamic injection, activation-recall positive/negative cases, lifecycle/queue/Shadow/authority/update discriminators;
 3. **performance** — an interleaved exact-base/exact-head real-Chrome matrix covering positive-tail, negative-idle, mutation-churn, hidden-page and multi-tab scheduler behavior, with raw samples, median/p90 ratios and absolute ceilings.
 
-The current **12.1.0** production package identity is owned by [`release/package-manifest.json`](release/package-manifest.json):
+The executable closeout policy has **20 lanes** and requires two attempts on one exact head. Activation recall is a first-class lane rather than being inferred from downstream Engine structural tests.
+
+The current **12.2.0** production package identity is owned by [`release/package-manifest.json`](release/package-manifest.json):
 
 ```text
-AutoAgree-v12.1.0.zip
-sha256=2e9b53c255d570f33b3515677d2d45bd30f35a8b093eb677d258c619f1a8d82d
+AutoAgree-v12.2.0.zip
+sha256=0f0d4b5e2991546e2c0217a04b692d9e1141f4c734afaa55390a82db7be264dd
 compression=stored
 textEncoding=utf-8
 textLineEndings=lf
@@ -144,7 +146,7 @@ entryCreatorSystem=unix
 
 Formal closeout is executable rather than prose-only: [`release/closeout-policy.json`](release/closeout-policy.json) defines the lanes and two required same-head attempts; `npm run closeout:evidence` records exact base/head/tree, tool and Chrome identities, lane output digests, package authority and an explicitly sourced hosted-runner state; `npm run closeout:verify` validates both receipts; and `npm run closeout:merge` compares the PR head before issuing the squash merge, then reads back PR state, remote main, exact tree parity and remote head-ref deletion without switching the local worktree.
 
-The following v12 measurements remain historical evidence for the architecture baseline; they are not the identity or performance protocol of the current 12.1 package.
+The following v12 measurements remain historical evidence for the architecture baseline; they are not the identity or performance protocol of the current 12.2 package.
 
 The v12 release candidate physically proved:
 
@@ -160,7 +162,7 @@ The v12 release candidate physically proved:
 
 Hosted GitHub runners exhibit measurable execution-regime variance, so one CI profile is not treated as a deterministic cross-machine microbenchmark and does not justify speculative product optimization by itself.
 
-Current closure protocol: [v12.1 verification report](docs/verification/v12.1.md). Historical baseline evidence: [v12 verification report](docs/verification/v12.md).
+Current closure protocol: [v12.2 verification report](docs/verification/v12.2.md). Historical architecture baseline evidence: [v12 verification report](docs/verification/v12.md).
 
 ## Site learning
 
@@ -202,5 +204,6 @@ No `debugger`, cookies, history, `webRequest`, downloads, proxy, clipboard, `nat
 10. The packaged ZIP must contain the same executable closure as `extension/`.
 11. Deterministic tests self-register; adding a new root non-`e2e-*` gate must not require a second manual package-script edit.
 12. A release head is mergeable only after exact-head core/full-Chrome/performance success and same-SHA rerun evidence.
+13. Downstream Engine correctness cannot stand in for Probe activation recall; activation boundaries require independent browser evidence.
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) and [CHANGELOG.md](CHANGELOG.md).
