@@ -9,6 +9,8 @@
   // richer semantic gate. It never clicks, never interprets consent, and never scans unbounded DOM.
   const ATTR = /(?:password|one-time-code|otp|verification|phone|mobile|tel|email|username|user.?name|login|signin|sign-in|signup|sign-up|register|auth|agree|accept|terms?|privacy|agreement|consent|验证码|驗證碼|手机号|手機號|登录|登入|注册|註冊|同意|协议|協議|条款|條款|隐私|隱私)/iu;
   const TEXT = /(?:login|log\s*in|sign\s*in|sign\s*up|register|verification\s*code|agree|accept|terms?(?:\s+of\s+(?:service|use))?|privacy|user\s+agreement|登录|登入|注册|註冊|验证码|驗證碼|同意|接受|协议|協議|条款|條款|隐私|隱私|利用規約|プライバシー|로그인|동의|약관|개인정보|соглас|услов|конфиденц|أوافق|الشروط|الخصوصية)/iu;
+  const AUTH_CONTEXT = /(?:login|log\s*in|sign\s*in|sign\s*up|register|verification\s*code|验证码|驗證碼|登录|登入|注册|註冊)/iu;
+  const LEGAL_CONTEXT = /(?:agree|accept|terms?(?:\s+of\s+(?:service|use))?|privacy|user\s+agreement|同意|接受|协议|協議|条款|條款|隐私|隱私|利用規約|プライバシー|동의|약관|개인정보|соглас|услов|конфиденц|أوافق|الشروط|الخصوصية)/iu;
   const PROCEED = /(?:login|log\s*in|sign\s*in|sign\s*up|register|continue|next|proceed|submit|verify|confirm|登录|登入|注册|註冊|继续|繼續|下一步|提交|确认|確認|验证|驗證)/iu;
   const NON_AUTH = /(?:newsletter|subscribe|mailing\s+list|contact\s+us|contact\s+form|site\s+search|feedback|support\s+(?:request|ticket)|订阅资讯|訂閱資訊|邮件订阅|郵件訂閱|联系我们|聯絡我們|站内搜索|站內搜尋|意见反馈|意見反饋)/iu;
   const CONTROL = 'input[type="checkbox"],input[type="radio"],[role="checkbox"],[role="radio"],[role="switch"],[aria-checked]';
@@ -205,7 +207,7 @@
     if (explicit) return explicit;
     let p = el;
     // Generic geometry remains deliberately narrow. Deeper activation is allowed only through an
-    // explicit native label relation above, a live ARIA relation, or a bounded proceed interaction.
+    // explicit native label relation above, a live ARIA relation, or a bounded access/proceed proof.
     for (let depth = 0; depth < 3 && p instanceof Element; depth++, p = p.parentElement) {
       try { if (p.querySelector?.(CONTROL)) return p; } catch (_) {}
       if (p.matches?.('label[for]')) {
@@ -229,7 +231,7 @@
     if (credentialInput(el)) {
       const scope = localScope(el);
       const text = directText(scope, 44, 520);
-      if (NON_AUTH.test(text) && !/(?:login|log\s*in|sign\s*in|sign\s*up|登录|登入|注册|註冊|验证码|驗證碼)/iu.test(text)) return false;
+      if (NON_AUTH.test(text) && !AUTH_CONTEXT.test(text)) return false;
       return true;
     }
     const own = ownHint(el);
@@ -423,12 +425,41 @@
     return !!hint && PROCEED.test(hint);
   }
 
+  function proceedScopeEvidence(root, seed, maxNodes = 72, budgetMs = 0.45) {
+    if (!(root instanceof Element)) return false;
+    const walker = document.createTreeWalker(root, NodeFilter.SHOW_ELEMENT | NodeFilter.SHOW_TEXT);
+    const start = performance.now();
+    let auth = false, legal = false, control = false, n, count = 0;
+    while (count++ < maxNodes && performance.now() - start < budgetMs && (n = walker.nextNode())) {
+      if (n.nodeType === Node.TEXT_NODE) {
+        const data = norm(n.data || '', 420);
+        if (data) {
+          if (!auth && AUTH_CONTEXT.test(data)) auth = true;
+          if (!legal && LEGAL_CONTEXT.test(data)) legal = true;
+        }
+      } else if (n instanceof Element) {
+        if (!control && checkboxLike(n)) control = true;
+        if (!auth && (strongInput(n) || credentialInput(n))) auth = true;
+        const hint = ownHint(n);
+        if (hint) {
+          if (!auth && AUTH_CONTEXT.test(hint)) auth = true;
+          if (!legal && LEGAL_CONTEXT.test(hint)) legal = true;
+        }
+      }
+      if (auth && legal && control) {
+        requestGate('proceed-access-context', seed);
+        return true;
+      }
+    }
+    return false;
+  }
+
   function scanProceedAncestors(target, initialScope) {
     if (!proceedLike(target)) return false;
     let p = initialScope instanceof Element ? initialScope.parentElement : target.parentElement;
     let depth = 0;
     while (p instanceof Element && depth++ < 6) {
-      if (scan(p, 72, 0.35)) return true;
+      if (proceedScopeEvidence(p, target)) return true;
       if (p.matches?.('form,dialog,[role="dialog"],[aria-modal="true"]')) break;
       p = p.parentElement;
     }
