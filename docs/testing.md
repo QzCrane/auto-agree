@@ -62,7 +62,7 @@ The failed first v12 cut (#52) is permanent negative evidence: it changed Runtim
 
 ```text
 AutoAgree-v12.2.0.zip
-sha256=0f0d4b5e2991546e2c0217a04b692d9e1141f4c734afaa55390a82db7be264dd
+sha256=1478d808e277f6c687f719bc7185ff1398b4f6199450f988eda4b03ad3d4b601
 compression=stored
 textEncoding=utf-8
 textLineEndings=lf
@@ -117,9 +117,9 @@ Positive cases require `checked=true` for:
 1. deeply nested legal text/control joined by an explicit native `<label>` relation;
 2. a legal text node longer than the former 900-character direct cutoff, processed through bounded head/center/tail sampling;
 3. a late SPA `aria-labelledby` relation whose legal text is otherwise geometrically remote;
-4. a custom non-form/non-dialog access shell after a trusted proceed-like `Continue` interaction.
+4. a custom non-form/non-dialog access shell after a trusted `Continue` interaction where the bounded ancestor region co-locates access/auth semantics + legal semantics + a consent control.
 
-The negative case contains geometrically remote Terms text and a semantically neutral required `#generic-box` with no label/ARIA relation and no proceed interaction; it must remain `checked=false`.
+Two negative cases are permanent: geometrically remote Terms text plus a semantically neutral required `#generic-box` with no label/ARIA relation must not even activate Gate; and Terms + required checkbox + trusted `Continue` still must not activate Gate or click when the bounded region lacks access/auth semantics.
 
 The negative deliberately does **not** use `id="agree"`: an earlier draft did, and that was rejected because the ID itself is semantic evidence rather than a pure geometry test.
 
@@ -127,7 +127,7 @@ The Probe repair keeps fixed limits:
 
 - explicit native-label ancestry: at most 8 ancestors;
 - generic text/control geometry: existing shallow 3-ancestor bound;
-- proceed-intent ancestry: at most 6 ancestors;
+- proceed-intent ancestry: at most 6 ancestors, and activation requires access/auth + legal + consent-control co-occurrence in the bounded region;
 - existing fixed node/time scan budgets;
 - bounded string sampling rather than whole pathological strings.
 

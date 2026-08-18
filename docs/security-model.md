@@ -216,7 +216,7 @@ The current package identity is machine-owned by `release/package-manifest.json`
 
 ```text
 AutoAgree-v12.2.0.zip
-sha256=0f0d4b5e2991546e2c0217a04b692d9e1141f4c734afaa55390a82db7be264dd
+sha256=1478d808e277f6c687f719bc7185ff1398b4f6199450f988eda4b03ad3d4b601
 compression=stored
 textEncoding=utf-8
 textLineEndings=lf

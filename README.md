@@ -45,7 +45,7 @@ The modules are deliberately separated by authority:
 
 - **RuntimeKernel** owns one isolated-world birth generation, lifecycle epochs, bounded FIFO admission, live-age refresh and weak recovery primitives.
 - **Generation Lease** owns cooperative stale-generation physical revocation of Auto Agree's isolated-world `HTMLElement.prototype.click`.
-- **Probe** is always present but never decides consent. v12.2 gives its activation boundary an independent real-Chrome contract: explicit deep native-label/ARIA relations and bounded proceed intent can escalate richer analysis, while generic deep geometry remains narrow.
+- **Probe** is always present but never decides consent. v12.2 gives its activation boundary an independent real-Chrome contract: explicit deep native-label/ARIA relations can escalate richer analysis; a trusted proceed-like interaction can widen only local inspection when the bounded region co-locates access/auth semantics + legal semantics + a consent control. Generic deep geometry and Continue alone remain insufficient.
 - **Semantic Core** owns bounded legal/assent normalization shared by Gate/Engine/Guard.
 - **Gate** decides only whether richer code is worth injecting.
 - **DomCore** owns two topology-only primitives (`composedParent`, root-scoped IDREF lookup); it is forbidden from becoming a text scanner or policy layer.
@@ -135,7 +135,7 @@ The current **12.2.0** production package identity is owned by [`release/package
 
 ```text
 AutoAgree-v12.2.0.zip
-sha256=0f0d4b5e2991546e2c0217a04b692d9e1141f4c734afaa55390a82db7be264dd
+sha256=1478d808e277f6c687f719bc7185ff1398b4f6199450f988eda4b03ad3d4b601
 compression=stored
 textEncoding=utf-8
 textLineEndings=lf
