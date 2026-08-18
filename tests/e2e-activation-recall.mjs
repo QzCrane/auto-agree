@@ -11,14 +11,14 @@ const VERSION = JSON.parse(fs.readFileSync(path.join(EXTENSION, 'manifest.json')
 const HEADED = process.env.AUTO_AGREE_HEADED === '1';
 
 const deepNativeLabel = `<!doctype html><meta charset="utf-8">
-<label id="legal-row"><div><div><div><div><div><span id="legal">I agree to the Terms of Service</span></div></div></div></div></div><aside><input id="target-box" type="checkbox" required></aside></label>`;
+<label id="legal-row"><div><div><div><div><div><span id="legal">I agree to the Terms of Service</span></div></div></div></div></div><aside><input id="target-box" type="checkbox" required disabled></aside></label>`;
 
 const longText = `<!doctype html><meta charset="utf-8">
-<label><input id="target-box" type="checkbox" required><span id="legal">I agree to the Terms of Service ${'ordinary filler '.repeat(90)}</span></label>`;
+<label><input id="target-box" type="checkbox" required disabled><span id="legal">I agree to the Terms of Service ${'ordinary filler '.repeat(90)}</span></label>`;
 
 const dynamicAria = `<!doctype html><meta charset="utf-8">
 <div><div><div><div><div><div><div><div><div><div><span id="legal-copy">I agree to the Terms of Service</span></div></div></div></div></div></div></div></div></div></div>
-<div><input id="target-box" type="checkbox" required></div>
+<div><input id="target-box" type="checkbox" required disabled></div>
 <script>setTimeout(() => document.querySelector('#target-box').setAttribute('aria-labelledby', 'legal-copy'), 180);</script>`;
 
 const customContainer = `<!doctype html><meta charset="utf-8">
@@ -26,7 +26,7 @@ const customContainer = `<!doctype html><meta charset="utf-8">
   <header><div><div><div><div><div><span>Sign in to your account</span></div></div></div></div></div></header>
   <section>
     <div><div><div><div><div><span>I agree to the Terms of Service</span></div></div></div></div></div>
-    <aside><input id="target-box" type="checkbox" required></aside>
+    <aside><input id="target-box" type="checkbox" required disabled></aside>
   </section>
   <footer><div><button id="continue" type="button">Continue</button></div></footer>
 </div>`;
@@ -73,22 +73,35 @@ const options = {
 if (process.env.CHROME_PATH) options.executablePath = process.env.CHROME_PATH;
 const browser = await puppeteer.launch(options);
 
+async function worlds(page) {
+  return extensionWorldSentinels(page);
+}
+
+async function waitForEngine(page, label, timeout = 4500) {
+  const deadline = Date.now() + timeout;
+  while (Date.now() < deadline) {
+    const current = await worlds(page);
+    if (current.some(world => world.gate === VERSION && world.engine === VERSION)) return current;
+    await new Promise(resolve => setTimeout(resolve, 50));
+  }
+  throw new Error(`${label}: Probe/Gate did not reach Engine within ${timeout}ms`);
+}
+
 async function waitChecked(page, label) {
   try {
     await page.waitForFunction(() => document.querySelector('#target-box')?.checked === true, {timeout: 4500});
   } catch (error) {
-    const worlds = await extensionWorldSentinels(page);
+    const current = await worlds(page);
     const state = await page.evaluate(() => ({
       checked: document.querySelector('#target-box')?.checked,
+      disabled: document.querySelector('#target-box')?.disabled,
       labelledby: document.querySelector('#target-box')?.getAttribute('aria-labelledby'),
       visibility: document.visibilityState,
       readyState: document.readyState
     }));
-    console.error('activation-recall-diagnostic:', JSON.stringify({label, state, worlds}));
+    console.error('activation-recall-diagnostic:', JSON.stringify({label, state, worlds: current}));
     throw error;
   }
-  const worlds = await extensionWorldSentinels(page);
-  assert.ok(worlds.some(world => world.gate === VERSION && world.engine === VERSION), `${label}: Gate and Engine must both be reached`);
 }
 
 async function runPositive(pathname, {pointer = false} = {}) {
@@ -99,10 +112,15 @@ async function runPositive(pathname, {pointer = false} = {}) {
     await page.bringToFront();
     if (pointer) {
       await new Promise(resolve => setTimeout(resolve, 250));
-      assert.equal(await page.$eval('#target-box', input => input.checked), false, `${pathname}: proceed path must not activate before trusted intent`);
+      assert.equal(await page.$eval('#target-box', input => input.checked), false, `${pathname}: proceed path must not act before trusted intent`);
+      assert.equal((await worlds(page)).some(world => world.gate === VERSION), false, `${pathname}: proceed path must not activate Gate before trusted intent`);
       await page.click('#continue');
     }
+    await waitForEngine(page, pathname);
+    assert.deepEqual(await page.$eval('#target-box', input => ({checked: input.checked, disabled: input.disabled})), {checked: false, disabled: true}, `${pathname}: activation must be observable independently of action`);
+    await page.$eval('#target-box', input => { input.disabled = false; });
     await waitChecked(page, pathname);
+    assert.equal((await worlds(page)).some(world => world.gate === VERSION && world.engine === VERSION), true, `${pathname}: current Gate/Engine must remain observable after action`);
   } finally {
     await page.close();
   }
@@ -116,9 +134,11 @@ async function runNegative(pathname, {pointer = false} = {}) {
     await page.bringToFront();
     await new Promise(resolve => setTimeout(resolve, 250));
     assert.equal(await page.$eval('#generic-box', input => input.checked), false, `${pathname}: negative control must begin unchecked`);
+    assert.equal((await worlds(page)).some(world => world.gate === VERSION), false, `${pathname}: insufficient evidence must not pre-activate Gate`);
     if (pointer) await page.click('#continue');
     await new Promise(resolve => setTimeout(resolve, 700));
-    assert.equal(await page.$eval('#generic-box', input => input.checked), false, `${pathname}: insufficient activation evidence must not gain automated consent authority`);
+    assert.equal(await page.$eval('#generic-box', input => input.checked), false, `${pathname}: insufficient evidence must not gain automated consent authority`);
+    assert.equal((await worlds(page)).some(world => world.gate === VERSION), false, `${pathname}: insufficient evidence must not activate Gate`);
   } finally {
     await page.close();
   }
