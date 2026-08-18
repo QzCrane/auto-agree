@@ -26,7 +26,7 @@ A second rule is explicit in v12.2: **downstream Engine correctness does not pro
 
 `tests/core-runner-contract.mjs` tests the registration mechanism itself. This was added after audit proved `tests/classless-decision.mjs` existed but was omitted from the old manual test command; prior `npm test` green runs therefore did not execute its 6,000-case property gate.
 
-The current deterministic suite auto-discovers **29 gates**. Representative executable evidence includes:
+The current deterministic suite auto-discovers **30 gates**. Representative executable evidence includes:
 
 - `action-authority.mjs` — ordering/fail-closed protocol for current lease → Guard authorization → one click attempt;
 - `classless-decision.mjs` — **6,000** shrinkable classless policy differential/safety cases;
@@ -62,7 +62,7 @@ The failed first v12 cut (#52) is permanent negative evidence: it changed Runtim
 
 ```text
 AutoAgree-v12.2.0.zip
-sha256=1478d808e277f6c687f719bc7185ff1398b4f6199450f988eda4b03ad3d4b601
+sha256=fe4fe1221509c09a1d4071686e689a679603e829e702056325d327a743199c7b
 compression=stored
 textEncoding=utf-8
 textLineEndings=lf
