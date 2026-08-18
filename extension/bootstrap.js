@@ -180,14 +180,33 @@
     return joinNorm(parts, 420);
   }
 
-  function textControlScope(el) {
+  function explicitLabelScope(el) {
     if (!(el instanceof Element)) return null;
     let p = el;
-    // This is only an activation trigger, not consent authority. Modern component trees routinely
-    // place legal copy and the visual/native control several wrappers apart, so the Probe may walk
-    // a few more ancestors while retaining a strict fixed bound. Gate/Engine still re-evaluate all
-    // semantics before any action can occur.
     for (let depth = 0; depth < 8 && p instanceof Element; depth++, p = p.parentElement) {
+      if (!p.matches?.('label')) continue;
+      try { if (p.querySelector?.(CONTROL)) return p; } catch (_) {}
+      const id = p.getAttribute('for');
+      if (!id) return null;
+      const root = p.getRootNode();
+      let target = null;
+      try {
+        if (root instanceof Document) target = root.getElementById(id);
+        else if (root instanceof DocumentFragment) target = root.querySelector(`#${CSS.escape(id)}`);
+      } catch (_) {}
+      return target instanceof Element && checkboxLike(target) ? p : null;
+    }
+    return null;
+  }
+
+  function textControlScope(el) {
+    if (!(el instanceof Element)) return null;
+    const explicit = explicitLabelScope(el);
+    if (explicit) return explicit;
+    let p = el;
+    // Generic geometry remains deliberately narrow. Deeper activation is allowed only through an
+    // explicit native label relation above, a live ARIA relation, or a bounded proceed interaction.
+    for (let depth = 0; depth < 3 && p instanceof Element; depth++, p = p.parentElement) {
       try { if (p.querySelector?.(CONTROL)) return p; } catch (_) {}
       if (p.matches?.('label[for]')) {
         const id = p.getAttribute('for');
