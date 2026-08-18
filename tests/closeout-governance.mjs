@@ -9,9 +9,11 @@ assert.equal(policy.schemaVersion,1);
 assert.equal(policy.requiredAttempts,2,'a formal candidate must pass twice at one exact head');
 assert.deepEqual(policy.hostedStates,['PASSED_HOSTED','FAILED_PRODUCT','INFRA_UNAVAILABLE','NOT_APPLICABLE']);
 assert.equal(new Set(policy.lanes.map(lane=>lane.id)).size,policy.lanes.length,'lane IDs must be unique');
-for(const lane of ['core','package','browser-main','engine-context-index-pressure','generation-lease','update-transition','paired-performance']){
+for(const lane of ['core','package','browser-main','activation-recall','engine-context-index-pressure','generation-lease','update-transition','paired-performance']){
   assert.ok(policy.lanes.some(entry=>entry.id===lane),`closeout policy must include ${lane}`);
 }
+const activation=policy.lanes.find(lane=>lane.id==='activation-recall');
+assert.deepEqual(activation.args,['tests/e2e-activation-recall.mjs'],'activation-recall must execute the real unpacked Chrome discriminator');
 const update=policy.lanes.find(lane=>lane.id==='update-transition');
 assert.equal(update.env.AUTO_AGREE_PREVIOUS_REF,'${BASE}','the update transition must bind the exact candidate base');
 const performance=policy.lanes.find(lane=>lane.id==='paired-performance');
