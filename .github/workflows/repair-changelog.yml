@@ -47,3 +47,5 @@ jobs:
           git add CHANGELOG.md
           git commit -m "docs: restore history and prepend 12.2.0"
           git push origin HEAD:agent/restore-activation-recall
+
+# one-shot trigger; this workflow is deleted after the repair commit lands.
