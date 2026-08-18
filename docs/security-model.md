@@ -20,6 +20,29 @@ No network client, telemetry, remote configuration, remote code, cookies/history
 
 `<all_urls>` supplies host access for arbitrary-site operation; it is not permission to run the full Engine everywhere. Probe is the default tier and richer code is lazy-injected only after evidence gating.
 
+## Activation-boundary safety
+
+v12.2 makes an important distinction explicit:
+
+```text
+permission to inspect more deeply
+!=
+permission to consent
+```
+
+Probe decides only whether Gate/Engine are worth loading. Its activation recall may therefore be broader than final click authority, but it still stays bounded so hostile/irrelevant pages cannot force unbounded work.
+
+The v12.2 repair permits deeper activation only when there is an explicit semantic relation or bounded user intent:
+
+- a native `<label>` relation, bounded to eight ancestors;
+- an ARIA relationship such as `aria-labelledby` / `aria-describedby`;
+- a trusted proceed-like interaction followed by a bounded six-ancestor local search;
+- long text processed through fixed head/center/tail sampling rather than unbounded normalization.
+
+Generic text/control geometry keeps its previous shallow three-ancestor bound. Real Chrome permanently checks the negative case: remote Terms text plus a semantically neutral required checkbox, with no label/ARIA relation and no proceed interaction, stays unchecked.
+
+This repair does not modify Gate, DecisionKernel, Risk Core, Engine, Handover Guard or ActionAuthority. More Probe recall can therefore load richer analysis, but it cannot by itself mint automated-action authority.
+
 ## Consequential-consent boundary
 
 Automation is blocked for independent or combined clauses involving marketing, payment/debit authorization, loans/credit, investment/trading authorization, insurance purchase/application, medical informed consent, employment contracts, e-signatures, arbitration/waivers/class actions, biometric/facial-recognition consent, guarantees/powers of attorney, automatic renewal and factual/age/identity attestations.
@@ -30,7 +53,7 @@ DecisionKernel is the sole severity lattice/policy owner. Risk Core consumes tha
 
 ## Authority chain
 
-v12 separates policy, automated-action permission and observable success:
+The architecture separates policy, automated-action permission and observable success:
 
 ```text
 current DOM/accessibility evidence
@@ -68,7 +91,7 @@ The physical action path therefore checks generation twice:
 
 If the extension Runtime is invalidated or the manifest generation changed, the old Auto Agree `.click()` becomes a no-op. The page MAIN world is not patched; trusted browser input remains outside this wrapper.
 
-The v12 release gate physically proved **v12.0.0 → v13.0.0** without page reload: old v12 execution remained inspectable, `staleLeaseCurrent=false`, stale automated clicks=0, direct stale isolated `.click()`=0, trusted click=1.
+The v12 release gate physically proved **v12.0.0 → v13.0.0** without page reload: old v12 execution remained inspectable, `staleLeaseCurrent=false`, stale automated clicks=0, direct stale isolated `.click()`=0, trusted click=1. v12.2 advances the real production generation rather than shipping different Probe behavior under the old 12.1 identity, so a surviving 12.1 world is also expected to become stale during the release transition.
 
 ## Historical-generation handover firewall
 
@@ -106,7 +129,7 @@ The permanent ActionAuthority test explicitly separates the layers:
 2. bypass Engine/ActionAuthority and call current-generation isolated `.click()` directly; the primitive is reached, but the original Guard capture listener still blocks the agreement-like synthetic DOM effect;
 3. perform trusted browser input; it succeeds once.
 
-Canonical v12 result:
+Canonical historical v12 result:
 
 ```text
 attempts=1
@@ -147,7 +170,7 @@ Worker globals are transient and are never correctness authority. SchedulerCore 
 
 DomCore deliberately owns only composed-parent and root-scoped IDREF lookup. Gate, Guard and Engine retain different bounded text scanners because their latency/security budgets differ. A universal DOM/text utility would blur those obligations and potentially move expensive/full semantics into earlier tiers.
 
-No tier is permitted an unbounded wildcard whole-page scan or arbitrary subtree stringification. Pathological strings are sampled before normalization.
+No tier is permitted an unbounded wildcard whole-page scan or arbitrary subtree stringification. Pathological strings are sampled before normalization. v12.2 applies that same sampling rule to Probe text nodes that previously exceeded the direct 900-character path.
 
 ## Bounded-work correctness boundary
 
@@ -155,8 +178,10 @@ Hard caps protect CPU/memory but do not authorize loss of connected semantic fin
 
 Permanent real-Chrome tests attack:
 
+- Probe→Gate activation recall positive and negative paths;
 - Probe/Gate queue saturation;
 - Gate connected work beyond `JOB_TTL_MS`;
+- Engine candidate-index saturation;
 - Engine walk saturation;
 - Engine RootBatch and sibling-range connected work beyond their TTL ages;
 - closed-Shadow work beyond `MAX_SHADOW_JOBS`.
@@ -169,7 +194,7 @@ An open page may contain multiple Auto Agree isolated contexts after extension r
 
 `e2e-update.mjs` stages the exact PR base and derives previous/current versions from their manifests. The physical v12 candidate proved a real **11.0.0 → 12.0.0** same-path update without page reload while one full v11 isolated context and one full v12 context remained simultaneously observable.
 
-The current v12 context preserved exactly-one routine action and trusted same-event delegation; mixed state, external-IDREF stale semantics, non-English stale semantics, wide wrappers, ambiguous wrappers and action-inside-label cases remained zero-click.
+For v12.2, the same candidate-relative harness must prove **12.1.0 → 12.2.0** on the exact PR base/head: no page reload, old/current contexts simultaneously observable, current routine action exactly once, and stale/mixed/external-IDREF/non-English/wide/ambiguous/action-inside-label negative paths still zero-click.
 
 ## Release-generation integrity
 
@@ -190,19 +215,21 @@ A release ZIP is part of the correctness/security boundary. The packager derives
 The current package identity is machine-owned by `release/package-manifest.json` and uses stored ZIP entries so compressor implementations cannot alter the bytes:
 
 ```text
-AutoAgree-v12.1.0.zip
-sha256=2e9b53c255d570f33b3515677d2d45bd30f35a8b093eb677d258c619f1a8d82d
+AutoAgree-v12.2.0.zip
+sha256=0f0d4b5e2991546e2c0217a04b692d9e1141f4c734afaa55390a82db7be264dd
 compression=stored
 textEncoding=utf-8
 textLineEndings=lf
 entryCreatorSystem=unix
 ```
 
-The packager canonicalizes Git materializations before hashing: every declared text member is decoded as UTF-8 and written with LF. This prevents a Windows CRLF checkout and a Linux LF checkout from minting different release identities. The v12.0.0 archive and its `1cee531a…` hash remain historical evidence in `docs/verification/v12.md`; they are not presented as the current closure.
+The packager canonicalizes Git materializations before hashing: every declared text member is decoded as UTF-8 and written with LF. This prevents a Windows CRLF checkout and a Linux LF checkout from minting different release identities. Earlier package hashes remain historical evidence in their version reports; they are not presented as the current closure.
 
 ## Threats considered
 
 - misleading CSS/classes and visually classless controls;
+- Probe activation false negatives that prevent the richer policy stack from ever starting;
+- overbroad activation geometry that could accidentally turn distant legal text into action-relevant context;
 - split legal/risk words across DOM fragments;
 - multilingual risk asymmetry;
 - stale learned selectors and profile namespace/identity collisions;
